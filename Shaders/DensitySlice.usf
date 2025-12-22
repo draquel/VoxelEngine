@@ -1,0 +1,97 @@
+﻿#include "/Engine/Public/Platform.ush"
+#include "VoxelDensity.usf"
+
+// Output: UAV render target
+RWTexture2D<float4> OutSlice : register(u0);
+
+// Match these fields to your C++ shader parameter struct.
+cbuffer DensitySliceUniforms : register(b0)
+{
+    float3 OriginWS;       // world-space min corner of the slice rect
+    float  StepWS;         // world units per pixel
+
+    uint2  Size;           // (Width, Height)
+    uint   Axis;           // 0=XY @ Z, 1=XZ @ Y, 2=YZ @ X
+    float  SliceCoordWS;   // coordinate of the slice plane (Z/Y/X depending on Axis)
+
+    float  DensityScale;   // visualization mapping: v = saturate(d * Scale + Bias)
+    float  DensityBias;
+
+    uint   bShowIsoLine;   // 0/1
+    float  IsoEpsilon;     // thickness of iso-line (in density units)
+
+    uint   bSignedColorMap;  // 0/1
+    uint3  _Pad1;
+};
+
+// Convert (pixel x,y) into a world-space point on the requested slice plane.
+float3 PixelToWorld(uint2 PixelXY)
+{
+    float2 p = float2(PixelXY) + 0.5; // sample at pixel center
+    float3 Pws = OriginWS;
+
+    if (Axis == 0) // XY slice at Z = SliceCoordWS
+    {
+        Pws.x += p.x * StepWS;
+        Pws.y += p.y * StepWS;
+        Pws.z  = SliceCoordWS;
+    }
+    else if (Axis == 1) // XZ slice at Y = SliceCoordWS
+    {
+        Pws.x += p.x * StepWS;
+        Pws.z += p.y * StepWS;
+        Pws.y  = SliceCoordWS;
+    }
+    else // Axis == 2 : YZ slice at X = SliceCoordWS
+    {
+        Pws.y += p.x * StepWS;
+        Pws.z += p.y * StepWS;
+        Pws.x  = SliceCoordWS;
+    }
+
+    return Pws;
+}
+
+[numthreads(8,8,1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+    if (DTid.x >= Size.x || DTid.y >= Size.y)
+        return;
+
+    uint2 pix = uint2(DTid.xy);
+    float3 Pws = PixelToWorld(pix);
+
+    // Canonical density sample (shared with marching cubes/debug grid)
+    float d = SampleDensityWS(Pws);
+
+    float3 col;
+
+    if (bSignedColorMap != 0)
+    {
+        // Signed colormap: negative=blue, positive=yellow, iso=white
+        float t = saturate(abs(d) * DensityScale);
+
+        float3 insideCol  = float3(0.10, 0.35, 1.00);
+        float3 outsideCol = float3(1.00, 0.85, 0.10);
+        float3 isoCol     = float3(1.00, 1.00, 1.00);
+
+        float3 sideCol = (d < 0) ? insideCol : outsideCol;
+        col = lerp(isoCol, sideCol, t);
+    }
+    else
+    {
+        // Legacy grayscale mapping
+        float v = saturate(d * DensityScale + DensityBias);
+        col = v.xxx;
+    }
+
+    // Iso-line highlight
+    if (bShowIsoLine != 0)
+    {
+        float edge = 1.0 - saturate(abs(d) / max(IsoEpsilon, 1e-6));
+        float3 lineCol = float3(1, 0, 0);
+        col = lerp(col, lineCol, edge);
+    }
+
+    OutSlice[pix] = float4(saturate(col), 1.0);
+}

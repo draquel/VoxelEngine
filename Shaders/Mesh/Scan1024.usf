@@ -1,0 +1,75 @@
+﻿#include "/Engine/Private/Common.ush"
+
+#define BLOCK_SIZE 1024
+groupshared uint sData[BLOCK_SIZE];
+
+// Injected by UE from the parameter struct(s)
+uint NumElements;
+uint NumBlocks;
+
+// -------- Kernel 1 bindings --------
+StructuredBuffer<uint>    InCounts;
+RWStructuredBuffer<uint>  OutOffsetsPartial;
+RWStructuredBuffer<uint>  OutBlockSums;
+
+// -------- Kernel 2 bindings --------
+StructuredBuffer<uint>    InOffsetsPartial;
+StructuredBuffer<uint>    InBlockOffsets;
+RWStructuredBuffer<uint>  OutOffsets;
+
+// ---------- Kernel 1: BlockScan1024 ----------
+[numthreads(BLOCK_SIZE, 1, 1)]
+void BlockScan1024(uint3 Gid : SV_GroupID, uint3 Tid : SV_GroupThreadID)
+{
+	uint block = Gid.x;
+	uint tid   = Tid.x;
+	uint index = block * BLOCK_SIZE + tid;
+
+	sData[tid] = (index < NumElements) ? InCounts[index] : 0;
+	GroupMemoryBarrierWithGroupSync();
+
+	// Upsweep
+	for (uint offset = 1; offset < BLOCK_SIZE; offset <<= 1)
+	{
+		uint i = ((tid + 1) * offset * 2) - 1;
+		if (i < BLOCK_SIZE)
+			sData[i] += sData[i - offset];
+		GroupMemoryBarrierWithGroupSync();
+	}
+
+	// Save total + make exclusive
+	if (tid == BLOCK_SIZE - 1)
+	{
+		OutBlockSums[block] = sData[tid];
+		sData[tid] = 0;
+	}
+	GroupMemoryBarrierWithGroupSync();
+
+	// Downsweep
+	for (uint offset = BLOCK_SIZE >> 1; offset > 0; offset >>= 1)
+	{
+		uint i = ((tid + 1) * offset * 2) - 1;
+		if (i < BLOCK_SIZE)
+		{
+			uint t = sData[i - offset];
+			sData[i - offset] = sData[i];
+			sData[i] += t;
+		}
+		GroupMemoryBarrierWithGroupSync();
+	}
+
+	if (index < NumElements)
+		OutOffsetsPartial[index] = sData[tid];
+}
+
+// ---------- Kernel 2: AddBlockOffsets ----------
+[numthreads(256, 1, 1)]
+void AddBlockOffsets(uint3 DTid : SV_DispatchThreadID)
+{
+	uint i = DTid.x;
+	if (i >= NumElements) return;
+
+	uint block = i / BLOCK_SIZE;
+	OutOffsets[i] = InOffsetsPartial[i] + InBlockOffsets[block];
+}
+

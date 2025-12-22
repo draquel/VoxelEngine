@@ -1,0 +1,74 @@
+﻿#include "/Engine/Public/Platform.ush"
+
+float Hash31(float3 p)
+{
+	// hash without textures/tables (Inigo-style)
+	p = frac(p * 0.1031);
+	p += dot(p, p.yzx + 33.33);
+	return frac((p.x + p.y) * p.z);
+}
+
+float ValueNoise3D(float3 x)
+{
+	float3 i = floor(x);
+	float3 f = frac(x);
+
+	// Smooth interpolation (quintic)
+	float3 u = f * f * (3.0 - 2.0 * f);
+
+	float n000 = Hash31(i + float3(0,0,0));
+	float n100 = Hash31(i + float3(1,0,0));
+	float n010 = Hash31(i + float3(0,1,0));
+	float n110 = Hash31(i + float3(1,1,0));
+	float n001 = Hash31(i + float3(0,0,1));
+	float n101 = Hash31(i + float3(1,0,1));
+	float n011 = Hash31(i + float3(0,1,1));
+	float n111 = Hash31(i + float3(1,1,1));
+
+	float nx00 = lerp(n000, n100, u.x);
+	float nx10 = lerp(n010, n110, u.x);
+	float nx01 = lerp(n001, n101, u.x);
+	float nx11 = lerp(n011, n111, u.x);
+
+	float nxy0 = lerp(nx00, nx10, u.y);
+	float nxy1 = lerp(nx01, nx11, u.y);
+
+	return lerp(nxy0, nxy1, u.z) * 2.0 - 1.0; // [-1,1]
+}
+
+float FBM3(float3 p, int octaves, float lacunarity, float gain)
+{
+	float sum = 0.0;
+	float amp = 0.5;
+	float freq = 1.0;
+
+	[unroll]
+	for (int o = 0; o < 8; ++o) // max 8; use octaves <= 8
+	{
+		if (o >= octaves) break;
+		sum += amp * ValueNoise3D(p * freq);
+		freq *= lacunarity;
+		amp *= gain;
+	}
+	return sum; // roughly [-1,1]
+}
+
+float RidgedFBM3(float3 p, int octaves, float lacunarity, float gain)
+{
+	float sum = 0.0;
+	float amp = 0.5;
+	float freq = 1.0;
+
+	[unroll]
+	for (int o = 0; o < 8; ++o)
+	{
+		if (o >= octaves) break;
+		float n = ValueNoise3D(p * freq);
+		n = 1.0 - abs(n);      // ridges
+		n *= n;                // sharpen
+		sum += n * amp;
+		freq *= lacunarity;
+		amp *= gain;
+	}
+	return sum; // [0, ~1]
+}

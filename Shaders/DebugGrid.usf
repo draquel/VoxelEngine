@@ -1,0 +1,56 @@
+﻿#include "/Engine/Public/Platform.ush"
+#include "VoxelDensity.usf"
+
+RWStructuredBuffer<float4> OutVertices;
+RWStructuredBuffer<uint>   OutIndices;
+RWStructuredBuffer<uint>   VertexCount;
+RWStructuredBuffer<uint>   IndexCount;
+
+cbuffer DebugGridUniforms
+{
+	uint   CellsPerAxis;
+	float  StepSizeWS;
+	float4 ChunkOriginWS;
+};
+
+[numthreads(8,8,1)]
+void MainCS(uint3 DTid : SV_DispatchThreadID)
+{
+	uint stride = CellsPerAxis + 1;
+
+	uint x = DTid.x;
+	uint y = DTid.y;
+
+	//  allow 0..CellsPerAxis
+	if (x > CellsPerAxis || y > CellsPerAxis) return;
+
+	uint v = y * stride + x;
+
+	float3 pos = ChunkOriginWS.xyz + float3(x * StepSizeWS, y * StepSizeWS, 0);
+	float d = SampleDensityWS(pos);
+	OutVertices[v] = float4(pos, d);
+
+	if (x < CellsPerAxis && y < CellsPerAxis)
+	{
+		uint i = (y * CellsPerAxis + x) * 6;
+
+		uint v00 =  y      * stride + x;
+		uint v10 =  y      * stride + (x+1);
+		uint v01 = (y + 1) * stride + x;
+		uint v11 = (y + 1) * stride + (x+1);
+
+		OutIndices[i+0] = v00;
+		OutIndices[i+1] = v01;
+		OutIndices[i+2] = v10;
+		OutIndices[i+3] = v10;
+		OutIndices[i+4] = v01;
+		OutIndices[i+5] = v11;
+	}
+
+	if (x == 0 && y == 0)
+	{
+		VertexCount[0] = stride * stride;
+		IndexCount[0]  = CellsPerAxis * CellsPerAxis * 6;
+	}
+
+}

@@ -1,0 +1,22 @@
+﻿#include "/Engine/Private/Common.ush"
+
+uint NumBlocks;
+
+StructuredBuffer<uint>   BlockSums;
+StructuredBuffer<uint>   BlockOffsets;
+RWStructuredBuffer<uint> OutTotalVerts;
+
+[numthreads(1,1,1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	uint last = (NumBlocks > 0) ? (NumBlocks - 1) : 0;
+
+	uint sums   = (NumBlocks > 0) ? BlockSums[last]   : 0;
+	uint offs   = (NumBlocks > 0) ? BlockOffsets[last]: 0;
+	uint total  = offs + sums;
+
+	OutTotalVerts[0] = total;
+	OutTotalVerts[1] = sums;
+	OutTotalVerts[2] = offs;
+	OutTotalVerts[3] = NumBlocks;
+}

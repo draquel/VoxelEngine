@@ -1,0 +1,21 @@
+﻿cbuffer VoxelNoiseParams
+{
+	float3 WorldScale;
+	float  HeightAmp;
+
+	float  HeightFreq;
+	float  HeightGain;
+	uint   HeightOctaves;
+
+	float  OverhangFreq;
+	float  OverhangAmp;
+	uint   OverhangOctaves;
+
+	float  CaveFreq;
+	float  CaveAmp;
+	float  CaveThreshold;
+	float  CaveSoftness;
+
+	uint   Seed;
+	float3 _Padding;
+};

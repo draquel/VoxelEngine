@@ -1,0 +1,25 @@
+﻿{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Voxel",
+	"Description": "",
+	"Category": "Other",
+	"CreatedBy": "DRaquel",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{ "Name": "VoxelCore",    "Type": "Runtime", "LoadingPhase": "Default" },
+		{ "Name": "VoxelRuntime", "Type": "Runtime", "LoadingPhase": "Default" },
+		{ "Name": "VoxelRDG",     "Type": "Runtime", "LoadingPhase": "PostConfigInit" },
+		{ "Name": "VoxelRender",  "Type": "Runtime", "LoadingPhase": "PostConfigInit" }
+	],
+	"Plugins": [
+		{ "Name": "ProceduralMeshComponent", "Enabled": true }
+	]
+}

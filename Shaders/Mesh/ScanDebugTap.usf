@@ -1,0 +1,74 @@
+﻿#include "/Engine/Private/Common.ush"
+
+#define BLOCK_SIZE 1024
+
+uint NumElements;
+uint NumBlocks;
+
+StructuredBuffer<uint> VertCounts;
+StructuredBuffer<uint> OffsetsPartial;
+StructuredBuffer<uint> BlockSums;
+StructuredBuffer<uint> BlockOffsets;
+StructuredBuffer<uint> VertOffsets;
+StructuredBuffer<uint> TotalVerts;          // same buffer you already produce (at least 1 element)
+
+RWStructuredBuffer<uint> OutDebug;          // 16 uints
+
+[numthreads(1,1,1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	uint lastBlock = (NumBlocks > 0) ? (NumBlocks - 1) : -1;
+	uint lastElem  = (NumElements > 0) ? (NumElements - 1) : -1;
+	
+	uint midElem = (NumElements > 0) ? (NumElements / 2) : -1;
+	uint e1023   = (NumElements > 1023) ? 1023 : lastElem;
+	uint e1024   = (NumElements > 1024) ? 1024 : lastElem;
+	
+	OutDebug[0] = (NumElements > 0) ? VertCounts[0] : -1;
+	OutDebug[1] = (NumElements > 0) ? VertCounts[midElem] : -1;
+	OutDebug[2] = (NumElements > 0) ? VertCounts[e1023] : -1;
+	OutDebug[3] = (NumElements > 0) ? VertCounts[e1024] : -1;
+	
+	OutDebug[4] = (NumElements > 0) ? OffsetsPartial[e1023] : -1;
+	OutDebug[5] = (NumElements > 0) ? OffsetsPartial[e1024] : -1;
+	
+	OutDebug[6] = (NumBlocks > 0) ? BlockSums[0] : -1;
+	OutDebug[7] = (NumBlocks > 1) ? BlockSums[1] : -1;
+	OutDebug[8] = (NumBlocks > 0) ? BlockSums[lastBlock] : -1;
+	
+	OutDebug[9]  = (NumBlocks > 0) ? BlockOffsets[0] : -1;
+	OutDebug[10] = (NumBlocks > 1) ? BlockOffsets[1] : -1;
+	OutDebug[11] = (NumBlocks > 0) ? BlockOffsets[lastBlock] : -1;
+	
+	// 0..1: raw input sanity
+	OutDebug[0]  = (NumElements > 0) ? VertCounts[0]       : -1;
+	OutDebug[1]  = (NumElements > 0) ? VertCounts[lastElem]: -1;
+	
+	// 2..3: partial offsets (should be exclusive scan within block)
+	OutDebug[2]  = (NumElements > 0) ? OffsetsPartial[0] : -1; // should be 0
+	OutDebug[3]  = (NumElements > 1) ? OffsetsPartial[1] : -1; // should equal VertCounts[0]
+	
+	// 4..5: block sums after pass1
+	OutDebug[4]  = (NumBlocks > 0) ? BlockSums[0]       : -1;
+	OutDebug[5]  = (NumBlocks > 0) ? BlockSums[lastBlock]: -1;
+	
+	// 6..7: block offsets after pass2 (scan of BlockSums)
+	OutDebug[6]  = (NumBlocks > 0) ? BlockOffsets[0]       : -1; // should be 0
+	OutDebug[7]  = (NumBlocks > 0) ? BlockOffsets[lastBlock]: -1;
+	
+	// 8..10: final vert offsets after pass3
+	OutDebug[8]  = (NumElements > 0) ? VertOffsets[0] : -1;  // should be 0
+	OutDebug[9]  = (NumElements > 1) ? VertOffsets[1] : -1;  // should equal VertCounts[0]
+	OutDebug[10] = (NumElements > 0) ? VertOffsets[lastElem] : -1;
+	
+	// 11..12: sizes
+	OutDebug[11] = NumElements;
+	OutDebug[12] = NumBlocks;
+
+	// 13: computed total (from your ScanTotal pass)
+	OutDebug[13] = TotalVerts[0];
+
+	// 14..15: spare
+	OutDebug[14] = 0xABCDEF01;
+	OutDebug[15] = 0;
+}
