@@ -10,11 +10,8 @@ float  IsoLevel;
 // Scan output (exclusive prefix sum of VertCountPerCell)
 StructuredBuffer<uint> VertOffsets;     // N cells
 
-// Optional (if you want to trust count pass; not strictly required if you loop TriTable)
-StructuredBuffer<uint> TriCountPerCell; // N cells (0..5)
-
 // Output vertex buffer sized to TotalVerts (float4 per vertex here)
-RWStructuredBuffer<float4> OutPositions; // TotalVerts entries
+RWStructuredBuffer<float4> OutVertices; // TotalVerts entries
 
 // --- minimal helpers ---
 static const float3 CornerOfs[8] =
@@ -110,13 +107,12 @@ void Main(uint3 DTid : SV_DispatchThreadID)
         int e2 = TriTable[caseIndex][t + 2];
 
         // Write 3 vertices (float4 with w unused; you can pack material/id in w later)
-        OutPositions[base + outV + 0] = float4(epos[e0], 1.0f);
-        OutPositions[base + outV + 1] = float4(epos[e1], 1.0f);
-        OutPositions[base + outV + 2] = float4(epos[e2], 1.0f);
+        OutVertices[base + outV + 0] = float4(epos[e0], 1.0f);
+        OutVertices[base + outV + 1] = float4(epos[e1], 1.0f);
+        OutVertices[base + outV + 2] = float4(epos[e2], 1.0f);
         outV += 3;
     }
 
-    // Optional: if you want safety, you can clamp writes using TriCountPerCell[cellIndex]*3
+    // Optional: if you want safety, you can clamp writes using a count pass
     // but the table-driven loop is typically consistent with your count pass.
 }
-
