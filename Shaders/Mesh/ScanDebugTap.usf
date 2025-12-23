@@ -70,5 +70,8 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 
 	// 14..15: spare
 	OutDebug[14] = 0xABCDEF01;
-	OutDebug[15] = 0;
+	
+	uint sumVC = 0;
+	[unroll] for (uint k=0; k<32; ++k) sumVC += VertCounts[min(midElem + k, NumElements-1)];
+	OutDebug[15] = sumVC;
 }

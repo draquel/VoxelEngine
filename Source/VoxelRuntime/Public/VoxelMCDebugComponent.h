@@ -91,11 +91,18 @@ private:
 	bool bHasPendingScatterVerts = false;
 	bool bCanFreeScatterReadback = false;
 	double DebugScatterReadVerts = 64;
+
+	//Status
+	TArray<uint32> PendingStatus;
+	bool bStatusPending = false;
+	bool bHasPendingStatus = false;
+	bool bCanFreeStatusReadback = false;
 	
 	void PollReadback();
 	void PollTotalVerts();
 	void PollDebugTap();
 	void PollScatter();
+	void PollStatus();
 
 	float TimeSinceLastDispatch = 0.0f;
 	bool bReadbackPending = false;
@@ -113,5 +120,7 @@ private:
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> DebugTapReadback;
 	
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> ScatterVertsReadback;
+	
+	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> StatusReadback;
 	
 };

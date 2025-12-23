@@ -11,6 +11,7 @@
 #include "MarchingCubes/MarchingCubesDispatch.h"
 #include "VoxelRDG/Private/MarchingCubes/MC_CountPass.h"
 #include "VoxelRDG/Private/MarchingCubes/MC_ScanPass.h"
+#include "VoxelRDG/Private/MarchingCubes/MC_DebugPass.h"
 #include "VoxelRDG/Private/MarchingCubes/MC_ScatterPass.h"
 
 
@@ -55,6 +56,11 @@ void UVoxelMCDebugComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	
 	DebugTapReadback.Reset();
 	bDebugTapPending = false;
+
+	ScatterVertsReadback.Reset();
+	bScatterPending = false;
+	bHasPendingScatterVerts = false;
+	bCanFreeScatterReadback = false;
 	
 	Super::EndPlay(EndPlayReason);
 }
@@ -67,6 +73,7 @@ void UVoxelMCDebugComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	PollReadback();
 	PollTotalVerts();
 	PollDebugTap();
+	PollStatus();
 	PollScatter();
 	
 	if (!ensureMsgf(GetOwner(), TEXT("VoxelMCDebugComponent has no owner"))) return;
@@ -149,8 +156,8 @@ void UVoxelMCDebugComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 			if (T.Num() >= 16)
 			{
 				UE_LOG(LogTemp, Warning,
-					TEXT("MC ScanTap: VC0=%u VCend=%u OP0=%u OP1=%u BS0=%u BSend=%u BO0=%u BOend=%u VO0=%u VO1=%u VOend=%u N=%u NB=%u Total=%u Magic=0x%08x"),
-					T[0], T[1], T[2], T[3], T[4], T[5], T[6], T[7], T[8], T[9], T[10], T[11], T[12], T[13], T[14]);
+					TEXT("MC ScanTap: VC0=%u VCend=%u OP0=%u OP1=%u BS0=%u BSend=%u BO0=%u BOend=%u VO0=%u VO1=%u VOend=%u N=%u NB=%u Total=%u Magic=0x%08x sumVC:%u"),
+					T[0], T[1], T[2], T[3], T[4], T[5], T[6], T[7], T[8], T[9], T[10], T[11], T[12], T[13], T[14],T[15]);
 			}
 			else
 			{
@@ -184,6 +191,22 @@ void UVoxelMCDebugComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 			{
 				bCanFreeScatterReadback = false;
 				ScatterVertsReadback.Reset();
+			}
+		}
+		
+		if (bHasPendingStatus)
+		{
+			bHasPendingStatus = false;
+			
+			UE_LOG(LogTemp, Warning, TEXT("MC Status: Magic=0x%08x NumElements=%u NumBlocks=%u vcSum=%u VCNonZero=%u vc0=%u vcLast=%u bs0=%u bsLast=%u bo0=%u boLast=%u vo0=%u vo1=%u voLast=%u"),
+				PendingStatus[0],PendingStatus[1],PendingStatus[2],PendingStatus[3],PendingStatus[4],PendingStatus[5],PendingStatus[6],PendingStatus[7],PendingStatus[8],PendingStatus[9],PendingStatus[10],PendingStatus[11],PendingStatus[12],PendingStatus[13]);
+			
+			PendingStatus.Reset();
+			
+			if (bCanFreeStatusReadback)
+			{
+				bCanFreeStatusReadback = false;
+				StatusReadback.Reset();
 			}
 		}
 
@@ -222,18 +245,40 @@ void UVoxelMCDebugComponent::DispatchNow()
     const FVoxelNoiseParamsCPU Noise = NoiseParamsCPU;
 
     // Create readbacks
+	TriCountReadback     = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.TriCountReadback"));
     TotalVertsReadback   = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.TotalVertsReadback"));
     DebugTapReadback     = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.DebugTapReadback"));
     ScatterVertsReadback = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.ScatterVertsReadback"));
+	StatusReadback		 = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.StatusReadback"));
 
+	bReadbackPending   = true;
     bTotalVertsPending = true;
     bDebugTapPending   = true;
+	bStatusPending	   = true;
     bScatterPending    = true;
 
+	{
+    	FScopeLock Lock(&ReadbackCS);
+    	bHasPendingResults = false;
+    	bHasPendingTotalVerts = false;
+    	bHasPendingDebugTap = false;
+    	bHasPendingScatterVerts = false;
+    	bHasPendingStatus = false;
+    	PendingTriCounts.Reset();
+    	PendingDebugTap.Reset();
+    	PendingScatterVerts.Reset();
+    	PendingTotalVerts = 0;
+    	PendingNumBlocks = 0;
+    	PendingSums = 0;
+    	PendingOffs = 0;
+	}
+	
     ENQUEUE_RENDER_COMMAND(MC_Dispatch)(
     [Chunk, Noise,
+     TriCountRef = TriCountReadback,
      TotalRef = TotalVertsReadback,
      TapRef   = DebugTapReadback,
+     StatusRef = StatusReadback,
      ScatterRef = ScatterVertsReadback
     ](FRHICommandListImmediate& RHICmdList)
     {
@@ -241,26 +286,27 @@ void UVoxelMCDebugComponent::DispatchNow()
 
         const auto Count = FMC_CountPass::AddMC_CountPass(GraphBuilder, Chunk, Noise);
         const uint32 NumCells = Chunk.CellsPerAxis * Chunk.CellsPerAxis * Chunk.CellsPerAxis;
-
         const auto Scan  = FMC_ScanPass::AddMC_ScanPass(GraphBuilder, Count.VertCountPerCell, NumCells);
-
-        const auto Scatter = FMC_ScatterPass::AddMC_ScatterPass(
-            GraphBuilder, Chunk, Noise,
-            Count.VertCountPerCell,
-            Scan.VertOffsets,
-            NumCells);
-
+    	const auto DebugStatus = FMC_DebugPass::AddPass_DebugStatus(GraphBuilder,Scan.NumElements, Scan.NumBlocks,Count.VertCountPerCell, Scan.BlockSums, Scan.BlockOffsets, Scan.VertOffsets);
+        const auto Scatter = FMC_ScatterPass::AddMC_ScatterPass(GraphBuilder, Chunk, Noise, Count.VertCountPerCell, Scan.VertOffsets, NumCells);
+    	FMC_DebugPass::AddPass_ReadbackStatus(GraphBuilder, DebugStatus, StatusRef);
+    	
         // Extract what we want to read back
+    	TRefCountPtr<FRDGPooledBuffer> ExtractedTris;
         TRefCountPtr<FRDGPooledBuffer> ExtractedTotal;
         TRefCountPtr<FRDGPooledBuffer> ExtractedTap;
         TRefCountPtr<FRDGPooledBuffer> ExtractedVerts;
 
+    	GraphBuilder.QueueBufferExtraction(Count.TriCountPerCell, &ExtractedTris);
         GraphBuilder.QueueBufferExtraction(Scan.TotalVerts, &ExtractedTotal);
         GraphBuilder.QueueBufferExtraction(Scan.DebugTap, &ExtractedTap);
         GraphBuilder.QueueBufferExtraction(Scatter.Vertices, &ExtractedVerts);
-
+    	
         GraphBuilder.Execute();
-
+    		
+    	if (ExtractedTris.IsValid() && TriCountRef.IsValid())
+    		TriCountRef->EnqueueCopy(RHICmdList, ExtractedTris->GetRHI());
+    	
         if (ExtractedTotal.IsValid() && TotalRef.IsValid())
             TotalRef->EnqueueCopy(RHICmdList, ExtractedTotal->GetRHI());
 
@@ -388,9 +434,6 @@ void UVoxelMCDebugComponent::PollReadback()
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("TriCountReadback ready! - Setting bReadbackPending to false"));
-	bReadbackPending = false;
-
 	const int32 Count = FMath::Clamp(DebugReadbackCount, 1, 4096);
 
 	// Compute an offset (in uint32 elements)
@@ -437,6 +480,7 @@ void UVoxelMCDebugComponent::PollReadback()
 				FScopeLock Lock(&WeakThis->ReadbackCS);
 				WeakThis->PendingTriCounts = MoveTemp(Copy);
 				WeakThis->bHasPendingResults = true;
+				WeakThis->bReadbackPending = false;
 				WeakThis->bCanFreeCountReadback = true;
 			});
 		});
@@ -456,10 +500,6 @@ void UVoxelMCDebugComponent::PollTotalVerts()
 			UE_LOG(LogTemp, Warning, TEXT("TotalVertsReadback not ready yet..."));
 		return;
 	}
-
-	// prevent multiple enqueues
-	UE_LOG(LogTemp, Warning, TEXT("TotalVertsReadback ready! - Setting bTotalVertsPending to false"));
-	bTotalVertsPending = false;
 
 	TWeakObjectPtr<UVoxelMCDebugComponent> WeakThis(this);
 	auto ReadbackRef = TotalVertsReadback;
@@ -490,6 +530,7 @@ void UVoxelMCDebugComponent::PollTotalVerts()
 				WeakThis->PendingNumBlocks= NumBlocks;
 				WeakThis->LastTotalVerts = Total;
 				WeakThis->bHasPendingTotalVerts = true;
+				WeakThis->bTotalVertsPending = false;
 				WeakThis->bCanFreeTotalVertsReadback = true;
 			});
 		});
@@ -507,9 +548,6 @@ void UVoxelMCDebugComponent::PollDebugTap()
 			UE_LOG(LogTemp, Warning, TEXT("DebugTapReadback not ready yet..."));
 		return;
 	}
-
-	UE_LOG(LogTemp, Warning, TEXT("DebugTapReadback ready! - Setting bDebugTapPending to false"));
-	bDebugTapPending = false;
 
 	TWeakObjectPtr<UVoxelMCDebugComponent> WeakThis(this);
 	auto ReadbackRef = DebugTapReadback;
@@ -541,6 +579,7 @@ void UVoxelMCDebugComponent::PollDebugTap()
 				FScopeLock Lock(&WeakThis->ReadbackCS);
 				WeakThis->PendingDebugTap = MoveTemp(Copy);
 				WeakThis->bHasPendingDebugTap = true;
+				WeakThis->bDebugTapPending = false;
 				WeakThis->bCanFreeDebugTapReadback = true;
 			});
 		});
@@ -548,15 +587,30 @@ void UVoxelMCDebugComponent::PollDebugTap()
 
 void UVoxelMCDebugComponent::PollScatter()
 {
-	if (!bScatterPending || !ScatterVertsReadback)
+	if (!bScatterPending || !ScatterVertsReadback.IsValid())
 		return;
 
 	if (!ScatterVertsReadback->IsReady())
 		return;
 
-	bScatterPending = false;
+	const uint32 RequestedVerts = (uint32)FMath::Clamp(DebugScatterReadVerts, 1, 4096);
+	uint32 MaxTotalVerts = 0;
+	if (bHasPendingTotalVerts && PendingTotalVerts > 0)
+	{
+		MaxTotalVerts = PendingTotalVerts;
+	}
+	else if (LastTotalVerts > 0)
+	{
+		MaxTotalVerts = LastTotalVerts;
+	}
 
-	const uint32 ReadVerts = (uint32)FMath::Clamp(DebugScatterReadVerts, 1, 4096);
+	uint32 ReadVerts = RequestedVerts;
+	if (MaxTotalVerts > 0)
+	{
+		ReadVerts = FMath::Min(ReadVerts, MaxTotalVerts);
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("MC Scatter: ReadbackVerts=%u Requested=%u Total=%u"), ReadVerts, RequestedVerts, MaxTotalVerts);
 	const uint32 Bytes = ReadVerts * sizeof(FVector4f);
 
 	TWeakObjectPtr<UVoxelMCDebugComponent> WeakThis(this);
@@ -586,7 +640,46 @@ void UVoxelMCDebugComponent::PollScatter()
 				FScopeLock Lock(&WeakThis->ReadbackCS);
 				WeakThis->PendingScatterVerts = MoveTemp(Copy);
 				WeakThis->bHasPendingScatterVerts = true;
+				WeakThis->bScatterPending = false;
 				WeakThis->bCanFreeScatterReadback = true;
+			});
+		});
+}
+
+void UVoxelMCDebugComponent::PollStatus()
+{
+	if (!bStatusPending || !StatusReadback) return;
+	if (!StatusReadback->IsReady()) return;
+
+	bStatusPending = false;
+
+	TWeakObjectPtr<UVoxelMCDebugComponent> WeakThis(this);
+	auto ReadbackRef = StatusReadback;
+
+	ENQUEUE_RENDER_COMMAND(MC_Status_Lock)(
+		[WeakThis, ReadbackRef](FRHICommandListImmediate& RHICmdList)
+		{
+			if (!WeakThis.IsValid()) return;
+
+			constexpr uint32 CountU32 = 16;
+			constexpr uint32 Bytes = CountU32 * sizeof(uint32);
+
+			const uint32* Data = reinterpret_cast<const uint32*>(ReadbackRef->Lock(Bytes));
+
+			TArray<uint32> Copy;
+			Copy.SetNumZeroed(CountU32);
+			if (Data) { FMemory::Memcpy(Copy.GetData(), Data, Bytes); }
+
+			ReadbackRef->Unlock();
+
+			AsyncTask(ENamedThreads::GameThread, [WeakThis, Copy = MoveTemp(Copy)]() mutable
+			{
+				if (!WeakThis.IsValid()) return;
+
+				FScopeLock Lock(&WeakThis->ReadbackCS);
+				WeakThis->PendingStatus = MoveTemp(Copy);
+				WeakThis->bHasPendingStatus = true;
+				WeakThis->bCanFreeStatusReadback = true;
 			});
 		});
 }

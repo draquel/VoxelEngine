@@ -136,7 +136,7 @@ static void AddPass_DebugTap(
 	Params->TotalVerts    = GraphBuilder.CreateSRV(TotalVerts);
 	Params->OutDebug      = GraphBuilder.CreateUAV(OutDebugTap);
 
-	UE_LOG(LogTemp, Log, TEXT("MC_Scan_Pass - AddPass_DebugTap: N=%u NumBlocks=%u"), Params->NumElements, Params->NumBlocks);
+	// UE_LOG(LogTemp, Log, TEXT("MC_Scan_Pass - AddPass_DebugTap: N=%u NumBlocks=%u"), Params->NumElements, Params->NumBlocks);
 	
 	TShaderMapRef<FScan_DebugTapCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 
@@ -291,7 +291,7 @@ FMCScanOutputs FMC_ScanPass::AddMC_ScanPass(
 	// Pass 4: compute TotalVerts
 	AddPass_ComputeTotalVerts(GraphBuilder, Out.BlockSums, Out.BlockOffsets, Out.NumBlocks, Out.TotalVerts);
 	
-	UE_LOG(LogTemp, Log, TEXT("MC_Scan_Pass debug: N=%u NumBlocks=%u"), NumElements, Out.NumBlocks);
+	// UE_LOG(LogTemp, Log, TEXT("MC_Scan_Pass debug: N=%u NumBlocks=%u"), NumElements, Out.NumBlocks);
 	// Pass 5: debug tap
 	AddPass_DebugTap(GraphBuilder, NumElements, Out.NumBlocks, VertCounts, OffsetsPartial, Out.BlockSums, Out.BlockOffsets, Out.VertOffsets, Out.TotalVerts, Out.DebugTap);
 	
