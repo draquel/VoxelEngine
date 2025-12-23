@@ -1,0 +1,58 @@
+﻿#include "/Engine/Private/Common.ush"
+
+uint NumElements;
+uint NumBlocks;
+
+StructuredBuffer<uint> VertCounts;      // N
+StructuredBuffer<uint> BlockSums;       // NumBlocks
+StructuredBuffer<uint> BlockOffsets;    // NumBlocks
+StructuredBuffer<uint> VertOffsets;     // N
+RWStructuredBuffer<uint> OutStatus;     // 16 uints
+
+[numthreads(256,1,1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	uint i = DTid.x;
+	if (i >= NumElements) return;
+
+	uint vc = VertCounts[i];
+
+	// OutStatus layout:
+	// 0 Magic
+	// 1 NumElements
+	// 2 NumBlocks
+	// 3 vcSum
+	// 4 vcNonZero
+	// 5 vc0
+	// 6 vcLast
+	// 7 bs0
+	// 8 bsLast
+	// 9 bo0
+	// 10 boLast
+	// 11 vo0
+	// 12 vo1
+	// 13 voLast
+
+	if (i == 0)
+	{
+		OutStatus[0]  = 0xD15EA5ED;
+		OutStatus[1]  = NumElements;
+		OutStatus[2]  = NumBlocks;
+
+		OutStatus[5]  = VertCounts[0];
+		OutStatus[6]  = VertCounts[NumElements - 1];
+
+		uint lastB = (NumBlocks > 0) ? (NumBlocks - 1) : 0;
+		OutStatus[7]  = (NumBlocks > 0) ? BlockSums[0]      : 0;
+		OutStatus[8]  = (NumBlocks > 0) ? BlockSums[lastB]  : 0;
+		OutStatus[9]  = (NumBlocks > 0) ? BlockOffsets[0]   : 0;
+		OutStatus[10] = (NumBlocks > 0) ? BlockOffsets[lastB]: 0;
+
+		OutStatus[11] = VertOffsets[0];
+		OutStatus[12] = (NumElements > 1) ? VertOffsets[1] : 0;
+		OutStatus[13] = VertOffsets[NumElements - 1];
+	}
+
+	InterlockedAdd(OutStatus[3], vc);
+	if (vc != 0) InterlockedAdd(OutStatus[4], 1);
+}

@@ -62,8 +62,8 @@ uint ComputeCaseIndex(float3 cellMinWS)
             [unroll] for (uint dx = 0; dx < 2; ++dx)
             {
                 float3 p = cellMinWS + float3(dx, dy, dz) * step;
-                // float d = SampleDensityWS(p);
-                float d = p.z; // flat plane at Z=0
+                float d = SampleDensityWS(p);
+                // float d = p.z; // flat plane at Z=0
                 uint bit = dx + (dy << 1) + (dz << 2);
                 caseIndex |= (d < IsoLevel) ? (1u << bit) : 0u;
             }
