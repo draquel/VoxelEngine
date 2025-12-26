@@ -1,6 +1,21 @@
 ﻿// /Plugin/Voxel/MarchingCubes/MC_Tables.ush
 #pragma once
 
+// --- minimal helpers ---
+static const float3 CornerOfs[8] =
+{
+	float3(0,0,0), float3(1,0,0), float3(1,1,0), float3(0,1,0),
+	float3(0,0,1), float3(1,0,1), float3(1,1,1), float3(0,1,1)
+};
+
+// Each edge maps to 2 corner indices
+static const uint2 EdgeCorners[12] =
+{
+	uint2(0,1), uint2(1,2), uint2(2,3), uint2(3,0),
+	uint2(4,5), uint2(5,6), uint2(6,7), uint2(7,4),
+	uint2(0,4), uint2(1,5), uint2(2,6), uint2(3,7)
+};
+
 // 256-bitmask table of edges intersected for each case
 static const uint EdgeTable[256] = {
 	// Paste standard Marching Cubes edgeTable[256] here

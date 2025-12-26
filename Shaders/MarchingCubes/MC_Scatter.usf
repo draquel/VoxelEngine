@@ -13,21 +13,6 @@ StructuredBuffer<uint> VertOffsets;     // N cells
 // Output vertex buffer sized to TotalVerts (float4 per vertex here)
 RWStructuredBuffer<float4> OutVertices; // TotalVerts entries
 
-// --- minimal helpers ---
-static const float3 CornerOfs[8] =
-{
-    float3(0,0,0), float3(1,0,0), float3(1,1,0), float3(0,1,0),
-    float3(0,0,1), float3(1,0,1), float3(1,1,1), float3(0,1,1)
-};
-
-// Each edge maps to 2 corner indices
-static const uint2 EdgeCorners[12] =
-{
-    uint2(0,1), uint2(1,2), uint2(2,3), uint2(3,0),
-    uint2(4,5), uint2(5,6), uint2(6,7), uint2(7,4),
-    uint2(0,4), uint2(1,5), uint2(2,6), uint2(3,7)
-};
-
 // Replace this with your real noise density
 float SampleDensityWS(float3 Pws)
 {

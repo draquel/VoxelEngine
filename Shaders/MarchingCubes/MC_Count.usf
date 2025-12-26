@@ -43,11 +43,6 @@ RWStructuredBuffer<uint> OutTriCountPerCell;   // length = CellsPerAxis^3
 RWStructuredBuffer<uint> OutVertCountPerCell;  // length = CellsPerAxis^3
 RWStructuredBuffer<uint> OutCaseIndexPerCell;
 
-static const float3 CornerOfs[8] =
-{
-    float3(0,0,0), float3(1,0,0), float3(1,1,0), float3(0,1,0),
-    float3(0,0,1), float3(1,0,1), float3(1,1,1), float3(0,1,1)
-};
 
 // ---- Density function ----
 // For now: plane test (as you’re doing).
