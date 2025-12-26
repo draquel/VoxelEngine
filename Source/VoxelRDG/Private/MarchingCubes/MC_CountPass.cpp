@@ -87,9 +87,17 @@ FMCCountPassOutputs FMC_CountPass::AddMC_CountPass(
 
     TShaderMapRef<FMC_CountCS> ComputeShader(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 
-	const uint32 Threads = 256;
-	const uint32 GroupsX = CeilDivU32(Cells, Threads);
-	FIntVector DispatchCount(GroupsX, 1, 1);
+	// Must match [numbthreads(256,1,1)]
+	// const uint32 Threads = 256;
+	// const uint32 GroupsX = CeilDivU32(Cells, Threads);
+	// FIntVector DispatchCount(GroupsX, 1, 1);
+	
+	// Must match [numthreads(8,8,8)]
+	const FIntVector GroupSize(8, 8, 8);
+	const FIntVector DispatchCount(
+	    FMath::DivideAndRoundUp((int32)N, GroupSize.X),
+	    FMath::DivideAndRoundUp((int32)N, GroupSize.Y),
+	    FMath::DivideAndRoundUp((int32)N, GroupSize.Z));
 	
     FComputeShaderUtils::AddPass(
         GraphBuilder,
