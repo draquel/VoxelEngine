@@ -4,5 +4,6 @@
 class VOXELRDG_API FMC_IndexPass
 {
 public:
-	static FMCIndexScatterParameters AddPass_IndexScatter(FRDGBuilder& GraphBuilder, uint32 TotalVerts);
+	static FRDGBufferRef AddMC_IndexScatterPass(FRDGBuilder& GraphBuilder, FRDGBufferRef TriOffsets, FRDGBufferRef VertOffsets, FRDGBufferRef TriCount, uint32
+	                                            MaxIndices, uint32 NumCells);
 };

@@ -11,7 +11,9 @@ public:
 	SHADER_USE_PARAMETER_STRUCT(FMC_IndexScatterCS, FGlobalShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-		SHADER_PARAMETER(uint32, TotalVerts)
+		SHADER_PARAMETER(uint32, NumCells)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, CaseIndexPerCell)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, TriOffsets)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutIndices)
 	END_SHADER_PARAMETER_STRUCT()
 
@@ -21,36 +23,40 @@ public:
 IMPLEMENT_GLOBAL_SHADER(FMC_IndexScatterCS, "/Plugin/Voxel/MarchingCubes/MC_IndexScatter.usf", "Main", SF_Compute);
 
 
-FMCIndexScatterParameters FMC_IndexPass::AddPass_IndexScatter(
+FRDGBufferRef FMC_IndexPass::AddMC_IndexScatterPass(
 	FRDGBuilder& GraphBuilder,
-	uint32 TotalVerts
-	)
+	FRDGBufferRef TriOffsets,
+	FRDGBufferRef VertOffsets,// Scan.TotalVerts (Structured<uint> size >= 1)
+	FRDGBufferRef TriCount,
+	uint32 MaxIndices,
+	uint32 NumCells)             // allocate upper bound; shader clamps to TotalVerts
 {
-	FMCIndexScatterParameters Out;
-	Out.Indices = GraphBuilder.CreateBuffer(
-		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), TotalVerts),
+	FRDGBufferRef OutIndices = GraphBuilder.CreateBuffer(
+		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), MaxIndices),
 		TEXT("MC.Indices"));
 
-	// CRITICAL: clear the status buffer (otherwise atomics + “last values” will look like random garbage)
-	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.Indices), 0);
-	
+	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(OutIndices), 0);
+
 	auto* Params = GraphBuilder.AllocParameters<FMC_IndexScatterCS::FParameters>();
-	Params->TotalVerts = TotalVerts;
-	Params->OutIndices = GraphBuilder.CreateUAV(Out.Indices);
+	Params->TriOffsets = GraphBuilder.CreateSRV(TriOffsets);
+	Params->OutIndices    = GraphBuilder.CreateUAV(OutIndices);
+	Params->NumCells = NumCells;
 
 	TShaderMapRef<FMC_IndexScatterCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 
 	const uint32 Threads = 256;
-	const uint32 GroupsX = (TotalVerts + Threads - 1) / Threads;
+	const uint32 GroupsX = (MaxIndices + Threads - 1) / Threads;
 
 	FComputeShaderUtils::AddPass(
 		GraphBuilder,
-		RDG_EVENT_NAME("MC.IndexScatter TotalVerts=%u", TotalVerts),
+		RDG_EVENT_NAME("MC.IndexScatter Max=%u", MaxIndices),
 		CS,
 		Params,
-		FIntVector((int32)GroupsX, 1, 1));
-	
-	return Out; 
+		FIntVector(1, 1, 1)*NumCells);
+
+	return OutIndices;
 }
+
+
 
 
