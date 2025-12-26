@@ -3,12 +3,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "ProceduralMeshComponent.h"
 #include "VoxelRDG/Public/VoxelNoiseParams.h"
 #include "RHIGPUReadback.h"
 #include "Components/ActorComponent.h"
 #include "Containers/Array.h"
 #include "HAL/CriticalSection.h"
 #include "VoxelMCDebugComponent.generated.h"
+
+class UproceduralMeshComponent;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class VOXELRUNTIME_API UVoxelMCDebugComponent : public UActorComponent
@@ -28,7 +31,7 @@ public:
 
 	// How many entries to print from TriCountPerCell (starting at 0).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test", meta=(ClampMin="1", ClampMax="32768"))
-	int32 DebugReadbackCount = 32;
+	int32 DebugReadbackCount = 64;
 
 	// Chunk params for the test
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
@@ -55,10 +58,13 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
 	bool bVerbose = true;
+	unsigned DebugScatterReadbackVerts = 64;
 
 	// Manual trigger (Blueprint callable)
 	UFUNCTION(BlueprintCallable, Category="Voxel|MC Test")
 	void DispatchNow();
+	
+	void BuildPMC(UProceduralMeshComponent* PMC, const TArray<FVector>& Verts, int32 TotalVerts);
 
 protected:
 	virtual void BeginPlay() override;
@@ -103,14 +109,24 @@ private:
 	
 	//index
 	TArray<uint32> PendingIndices;
-	bool bIndexPending = false;
-	bool bHasPendingIndex = false;
+	bool bIndicesPending = false;
+	bool bHasPendingIndices = false;
+	bool bCanFreeIndexReadback = false;
+	
+	//PMC
+	TArray<FVector> PendingPMCVerts;
+	TArray<int> PendingPMCIndices;
+	bool bHasPendingPMC;
+	
+	bool bReadbackPending = false;
 	
 	void PollReadback();
 	void PollTotalVerts();
 	void PollDebugTap();
 	void PollScatter();
 	void PollStatus();
+	void PollIndices();
+	void ConsumePMCResults();
 
 	float TimeSinceLastDispatch = 0.0f;
 	bool bCountPending = false;
@@ -118,9 +134,9 @@ private:
 	bool bTotalVertsPending = false;
 	uint32 LastTotalVerts = 0;
 	uint32 LastTotalIndices = 0;
-
+	
 	// Readback lives on render thread completion, we just poll readiness on game thread.
-	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> CountReadback;
+	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> TriCountReadback;
 	
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> TotalVertsReadback;
 	
@@ -130,6 +146,5 @@ private:
 	
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> StatusReadback;
 	
-	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> IndexReadback;
-	
+	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> IndicesReadback;
 };
