@@ -27,6 +27,7 @@ public:
         SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, BlockSums)
         SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, BlockOffsets)
         SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, VertOffsets)
+        SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, TriCounts)
 
         SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutStatus)
     END_SHADER_PARAMETER_STRUCT()
@@ -43,7 +44,8 @@ FRDGBufferRef FMC_DebugPass::AddPass_DebugStatus(
     FRDGBufferRef VertCounts,
     FRDGBufferRef BlockSums,
     FRDGBufferRef BlockOffsets,
-    FRDGBufferRef VertOffsets)
+    FRDGBufferRef VertOffsets,
+    FRDGBufferRef TriCounts)
 {
     
     if (NumBlocks == 0)
@@ -66,6 +68,7 @@ FRDGBufferRef FMC_DebugPass::AddPass_DebugStatus(
     Params->BlockSums   = GraphBuilder.CreateSRV(BlockSums);
     Params->BlockOffsets= GraphBuilder.CreateSRV(BlockOffsets);
     Params->VertOffsets = GraphBuilder.CreateSRV(VertOffsets);
+    Params->TriCounts = GraphBuilder.CreateSRV(TriCounts);
     Params->OutStatus   = GraphBuilder.CreateUAV(Status);
 
     TShaderMapRef<FScan_DebugStatusCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));

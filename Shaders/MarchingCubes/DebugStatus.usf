@@ -7,6 +7,8 @@ StructuredBuffer<uint> VertCounts;      // N
 StructuredBuffer<uint> BlockSums;       // NumBlocks
 StructuredBuffer<uint> BlockOffsets;    // NumBlocks
 StructuredBuffer<uint> VertOffsets;     // N
+StructuredBuffer<uint> TriCounts;
+
 RWStructuredBuffer<uint> OutStatus;     // 16 uints
 
 [numthreads(256,1,1)]
@@ -51,31 +53,45 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 		OutStatus[11] = VertOffsets[0];
 		OutStatus[12] = (NumElements > 1) ? VertOffsets[1] : 0;
 		OutStatus[13] = VertOffsets[NumElements - 1];
-		
+		OutStatus[14] = 0xFFFFFFFF;
+		OutStatus[15] = 0;
+		OutStatus[16] = 0xFFFFFFFF;
+		OutStatus[17] = 0;	
 		
 	}
 	// before InterlockedAdd
-	if (vc != 0)
-	{
-		if (true)
-		{
-			OutStatus[14] = i;   // first nonzero index
-			OutStatus[15] = vc;  // its value
-		}
-		else
-		{
-			InterlockedMin(OutStatus[14], i); // firstNonZeroIndex
-			InterlockedMin(OutStatus[15], vc);
-		}
-	}
+	// if (vc != 0)
+	// {
+	// 	if (true)
+	// 	{
+	// 		OutStatus[14] = i;   // first nonzero index
+	// 		OutStatus[15] = vc;  // its value
+	// 	}
+	// 	else
+	// 	{
+	// 		InterlockedMin(OutStatus[14], i); // firstNonZeroIndex
+	// 		InterlockedMin(OutStatus[15], vc);
+	// 	}
+	// }
 	GroupMemoryBarrierWithGroupSync();
 
-	if (i == 0)
-	{
-		uint idx = OutStatus[14];
-		OutStatus[15] = (idx != 0xFFFFFFFF) ? VertCounts[idx] : 0;
-	}
+	// if (i == 0)
+	// {
+	// 	uint idx = OutStatus[14];
+	// 	OutStatus[15] = (idx != 0xFFFFFFFF) ? VertCounts[idx] : 0;
+	// }
 
 	InterlockedAdd(OutStatus[3], vc);
 	if (vc != 0) InterlockedAdd(OutStatus[4], 1);
+	
+	
+	uint tc = TriCounts[i];
+	InterlockedAdd(OutStatus[14], tc);
+	if (tc != 0) InterlockedAdd(OutStatus[15], 1);
+
+	// first non-zero tri count (atomic min on index)
+	if (tc != 0)
+	{
+	    InterlockedMin(OutStatus[16], i);
+	}
 }

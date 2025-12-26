@@ -201,8 +201,8 @@ void UVoxelMCDebugComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		{
 			bHasPendingStatus = false;
 			
-			UE_LOG(LogTemp, Warning, TEXT("MC Status: Magic=0x%08x NumElements=%u NumBlocks=%u vcSum=%u VCNonZero=%u vc0=%u vcLast=%u bs0=%u bsLast=%u bo0=%u boLast=%u vo0=%u vo1=%u voLast=%u, FirstNonZeroIndex=0x%08x, FirstNonZeroValue=%u"),
-				PendingStatus[0],PendingStatus[1],PendingStatus[2],PendingStatus[3],PendingStatus[4],PendingStatus[5],PendingStatus[6],PendingStatus[7],PendingStatus[8],PendingStatus[9],PendingStatus[10],PendingStatus[11],PendingStatus[12],PendingStatus[13],PendingStatus[14],PendingStatus[15]);
+			UE_LOG(LogTemp, Warning, TEXT("MC Status: Magic=0x%08x NumElements=%u NumBlocks=%u vcSum=%u VCNonZero=%u vc0=%u vcLast=%u bs0=%u bsLast=%u bo0=%u boLast=%u vo0=%u vo1=%u voLast=%u, TriSum=%u TriNonZero=%u FirstNonZeroIndex=0x%08x"),
+				PendingStatus[0],PendingStatus[1],PendingStatus[2],PendingStatus[3],PendingStatus[4],PendingStatus[5],PendingStatus[6],PendingStatus[7],PendingStatus[8],PendingStatus[9],PendingStatus[10],PendingStatus[11],PendingStatus[12],PendingStatus[13],PendingStatus[14],PendingStatus[15],PendingStatus[16]);
 			
 			PendingStatus.Reset();
 			
@@ -302,7 +302,7 @@ void UVoxelMCDebugComponent::DispatchNow()
 		const FMCScanOutputs Scan = FMC_ScanPass::AddMC_ScanPass(GraphBuilder, Count.VertCountPerCell, Cells);
     	
     	if (bv)
-    		Status = FMC_DebugPass::AddPass_DebugStatus(GraphBuilder, Scan.NumElements,Scan.NumBlocks,Scan.TotalVerts,Scan.BlockSums,Scan.BlockOffsets,Scan.VertOffsets);
+    		Status = FMC_DebugPass::AddPass_DebugStatus(GraphBuilder, Scan.NumElements,Scan.NumBlocks,Count.VertCountPerCell,Scan.BlockSums,Scan.BlockOffsets,Scan.VertOffsets,Count.TriCountPerCell);
 
 		const uint32 RequestedVerts = 64; // debug
 		const FMCScatterOutputs Scatter = FMC_ScatterPass::AddMC_ScatterPass(GraphBuilder, Chunk, Noise, Scan.VertOffsets, RequestedVerts);
@@ -320,7 +320,6 @@ void UVoxelMCDebugComponent::DispatchNow()
         GraphBuilder.Execute();
     });
 }
-
 
 void UVoxelMCDebugComponent::PollReadback()
 {
@@ -546,7 +545,7 @@ void UVoxelMCDebugComponent::PollStatus()
 		{
 			if (!WeakThis.IsValid()) return;
 
-			constexpr uint32 CountU32 = 16;
+			constexpr uint32 CountU32 = 20;
 			constexpr uint32 Bytes = CountU32 * sizeof(uint32);
 
 			const uint32* Data = reinterpret_cast<const uint32*>(ReadbackRef->Lock(Bytes));
@@ -568,41 +567,3 @@ void UVoxelMCDebugComponent::PollStatus()
 			});
 		});
 }
-
-// void UVoxelMCDebugComponent::PollStatus()
-// {
-// 	if (!bStatusPending || !StatusReadback) return;
-// 	if (!StatusReadback->IsReady()) return;
-//
-// 	bStatusPending = false;
-//
-// 	TWeakObjectPtr<UVoxelMCDebugComponent> WeakThis(this);
-// 	auto ReadbackRef = StatusReadback;
-//
-// 	ENQUEUE_RENDER_COMMAND(MC_Status_Lock)(
-// 		[WeakThis, ReadbackRef](FRHICommandListImmediate& RHICmdList)
-// 		{
-// 			if (!WeakThis.IsValid()) return;
-//
-// 			constexpr uint32 CountU32 = 16;
-// 			constexpr uint32 Bytes = CountU32 * sizeof(uint32);
-//
-// 			const uint32* Data = reinterpret_cast<const uint32*>(ReadbackRef->Lock(Bytes));
-//
-// 			TArray<uint32> Copy;
-// 			Copy.SetNumZeroed(CountU32);
-// 			if (Data) { FMemory::Memcpy(Copy.GetData(), Data, Bytes); }
-//
-// 			ReadbackRef->Unlock();
-//
-// 			AsyncTask(ENamedThreads::GameThread, [WeakThis, Copy = MoveTemp(Copy)]() mutable
-// 			{
-// 				if (!WeakThis.IsValid()) return;
-//
-// 				FScopeLock Lock(&WeakThis->ReadbackCS);
-// 				WeakThis->PendingStatus = MoveTemp(Copy);
-// 				WeakThis->bHasPendingStatus = true;
-// 				WeakThis->bCanFreeStatusReadback = true;
-// 			});
-// 		});
-// }
