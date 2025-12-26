@@ -37,7 +37,6 @@ public:
 
 		SHADER_PARAMETER_STRUCT_REF(FVoxelNoiseParams, NoiseParams)
 
-		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, VertCountPerCell)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, VertOffsets)
 
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<float4>, OutVertices)
@@ -83,7 +82,6 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	FRDGBuilder& GraphBuilder,
 	const FMCChunkParamsCPU& Chunk,
 	const FVoxelNoiseParamsCPU& NoiseCPU,
-	FRDGBufferRef VertCountPerCell,
 	FRDGBufferRef VertOffsets,
 	uint32 NumCells)
 {
@@ -111,7 +109,6 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	PassParams->NoiseParams = TUniformBufferRef<FVoxelNoiseParams>::CreateUniformBufferImmediate(
 		NoiseGPU, UniformBuffer_SingleFrame);
 
-	PassParams->VertCountPerCell = GraphBuilder.CreateSRV(VertCountPerCell);
 	PassParams->VertOffsets      = GraphBuilder.CreateSRV(VertOffsets);
 	PassParams->OutVertices      = GraphBuilder.CreateUAV(Out.Vertices);
 
