@@ -1,4 +1,4 @@
-﻿cbuffer VoxelNoiseParams
+﻿struct FVoxelNoiseParams
 {
 	float3 WorldScale;
 	float  HeightAmp;

@@ -49,6 +49,10 @@ public:
 
 IMPLEMENT_GLOBAL_SHADER(FMC_CountCS, "/Plugin/Voxel/MarchingCubes/MC_Count.usf", "Main", SF_Compute);
 
+uint32 FMC_CountPass::CeilDivU32(uint32 a, uint32 b)
+{
+	return (a + b - 1u) / b; 
+}
 
 FMCCountPassOutputs FMC_CountPass::AddMC_CountPass(
     FRDGBuilder& GraphBuilder,
@@ -99,13 +103,10 @@ FMCCountPassOutputs FMC_CountPass::AddMC_CountPass(
 
     TShaderMapRef<FMC_CountCS> ComputeShader(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 
-    // Must match [numthreads(8,8,8)]
-    const FIntVector GroupSize(8, 8, 8);
-    const FIntVector DispatchCount(
-        FMath::DivideAndRoundUp((int32)N, GroupSize.X),
-        FMath::DivideAndRoundUp((int32)N, GroupSize.Y),
-        FMath::DivideAndRoundUp((int32)N, GroupSize.Z));
-
+	const uint32 Threads = 256;
+	const uint32 GroupsX = CeilDivU32(Cells, Threads);
+	FIntVector DispatchCount(GroupsX, 1, 1);
+	
     FComputeShaderUtils::AddPass(
         GraphBuilder,
         RDG_EVENT_NAME("MC_Count N=%u Cells=%u", N, Cells),
