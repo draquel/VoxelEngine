@@ -1,32 +1,77 @@
-﻿#include "/Engine/Private/Common.ush"
+﻿// /Plugin/Voxel/MarchingCubes/MC_Count.usf
+
+#include "/Engine/Private/Common.ush"
 #include "MC_Tables.ush"
 
-// ---- Parameters ----
+// NOTE: These globals are injected by UE's shader parameter struct (FMC_CountCS::FParameters)
+
 float3 ChunkOriginWS;
 float  StepSizeWS;
 uint   CellsPerAxis;
 float  IsoLevel;
-uint   ChunkSeed;
+uint   ChunkSeed;   // unused for now
+uint   Padding0;  
 
-// ---- Outputs ----
-RWStructuredBuffer<uint> OutTriCountPerCell;
-RWStructuredBuffer<uint> OutVertCountPerCell;
+RWStructuredBuffer<uint> OutTriCountPerCell;   // NumCells
+RWStructuredBuffer<uint> OutVertCountPerCell;  // NumCells
+RWStructuredBuffer<uint> OutCaseIndexPerCell;  // NumCells
 
-// ---- Helpers ----
 // static const float3 CornerOfs[8] =
 // {
 //     float3(0,0,0), float3(1,0,0), float3(1,1,0), float3(0,1,0),
 //     float3(0,0,1), float3(1,0,1), float3(1,1,1), float3(0,1,1)
 // };
 
-// Simple deterministic density (flat plane)
-float SampleDensityWS(float3 p)
+// Deterministic test field: plane at Z == 0 (IsoLevel still applied in the compare)
+float SampleDensityWS(float3 Pws)
 {
-    return p.z;
+    return Pws.z; // simple plane
 }
 
 uint ComputeCaseIndex(float3 cellMinWS)
 {
+    uint caseIndex = 0;
+
+    [unroll]
+    for (uint i = 0; i < 8; ++i)
+    {
+        float3 p = cellMinWS + CornerOfs[i] * StepSizeWS;
+        float  d = SampleDensityWS(p);
+
+        // "inside" if d < IsoLevel
+        caseIndex |= (d < IsoLevel) ? (1u << i) : 0u;
+    }
+
+    return caseIndex;
+}
+
+uint CountTrisFromTriTable(uint caseIndex)
+{
+    // TriTable rows are 16 ints, -1 terminated, in groups of 3 edges per triangle
+    uint triCount = 0;
+
+    [unroll]
+    for (uint t = 0; t < 16; t += 3)
+    {
+        int e0 = TriTable[caseIndex][t + 0];
+        if (e0 < 0) break;
+        triCount++;
+    }
+
+    return triCount; // 0..5
+}
+
+[numthreads(8,8,8)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+    uint x = DTid.x, y = DTid.y, z = DTid.z;
+    if (x >= CellsPerAxis || y >= CellsPerAxis || z >= CellsPerAxis)
+        return;
+
+    float3 cellMinWS = ChunkOriginWS + float3(x, y, z) * StepSizeWS;
+    uint cellIndex = x + y * CellsPerAxis + z * CellsPerAxis * CellsPerAxis;
+
+    // Compute case index exactly once
     uint caseIndex = 0;
     [unroll]
     for (uint i = 0; i < 8; ++i)
@@ -35,30 +80,10 @@ uint ComputeCaseIndex(float3 cellMinWS)
         float d  = SampleDensityWS(p);
         caseIndex |= (d < IsoLevel) ? (1u << i) : 0u;
     }
-    return caseIndex;
-}
 
-[numthreads(8,8,8)]
-void Main(uint3 DTid : SV_DispatchThreadID)
-{
-    uint x = DTid.x;
-    uint y = DTid.y;
-    uint z = DTid.z;
+    OutCaseIndexPerCell[cellIndex] = caseIndex;
 
-    if (x >= CellsPerAxis || y >= CellsPerAxis || z >= CellsPerAxis)
-        return;
-
-    uint cellIndex =
-        x +
-        y * CellsPerAxis +
-        z * CellsPerAxis * CellsPerAxis;
-
-    float3 cellMinWS =
-        ChunkOriginWS + float3(x, y, z) * StepSizeWS;
-
-    uint caseIndex = ComputeCaseIndex(cellMinWS);
-
-    // Empty / full cells
+    // Empty or full → no geometry
     if (caseIndex == 0 || caseIndex == 255)
     {
         OutTriCountPerCell[cellIndex]  = 0;
@@ -66,16 +91,9 @@ void Main(uint3 DTid : SV_DispatchThreadID)
         return;
     }
 
-    // Count triangles from TriTable
-    uint triCount = 0;
-    [unroll]
-    for (uint i = 0; i < 16; i += 3)
-    {
-        if (TriTable[caseIndex][i] < 0)
-            break;
-        triCount++;
-    }
-
+    // Canonical marching cubes counts
+    uint triCount = CountTrisFromTriTable(caseIndex);
     OutTriCountPerCell[cellIndex]  = triCount;
     OutVertCountPerCell[cellIndex] = triCount * 3;
+
 }
