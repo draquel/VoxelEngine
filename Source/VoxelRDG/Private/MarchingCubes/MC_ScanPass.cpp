@@ -49,8 +49,6 @@ public:
 
 IMPLEMENT_GLOBAL_SHADER(FScan_DebugTapCS, "/Plugin/Voxel/Mesh/ScanDebugTap.usf", "Main", SF_Compute);
 
-
-
 // Uses Scan1024.usf entrypoint "BlockScan1024"
 class FScan_BlockScan1024CS : public FGlobalShader
 {
@@ -71,7 +69,6 @@ public:
 };
 IMPLEMENT_GLOBAL_SHADER(FScan_BlockScan1024CS, "/Plugin/Voxel/Mesh/Scan1024.usf", "BlockScan1024", SF_Compute);
 
-
 // Uses Scan1024.usf entrypoint "AddBlockOffsets"
 class FScan_AddBlockOffsetsCS : public FGlobalShader
 {
@@ -90,7 +87,6 @@ END_SHADER_PARAMETER_STRUCT()
 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters&) { return true; }
 };
 IMPLEMENT_GLOBAL_SHADER(FScan_AddBlockOffsetsCS, "/Plugin/Voxel/Mesh/Scan1024.usf", "AddBlockOffsets", SF_Compute);
-
 
 // Tiny 1-thread shader to compute TotalVerts = BlockOffsets[last] + BlockSums[last]
 class FScan_ComputeTotalCS : public FGlobalShader
@@ -147,7 +143,6 @@ static void AddPass_DebugTap(
 		Params,
 		FIntVector(1,1,1));
 }
-
 
 static void AddPass_BlockScan1024(
 	FRDGBuilder& GraphBuilder,
@@ -238,7 +233,7 @@ FMCScanOutputs FMC_ScanPass::AddMC_ScanPass(
 {
 	FMCScanOutputs Out;
 	Out.NumElements = NumElements;
-	Out.NumBlocks   = CeilDivU32(NumElements, kScanBlockSize);
+	Out.NumBlocks = CeilDivU32(NumElements, kScanBlockSize);
 
 	// Buffers
 	Out.VertOffsets = GraphBuilder.CreateBuffer(

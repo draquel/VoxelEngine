@@ -1,5 +1,4 @@
 ﻿#pragma once
-#include "RenderGraphResources.h"
 
 struct FMCScanOutputs;
 

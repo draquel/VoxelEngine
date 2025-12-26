@@ -9,23 +9,6 @@
 #include "VoxelNoiseParams.h"
 #include "MarchingCubes/MarchingCubesDispatch.h"
 
-// struct FMCChunkParamsCPU
-// {
-// 	FVector ChunkOriginWS; // world space
-// 	float   StepSizeWS = 100.f;
-// 	uint32  CellsPerAxis = 32;
-// 	float   IsoLevel = 0.f;
-// 	uint32  ChunkSeed = 1337;
-// };
-
-// struct FMCCountPassOutputs
-// {
-// 	// FRDGBufferRef CaseIndexPerCell = nullptr;
-// 	FRDGBufferRef TriCountPerCell = nullptr;
-// 	FRDGBufferRef VertCountPerCell = nullptr;
-// 	uint32 CellsPerAxis = 0;
-// };
-
 class FMC_CountCS : public FGlobalShader
 {
 public:
