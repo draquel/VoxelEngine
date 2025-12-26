@@ -51,6 +51,29 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 		OutStatus[11] = VertOffsets[0];
 		OutStatus[12] = (NumElements > 1) ? VertOffsets[1] : 0;
 		OutStatus[13] = VertOffsets[NumElements - 1];
+		
+		
+	}
+	// before InterlockedAdd
+	if (vc != 0)
+	{
+		if (true)
+		{
+			OutStatus[14] = i;   // first nonzero index
+			OutStatus[15] = vc;  // its value
+		}
+		else
+		{
+			InterlockedMin(OutStatus[14], i); // firstNonZeroIndex
+			InterlockedMin(OutStatus[15], vc);
+		}
+	}
+	GroupMemoryBarrierWithGroupSync();
+
+	if (i == 0)
+	{
+		uint idx = OutStatus[14];
+		OutStatus[15] = (idx != 0xFFFFFFFF) ? VertCounts[idx] : 0;
 	}
 
 	InterlockedAdd(OutStatus[3], vc);

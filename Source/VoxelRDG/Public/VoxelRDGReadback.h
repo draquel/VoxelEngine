@@ -77,4 +77,29 @@ namespace FVoxelRDGReadback
 				});
 			});
 	}
+	BEGIN_SHADER_PARAMETER_STRUCT(FRDGReadbackCopyParams, )
+		RDG_BUFFER_ACCESS(Buffer, ERHIAccess::CopySrc)
+	END_SHADER_PARAMETER_STRUCT()
+
+	static void AddReadbackCopyPass(
+		FRDGBuilder& GraphBuilder,
+		FRDGBufferRef Buffer,
+		FRHIGPUBufferReadback* Readback,
+		const TCHAR* EventName)
+	{
+		auto* RB = GraphBuilder.AllocParameters<FRDGReadbackCopyParams>();
+		RB->Buffer = Buffer;
+
+		GraphBuilder.AddPass(
+			RDG_EVENT_NAME("%s", EventName),
+			RB,
+			ERDGPassFlags::Copy | ERDGPassFlags::NeverCull,
+			[Readback, BufferRDG = RB->Buffer](FRHICommandListImmediate& RHICmdList)
+			{
+				// BufferRDG is a FRDGBufferRef with CopySrc guaranteed by RDG_BUFFER_ACCESS
+				Readback->EnqueueCopy(RHICmdList, BufferRDG->GetRHI());
+			});
+	}
 }
+
+

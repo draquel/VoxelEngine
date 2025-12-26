@@ -8,8 +8,8 @@
 #include "ShaderCompilerCore.h"
 #include "RHIStaticStates.h"
 
-BEGIN_SHADER_PARAMETER_STRUCT(FMCStatusReadbackParams, )
-    RDG_BUFFER_ACCESS(Status, ERHIAccess::CopySrc)
+BEGIN_SHADER_PARAMETER_STRUCT(FRDGReadbackCopyParams, )
+    RDG_BUFFER_ACCESS(Buffer, ERHIAccess::CopySrc)
 END_SHADER_PARAMETER_STRUCT()
 
 // DebugStatus shader
@@ -88,18 +88,15 @@ void FMC_DebugPass::AddPass_ReadbackStatus(
     FRDGBufferRef Status,
     const TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe>& Readback)
 {
-    auto* RB = GraphBuilder.AllocParameters<FMCStatusReadbackParams>();
-    RB->Status = Status;
-
-    // Capture the FRDGBufferRef, not RB
-    FRDGBufferRef StatusRef = Status;
+    auto* RB = GraphBuilder.AllocParameters<FRDGReadbackCopyParams>();
+    RB->Buffer = Status;
 
     GraphBuilder.AddPass(
         RDG_EVENT_NAME("MC.DebugStatusReadbackCopy"),
         RB,
         ERDGPassFlags::Copy | ERDGPassFlags::NeverCull,
-        [ReadbackPtr = Readback.Get(), StatusRef](FRHICommandListImmediate& RHICmdList)
+        [Readback, BufferRDG = RB->Buffer](FRHICommandListImmediate& RHICmdList)
         {
-            ReadbackPtr->EnqueueCopy(RHICmdList, StatusRef->GetRHI());
+            Readback->EnqueueCopy(RHICmdList, BufferRDG->GetRHI());
         });
 }

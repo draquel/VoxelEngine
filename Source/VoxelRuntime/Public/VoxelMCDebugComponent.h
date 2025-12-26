@@ -52,6 +52,9 @@ public:
 	// Noise params for the test
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
 	FVoxelNoiseParamsCPU NoiseParamsCPU;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
+	bool bVerbose = true;
 
 	// Manual trigger (Blueprint callable)
 	UFUNCTION(BlueprintCallable, Category="Voxel|MC Test")
@@ -86,17 +89,22 @@ private:
 	bool bCanFreeDebugTapReadback = false;
 
 	//Scatter
+	uint32 ScatterReadbackCount = 64;
 	bool bScatterPending;
 	TArray<FVector4f> PendingScatterVerts;
 	bool bHasPendingScatterVerts = false;
 	bool bCanFreeScatterReadback = false;
-	double DebugScatterReadVerts = 64;
 
 	//Status
 	TArray<uint32> PendingStatus;
 	bool bStatusPending = false;
 	bool bHasPendingStatus = false;
 	bool bCanFreeStatusReadback = false;
+	
+	//index
+	TArray<uint32> PendingIndices;
+	bool bIndexPending = false;
+	bool bHasPendingIndex = false;
 	
 	void PollReadback();
 	void PollTotalVerts();
@@ -105,15 +113,14 @@ private:
 	void PollStatus();
 
 	float TimeSinceLastDispatch = 0.0f;
-	bool bReadbackPending = false;
+	bool bCountPending = false;
 	
 	bool bTotalVertsPending = false;
 	uint32 LastTotalVerts = 0;
 	uint32 LastTotalIndices = 0;
-	
 
 	// Readback lives on render thread completion, we just poll readiness on game thread.
-	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> TriCountReadback;
+	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> CountReadback;
 	
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> TotalVertsReadback;
 	
@@ -122,5 +129,7 @@ private:
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> ScatterVertsReadback;
 	
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> StatusReadback;
+	
+	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> IndexReadback;
 	
 };
