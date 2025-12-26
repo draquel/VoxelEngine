@@ -82,6 +82,7 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	FRDGBuilder& GraphBuilder,
 	const FMCChunkParamsCPU& Chunk,
 	const FVoxelNoiseParamsCPU& NoiseCPU,
+	FRDGBufferRef VertCountPerCell,
 	FRDGBufferRef VertOffsets,
 	uint32 NumCells)
 {
