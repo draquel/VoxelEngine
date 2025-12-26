@@ -1,7 +1,33 @@
-﻿#include "/Engine/Public/Platform.ush"
-#include "../Noise/VoxelNoiseParams.ush"
-#include "../Noise/VoxelNoiseFast3D.usf"
+﻿#include "/Engine/Private/Common.ush"
+#include "MC_Tables.ush"
 
+// ------------------------
+// HLSL type for NoiseParams
+// This MUST match your C++ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FVoxelNoiseParams,...)
+// ------------------------
+struct FVoxelNoiseParams
+{
+    float3 WorldScale;
+    float  HeightAmp;
+
+    float  HeightFreq;
+    float  HeightGain;
+    uint   HeightOctaves;
+
+    float  OverhangFreq;
+    float  OverhangAmp;
+    uint   OverhangOctaves;
+
+    float  CaveFreq;
+    float  CaveAmp;
+    float  CaveThreshold;
+    float  CaveSoftness;
+
+    uint   Seed;
+    float3 _Padding;
+};
+
+// Injected by UE from your parameter struct:
 float3 ChunkOriginWS;
 float  StepSizeWS;
 uint   CellsPerAxis;
@@ -9,104 +35,76 @@ float  IsoLevel;
 uint   ChunkSeed;
 uint   Padding0;
 
-RWStructuredBuffer<uint> OutTriCountPerCell;
-RWStructuredBuffer<uint> OutVertCountPerCell;
+// Injected by UE because you used SHADER_PARAMETER_STRUCT_REF(FVoxelNoiseParams, NoiseParams)
+FVoxelNoiseParams NoiseParams;
 
-// Corner offsets for a cell in (x,y,z) in [0,1]
-static const uint3 CornerOfs[8] =
+// Outputs (UAV)
+RWStructuredBuffer<uint> OutTriCountPerCell;   // length = CellsPerAxis^3
+RWStructuredBuffer<uint> OutVertCountPerCell;  // length = CellsPerAxis^3
+RWStructuredBuffer<uint> OutCaseIndexPerCell;
+
+static const float3 CornerOfs[8] =
 {
-    uint3(0,0,0),
-    uint3(1,0,0),
-    uint3(1,1,0),
-    uint3(0,1,0),
-    uint3(0,0,1),
-    uint3(1,0,1),
-    uint3(1,1,1),
-    uint3(0,1,1)
+    float3(0,0,0), float3(1,0,0), float3(1,1,0), float3(0,1,0),
+    float3(0,0,1), float3(1,0,1), float3(1,1,1), float3(0,1,1)
 };
 
+// ---- Density function ----
+// For now: plane test (as you’re doing).
+// Replace with your real noise function later (using NoiseParams).
 float SampleDensityWS(float3 Pws)
 {
-    // Convert world -> noise space
-    float3 p = Pws * WorldScale;
-
-    // Macro height (2.5D)
-    float height =
-        FBM3(float3(p.x * HeightFreq, p.y * HeightFreq, 0.0),
-             (int)HeightOctaves, 2.0, HeightGain) * HeightAmp;
-
-    float density = Pws.z - height;
-
-    // Overhangs (true 3D)
-    density += FBM3(p * OverhangFreq, (int)OverhangOctaves, 2.0, 0.5) * OverhangAmp;
-
-    // Caves (masked)
-    float caveN = FBM3(p * CaveFreq, 3, 2.0, 0.5);
-    float caveMask = smoothstep(CaveThreshold, CaveThreshold + CaveSoftness, caveN);
-
-    // NOTE: sign here controls whether mask hollows or fills.
-    // With density = Pws.z - height, adding pushes "outside" up -> can create hollow pockets depending on IsoLevel.
-    density -= caveMask * CaveAmp;
-
-    return density;
+    // Canonical plane: iso at z=0
+    return Pws.z;
 }
 
 uint ComputeCaseIndex(float3 cellMinWS)
 {
     uint caseIndex = 0;
-    const float step = StepSizeWS;
-
-    // Corner bits: (x,y,z) => bit = x + 2y + 4z
-    [unroll] for (uint dz = 0; dz < 2; ++dz)
-        [unroll] for (uint dy = 0; dy < 2; ++dy)
-            [unroll] for (uint dx = 0; dx < 2; ++dx)
-            {
-                float3 p = cellMinWS + float3(dx, dy, dz) * step;
-                float d = SampleDensityWS(p);
-                // float d = p.z; // flat plane at Z=0
-                uint bit = dx + (dy << 1) + (dz << 2);
-                caseIndex |= (d < IsoLevel) ? (1u << bit) : 0u;
-            }
+    [unroll] for (uint i = 0; i < 8; ++i)
+    {
+        float3 p = cellMinWS + CornerOfs[i] * StepSizeWS;
+        float d  = SampleDensityWS(p);
+        caseIndex |= (d < IsoLevel) ? (1u << i) : 0u;
+    }
     return caseIndex;
 }
 
-static const uint TriCountTable[256] =
+uint CountTrisFromTriTable(uint caseIndex)
 {
-    0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,2,
-    1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,3,
-    1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,3,
-    2,3,3,2,3,4,4,3,3,4,4,3,4,5,5,2,
-    1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,3,
-    2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,4,
-    2,3,3,4,3,4,2,3,3,4,4,5,4,5,3,2,
-    3,4,4,3,4,5,3,2,4,5,5,4,5,2,4,1,
-    1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,3,
-    2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,4,
-    2,3,3,4,3,4,2,3,3,4,4,5,4,5,3,2,
-    3,4,4,3,4,5,3,2,4,5,5,4,5,2,4,1,
-    2,3,3,2,3,4,4,3,3,4,4,3,4,5,5,2,
-    3,4,4,3,4,5,5,4,4,5,5,4,5,4,4,1,
-    3,4,4,3,4,5,3,2,4,5,5,4,5,2,4,1,
-    2,3,3,1,3,4,2,1,3,4,4,3,4,1,3,0
-};
-
-uint NumTrisForCase(uint caseIndex)
-{
-    return TriCountTable[caseIndex & 255];
+    // TriTable row has 16 ints, -1 terminates
+    uint triCount = 0;
+    [unroll] for (uint t = 0; t < 16; t += 3)
+    {
+        int e0 = TriTable[caseIndex][t + 0];
+        if (e0 < 0) break;
+        triCount++;
+    }
+    return triCount;
 }
 
-[numthreads(8,8,8)]
+[numthreads(256,1,1)]
 void Main(uint3 DTid : SV_DispatchThreadID)
 {
-    uint x = DTid.x, y = DTid.y, z = DTid.z;
-    if (x >= CellsPerAxis || y >= CellsPerAxis || z >= CellsPerAxis) return;
+    uint cellIndex = DTid.x;
+    uint NumCells = CellsPerAxis * CellsPerAxis * CellsPerAxis;
+    if (cellIndex >= NumCells)
+        return;
 
-    uint cellIndex = x + y * CellsPerAxis + z * CellsPerAxis * CellsPerAxis;
+    // --- compute (x,y,z) from linear index ---
+    uint z = cellIndex / (CellsPerAxis * CellsPerAxis);
+    uint rem = cellIndex - z * CellsPerAxis * CellsPerAxis;
+    uint y = rem / CellsPerAxis;
+    uint x = rem - y * CellsPerAxis;
 
-    float3 cellMinWS = ChunkOriginWS + float3(x, y, z) * StepSizeWS;
-    uint caseIndex   = ComputeCaseIndex(cellMinWS);
+    float3 cellMinWS = ChunkOriginWS + float3(x,y,z) * StepSizeWS;
 
-    uint triCount = NumTrisForCase(caseIndex);
+    uint caseIndex = ComputeCaseIndex(cellMinWS);
+    
+    uint triCount = CountTrisFromTriTable(caseIndex); // canonical table
+    uint vertCount = triCount * 3;
+
     OutTriCountPerCell[cellIndex]  = triCount;
-    OutVertCountPerCell[cellIndex] = triCount * 3;
+    OutVertCountPerCell[cellIndex] = vertCount;
+    OutCaseIndexPerCell[cellIndex] = caseIndex;
 }

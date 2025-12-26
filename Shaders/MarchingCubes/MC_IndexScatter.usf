@@ -1,0 +1,13 @@
+#include "/Engine/Private/Common.ush"
+
+uint TotalVerts; // total vertex count from scan (same as total indices in this simple mode)
+
+RWStructuredBuffer<uint> OutIndices;
+
+[numthreads(256,1,1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	uint i = DTid.x;
+	if (i >= TotalVerts) return;
+	OutIndices[i] = i;
+}

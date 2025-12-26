@@ -13,6 +13,7 @@
 #include "VoxelRDG/Private/MarchingCubes/MC_ScanPass.h"
 #include "VoxelRDG/Private/MarchingCubes/MC_DebugPass.h"
 #include "VoxelRDG/Private/MarchingCubes/MC_ScatterPass.h"
+#include "VoxelRDG/Private/MarchingCubes/MC_IndexPass.h"
 
 
 BEGIN_SHADER_PARAMETER_STRUCT(FMCReadbackCopyParameters, )
@@ -297,10 +298,12 @@ void UVoxelMCDebugComponent::DispatchNow()
         TRefCountPtr<FRDGPooledBuffer> ExtractedTap;
         TRefCountPtr<FRDGPooledBuffer> ExtractedVerts;
 
-    	GraphBuilder.QueueBufferExtraction(Count.TriCountPerCell, &ExtractedTris);
-        GraphBuilder.QueueBufferExtraction(Scan.TotalVerts, &ExtractedTotal);
-        GraphBuilder.QueueBufferExtraction(Scan.DebugTap, &ExtractedTap);
-        GraphBuilder.QueueBufferExtraction(Scatter.Vertices, &ExtractedVerts);
+		const uint32 RequestedVerts = 64; // debug
+		const FMCScatterOutputs Scatter = FMC_ScatterPass::AddMC_ScatterPass(GraphBuilder, Chunk, Noise, Scan.VertOffsets, RequestedVerts);
+
+		FMCIndexScatterParameters Indices = FMC_IndexPass::AddPass_IndexScatter(GraphBuilder,Scan.NumElements);
+    	
+		FVoxelRDGReadback::AddReadbackCopyPass(GraphBuilder, Indices.Indices, IndexRef.Get(), TEXT("MC.IndicesCopy"));
     	
         GraphBuilder.Execute();
     		

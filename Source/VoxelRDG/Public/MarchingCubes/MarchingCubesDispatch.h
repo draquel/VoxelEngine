@@ -22,6 +22,7 @@ struct FMCCountPassOutputs
 {
 	FRDGBufferRef TriCountPerCell = nullptr;
 	FRDGBufferRef VertCountPerCell = nullptr;
+	FRDGBufferRef CaseIndexPerCell = nullptr;
 	uint32 CellsPerAxis = 0;
 };
 
@@ -53,13 +54,7 @@ struct FMCScatterOutputs
 
 struct FMCIndexScatterParameters
 {
-	uint32 NumCells;
-	uint32 TotalTris;
-
-	// SRV<uint> CaseIndexPerCell;
-	// SRV<uint> TriCountPerCell;
-	// SRV<uint> VertOffsets;      // from scan
-	// UAV<uint> OutIndices;       // 3 * TotalTris
+	FRDGBufferRef Indices;	
 };
 
 
