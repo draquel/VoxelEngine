@@ -28,14 +28,28 @@ struct FMCCountPassOutputs
 
 struct FMCScanOutputs
 {
-	FRDGBufferRef VertOffsets = nullptr;   // N
+    // Vertex scan
+    FRDGBufferRef VertOffsets;      // N
+    FRDGBufferRef TotalVerts;       // 1
+	
 	FRDGBufferRef BlockSums   = nullptr;   // NumBlocks
 	FRDGBufferRef BlockOffsets= nullptr;   // NumBlocks
-	FRDGBufferRef TotalVerts  = nullptr;   // 1
-	FRDGBufferRef DebugTap = nullptr;  // 16 u32
 
-	uint32 NumElements = 0;
-	uint32 NumBlocks   = 0;
+    // Triangle scan (NEW)
+    FRDGBufferRef TriOffsets;       // N
+    FRDGBufferRef TotalTris;        // 1
+
+    // Debug
+    FRDGBufferRef DebugTap;         // optional
+
+    uint32 NumElements;
+    uint32 NumBlocks;
+};
+
+struct FMCScanCountsOutputs
+{
+	FMCScanOutputs Vert; // scan of VertCountPerCell
+	FMCScanOutputs Tri;  // scan of TriCountPerCell
 };
 
 struct FMCVertexCPU

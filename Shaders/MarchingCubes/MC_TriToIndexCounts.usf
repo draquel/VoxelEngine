@@ -1,0 +1,13 @@
+﻿#include "/Engine/Private/Common.ush"
+
+uint NumCells;
+StructuredBuffer<uint> InTriCounts;      // NumCells
+RWStructuredBuffer<uint> OutIndexCounts; // NumCells
+
+[numthreads(256,1,1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	uint i = DTid.x;
+	if (i >= NumCells) return;
+	OutIndexCounts[i] = InTriCounts[i] * 3u;
+}

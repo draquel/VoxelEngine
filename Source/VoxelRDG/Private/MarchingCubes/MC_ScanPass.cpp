@@ -107,6 +107,22 @@ public:
 };
 IMPLEMENT_GLOBAL_SHADER(FScan_ComputeTotalCS, "/Plugin/Voxel/Mesh/ScanTotal.usf", "Main", SF_Compute);
 
+class FMC_TriToIndexCountsCS : public FGlobalShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FMC_TriToIndexCountsCS);
+	SHADER_USE_PARAMETER_STRUCT(FMC_TriToIndexCountsCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32, NumCells)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, InTriCounts)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutIndexCounts)
+	END_SHADER_PARAMETER_STRUCT()
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters&) { return true; }
+};
+IMPLEMENT_GLOBAL_SHADER(FMC_TriToIndexCountsCS, "/Plugin/Voxel/MarchingCubes/MC_TriToIndexCounts.usf", "Main", SF_Compute);
+
 // ---------------------- Pass helpers ----------------------
 
 static void AddPass_DebugTap(
@@ -219,6 +235,36 @@ static void AddPass_ComputeTotalVerts(
 		FIntVector(1, 1, 1));
 }
 
+static FRDGBufferRef AddPass_TriToIndexCounts(
+	FRDGBuilder& GraphBuilder,
+	FRDGBufferRef TriCountPerCell,
+	uint32 NumCells)
+{
+	FRDGBufferRef IndexCounts = GraphBuilder.CreateBuffer(
+		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumCells),
+		TEXT("MC.IndexCountPerCell"));
+
+	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(IndexCounts), 0);
+
+	auto* Params = GraphBuilder.AllocParameters<FMC_TriToIndexCountsCS::FParameters>();
+	Params->NumCells       = NumCells;
+	Params->InTriCounts    = GraphBuilder.CreateSRV(TriCountPerCell);
+	Params->OutIndexCounts = GraphBuilder.CreateUAV(IndexCounts);
+
+	TShaderMapRef<FMC_TriToIndexCountsCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+
+	const uint32 Threads = 256;
+	const uint32 GroupsX = (NumCells + Threads - 1) / Threads;
+
+	FComputeShaderUtils::AddPass(
+		GraphBuilder,
+		RDG_EVENT_NAME("MC.TriToIndexCounts N=%u", NumCells),
+		CS,
+		Params,
+		FIntVector((int32)GroupsX, 1, 1));
+
+	return IndexCounts;
+}
 // ---------------------- Public API ----------------------
 
 uint32 FMC_ScanPass::CeilDivU32(uint32 a, uint32 b)
@@ -290,6 +336,86 @@ FMCScanOutputs FMC_ScanPass::AddMC_ScanPass(
 	// Pass 5: debug tap
 	AddPass_DebugTap(GraphBuilder, NumElements, Out.NumBlocks, VertCounts, OffsetsPartial, Out.BlockSums, Out.BlockOffsets, Out.VertOffsets, Out.TotalVerts, Out.DebugTap);
 	
+	return Out;
+}
+
+// void FMC_ScanPass::AddMC_TriScanPass(
+// 	FRDGBuilder& GraphBuilder,
+// 	FRDGBufferRef TriCountPerCell,
+// 	uint32 NumCells,
+// 	FRDGBufferRef& OutTriOffsets,
+// 	FRDGBufferRef& OutTotalTris)
+// {
+// 	const uint32 NumBlocks = CeilDivU32(NumCells, kScanBlockSize);
+//
+// 	OutTriOffsets = GraphBuilder.CreateBuffer(
+// 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumCells),
+// 		TEXT("MC.TriOffsets"));
+//
+// 	FRDGBufferRef BlockSums = GraphBuilder.CreateBuffer(
+// 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumBlocks),
+// 		TEXT("MC.TriBlockSums"));
+//
+// 	FRDGBufferRef BlockOffsets = GraphBuilder.CreateBuffer(
+// 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumBlocks),
+// 		TEXT("MC.TriBlockOffsets"));
+//
+// 	OutTotalTris = GraphBuilder.CreateBuffer(
+// 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 1),
+// 		TEXT("MC.TotalTris"));
+//
+// 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(OutTriOffsets), 0);
+// 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(BlockSums), 0);
+// 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(BlockOffsets), 0);
+// 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(OutTotalTris), 0);
+//
+// 	// Pass 1
+// 	AddPass_BlockScan1024(
+// 		GraphBuilder,
+// 		TriCountPerCell,
+// 		NumCells,
+// 		OutTriOffsets,
+// 		BlockSums);
+//
+// 	// Pass 2
+// 	AddPass_BlockScan1024(
+// 		GraphBuilder,
+// 		BlockSums,
+// 		NumBlocks,
+// 		BlockOffsets,
+// 		/*dummy*/ BlockOffsets);
+//
+// 	// Pass 3
+// 	AddPass_AddBlockOffsets(
+// 		GraphBuilder,
+// 		OutTriOffsets,
+// 		BlockOffsets,
+// 		NumCells,
+// 		OutTriOffsets);
+//
+// 	// Pass 4
+// 	AddPass_ComputeTotalVerts(
+// 		GraphBuilder,
+// 		BlockSums,
+// 		BlockOffsets,
+// 		NumBlocks,
+// 		OutTotalTris);
+// }
+
+FMCScanCountsOutputs FMC_ScanPass::AddScanCounts(
+	FRDGBuilder& GraphBuilder,
+	FRDGBufferRef VertCounts,
+	FRDGBufferRef TriCounts,
+	uint32 NumElements)
+{
+	FMCScanCountsOutputs Out;
+
+	// Scan vertex counts -> vertex offsets + total verts
+	Out.Vert = AddMC_ScanPass(GraphBuilder, VertCounts, NumElements);
+
+	// Scan triangle counts -> triangle offsets + total tris
+	Out.Tri  = AddMC_ScanPass(GraphBuilder, TriCounts, NumElements);
+
 	return Out;
 }
 
