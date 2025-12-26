@@ -23,8 +23,6 @@ public:
 		SHADER_PARAMETER(uint32,   ChunkSeed)
 		SHADER_PARAMETER(uint32,   Padding0)
 
-		SHADER_PARAMETER_STRUCT_REF(FVoxelNoiseParams, NoiseParams) // OK name
-
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint32>, OutTriCountPerCell)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint32>, OutVertCountPerCell)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint32>, OutCaseIndexPerCell)
@@ -70,6 +68,7 @@ FMCCountPassOutputs FMC_CountPass::AddMC_CountPass(
 	
 	const FVoxelNoiseParams NoiseParamsGPU = MakeVoxelNoiseParams(NoiseParamsCPU);
 	
+	
 	auto* PassParams = GraphBuilder.AllocParameters<FMC_CountCS::FParameters>();
 	PassParams->ChunkOriginWS = FVector3f(ChunkParams.ChunkOriginWS);
 	PassParams->StepSizeWS    = ChunkParams.StepSizeWS;
@@ -79,8 +78,8 @@ FMCCountPassOutputs FMC_CountPass::AddMC_CountPass(
 	PassParams->Padding0      = 0;
 
 	// Create a UB for this dispatch (single-frame is fine for now)
-	PassParams->NoiseParams = TUniformBufferRef<FVoxelNoiseParams>::CreateUniformBufferImmediate(NoiseParamsGPU, UniformBuffer_SingleFrame);
-
+	// PassParams->NoiseParams = TUniformBufferRef<FVoxelNoiseParams>::CreateUniformBufferImmediate(NoiseParamsGPU, UniformBuffer_SingleFrame);
+	
 	PassParams->OutTriCountPerCell  = GraphBuilder.CreateUAV(Out.TriCountPerCell);
 	PassParams->OutVertCountPerCell = GraphBuilder.CreateUAV(Out.VertCountPerCell);
 	PassParams->OutCaseIndexPerCell = GraphBuilder.CreateUAV(Out.CaseIndexPerCell);
