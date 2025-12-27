@@ -1,0 +1,28 @@
+﻿#include "/Engine/Private/Common.ush"
+
+// /Plugin/Voxel/Mesh/MC_BuildDispatchArgs.usf
+// Builds DispatchIndirect args from TotalTris[0].
+
+StructuredBuffer<uint> InTotalTris;
+
+// 3 uints: GroupCountX, GroupCountY, GroupCountZ
+RWBuffer<uint> OutDispatchArgs;
+
+cbuffer Params : register(b0)
+{
+	uint ThreadsPerGroup;
+	uint Padding0;
+	uint Padding1;
+	uint Padding2;
+};
+
+[numthreads(1,1,1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	uint numTris = InTotalTris[0];
+	uint groupsX = (numTris + ThreadsPerGroup - 1) / ThreadsPerGroup;
+
+	OutDispatchArgs[0] = groupsX;
+	OutDispatchArgs[1] = 1;
+	OutDispatchArgs[2] = 1;
+}

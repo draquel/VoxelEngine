@@ -1,0 +1,42 @@
+﻿#include "/Engine/Private/Common.ush"
+
+// /Plugin/Voxel/MarchingCubes/MC_Normals.usf
+
+StructuredBuffer<float4> InPositions;
+StructuredBuffer<uint>   InIndices;
+
+StructuredBuffer<uint> InTotalTris;
+StructuredBuffer<uint> InTotalVerts;
+
+RWStructuredBuffer<float3> OutNormals;
+
+[numthreads(64, 1, 1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	uint tri = DTid.x;
+
+	uint numTris  = InTotalTris[0];
+	uint numVerts = InTotalVerts[0];
+
+	if (tri >= numTris) return;
+
+	uint i0 = InIndices[tri * 3 + 0];
+	uint i1 = InIndices[tri * 3 + 1];
+	uint i2 = InIndices[tri * 3 + 2];
+
+	if (i0 >= numVerts || i1 >= numVerts || i2 >= numVerts) return;
+
+	float3 v0 = InPositions[i0].xyz;
+	float3 v1 = InPositions[i1].xyz;
+	float3 v2 = InPositions[i2].xyz;
+
+	float3 n = cross(v1 - v0, v2 - v0);
+	float len2 = dot(n, n);
+	n = (len2 > 1e-20f) ? n * rsqrt(len2) : float3(0, 0, 1);
+
+	// Unique verts per tri => no races.
+	OutNormals[i0] = n;
+	OutNormals[i1] = n;
+	OutNormals[i2] = n;
+}
+
