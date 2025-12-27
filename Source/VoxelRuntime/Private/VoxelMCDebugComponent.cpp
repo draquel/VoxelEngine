@@ -558,10 +558,7 @@ void UVoxelMCDebugComponent::ConsumeAndRenderPMC()
 {
 	UProceduralMeshComponent* PMC = FindOwnerPMC();
 	if (!PMC)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("MCDebugComponent: No owner PMC found!"));
 		return;
-	}
 
 	TArray<FVector4f> Verts4;
 	TArray<uint32> IndU32;
@@ -570,10 +567,7 @@ void UVoxelMCDebugComponent::ConsumeAndRenderPMC()
 		FScopeLock Lock(&ReadbackCS);
 
 		if (!bHasPendingScatterVerts || !bHasPendingIndices)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("MCDebugComponent: No pending scatter/indices flags yet."));
 			return;
-		}
 
 		Verts4 = MoveTemp(PendingScatterVerts);
 		IndU32 = MoveTemp(PendingIndices);
