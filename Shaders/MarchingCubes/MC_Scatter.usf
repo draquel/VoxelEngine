@@ -39,97 +39,129 @@ uint   Padding0;
 // };
 ConstantBuffer<FVoxelNoiseParams> NoiseParams;
 
-// Scan output (exclusive prefix sum of VertCountPerCell)
-StructuredBuffer<uint> VertOffsets;     // N cells
+// From Count + Scan
+StructuredBuffer<uint> VertCountPerCell; // N cells, verts-per-cell (triCount*3)
+StructuredBuffer<uint> VertOffsets;      // N cells, exclusive prefix sum of VertCountPerCell
 
-// Output vertex buffer sized to TotalVerts (float4 per vertex here)
-RWStructuredBuffer<float4> OutVertices; // TotalVerts entries
+// Output
+RWStructuredBuffer<float4> OutVertices;  // sized to NumCells*15 on CPU; only [0..TotalVerts) is valid
 
-// Replace this with your real noise density
+// ---- Helpers ----
+// static const float3 CornerOfs[8] =
+// {
+// 	float3(0,0,0), float3(1,0,0), float3(1,1,0), float3(0,1,0),
+// 	float3(0,0,1), float3(1,0,1), float3(1,1,1), float3(0,1,1)
+// };
+//
+// static const uint2 EdgeCorners[12] =
+// {
+// 	uint2(0,1), uint2(1,2), uint2(2,3), uint2(3,0),
+// 	uint2(4,5), uint2(5,6), uint2(6,7), uint2(7,4),
+// 	uint2(0,4), uint2(1,5), uint2(2,6), uint2(3,7)
+// };
+
+// World-space density. Plane test: z = 0 plane in world.
 float SampleDensityWS(float3 Pws)
 {
-    // Example plane at Z=0:
-    return Pws.z;
-}
-
-uint ComputeCaseIndex(float3 cellMinWS)
-{
-    uint caseIndex = 0;
-    [unroll] for (uint i = 0; i < 8; ++i)
-    {
-        float3 p = cellMinWS + CornerOfs[i] * StepSizeWS;
-        float d  = SampleDensityWS(p);
-        caseIndex |= (d < IsoLevel) ? (1u << i) : 0u;
-    }
-    return caseIndex;
+	return Pws.z;
 }
 
 float3 VertexInterp(float iso, float3 p0, float3 p1, float d0, float d1)
 {
-    // Robust-ish interpolation
-    float denom = (d1 - d0);
-    float t = (abs(denom) > 1e-8f) ? ((iso - d0) / denom) : 0.5f;
-    t = clamp(t, 0.0f, 1.0f);
-    return lerp(p0, p1, t);
+	float denom = (d1 - d0);
+	float t = (abs(denom) > 1e-8f) ? ((iso - d0) / denom) : 0.5f;
+	t = clamp(t, 0.0f, 1.0f);
+	return lerp(p0, p1, t);
 }
 
+uint ComputeCaseIndex(float3 cellMinWS, out float3 cpos[8], out float cd[8])
+{
+	uint caseIndex = 0;
+	[unroll] for (uint i = 0; i < 8; ++i)
+	{
+		cpos[i] = cellMinWS + CornerOfs[i] * StepSizeWS;
+		cd[i]   = SampleDensityWS(cpos[i]);
+		caseIndex |= (cd[i] < IsoLevel) ? (1u << i) : 0u;
+	}
+	return caseIndex;
+}
+
+// ---- Kernel ----
+// Matches your pass dispatch: Groups = ceil(N/8) in each axis
 [numthreads(8,8,8)]
 void Main(uint3 DTid : SV_DispatchThreadID)
 {
-    uint x = DTid.x, y = DTid.y, z = DTid.z;
-    if (x >= CellsPerAxis || y >= CellsPerAxis || z >= CellsPerAxis) return;
+	const uint x = DTid.x;
+	const uint y = DTid.y;
+	const uint z = DTid.z;
 
-    uint cellIndex = x + y * CellsPerAxis + z * CellsPerAxis * CellsPerAxis;
-    float3 cellMinWS = ChunkOriginWS + float3(x,y,z) * StepSizeWS;
+	if (x >= CellsPerAxis || y >= CellsPerAxis || z >= CellsPerAxis)
+		return;
 
-    // Case
-    uint caseIndex = ComputeCaseIndex(cellMinWS);
-    if (caseIndex == 0 || caseIndex == 255) return;
+	const uint cellsPerSlice = CellsPerAxis * CellsPerAxis;
+	const uint cellIndex = x + y * CellsPerAxis + z * cellsPerSlice;
 
-    uint edgeMask = EdgeTable[caseIndex];
-    if (edgeMask == 0) return;
+	// Authoritative per-cell vertex count from Count pass (triCount*3)
+	const uint vc = VertCountPerCell[cellIndex];
+	if (vc == 0)
+		return;
 
-    // Corner positions + densities
-    float3 cpos[8];
-    float  cd[8];
-    [unroll] for (uint i = 0; i < 8; ++i)
-    {
-        cpos[i] = cellMinWS + CornerOfs[i] * StepSizeWS;
-        cd[i]   = SampleDensityWS(cpos[i]);
-    }
+	// Base output index from scan (exclusive prefix sum)
+	const uint base = VertOffsets[cellIndex];
 
-    // Intersections on edges (up to 12)
-    float3 epos[12];
-    [unroll] for (uint e = 0; e < 12; ++e)
-    {
-        if ((edgeMask & (1u << e)) != 0)
-        {
-            uint2 cc = EdgeCorners[e];
-            epos[e] = VertexInterp(IsoLevel, cpos[cc.x], cpos[cc.y], cd[cc.x], cd[cc.y]);
-        }
-    }
+	// Compute densities at corners
+	float3 cellMinWS = ChunkOriginWS + float3(x, y, z) * StepSizeWS;
 
-    // Base output index from scan
-    uint base = VertOffsets[cellIndex];
+	float3 cpos[8];
+	float  cd[8];
+	uint caseIndex = ComputeCaseIndex(cellMinWS, cpos, cd);
 
-    // Emit triangles from TriTable (3 edges per tri)
-    // triTable row is 16 entries; -1 terminates.
-    uint outV = 0;
-    [unroll] for (uint t = 0; t < 16; t += 3)
-    {
-        int e0 = TriTable[caseIndex][t + 0];
-        if (e0 < 0) break;
+	// For safety: if count/scatter disagree, refuse to emit.
+	// (Plane should not create these cases if your count matches.)
+	if (caseIndex == 0 || caseIndex == 255)
+		return;
 
-        int e1 = TriTable[caseIndex][t + 1];
-        int e2 = TriTable[caseIndex][t + 2];
+	const uint edgeMask = EdgeTable[caseIndex];
+	if (edgeMask == 0)
+		return;
 
-        // Write 3 vertices (float4 with w unused; you can pack material/id in w later)
-        OutVertices[base + outV + 0] = float4(epos[e0], 1.0f);
-        OutVertices[base + outV + 1] = float4(epos[e1], 1.0f);
-        OutVertices[base + outV + 2] = float4(epos[e2], 1.0f);
-        outV += 3;
-    }
+	// Edge intersection positions
+	float3 epos[12];
+	[unroll] for (uint e = 0; e < 12; ++e)
+	{
+		if ((edgeMask & (1u << e)) != 0)
+		{
+			uint2 cc = EdgeCorners[e];
+			epos[e] = VertexInterp(IsoLevel, cpos[cc.x], cpos[cc.y], cd[cc.x], cd[cc.y]);
+		}
+	}
 
-    // Optional: if you want safety, you can clamp writes using a count pass
-    // but the table-driven loop is typically consistent with your count pass.
+	// Emit vertices in triangle order.
+	// Because your current index pass is "indexless" (0..TotalVerts-1),
+	// we MUST keep vertex ordering such that every 3 vertices = one triangle.
+	uint outV = 0;
+
+	[unroll] for (uint t = 0; t < 16; t += 3)
+	{
+		const int e0 = TriTable[caseIndex][t + 0];
+		if (e0 < 0) break;
+
+		const int e1 = TriTable[caseIndex][t + 1];
+		const int e2 = TriTable[caseIndex][t + 2];
+
+		// Don't write past what Count said for this cell.
+		if (outV + 3 > vc)
+			break;
+
+		// Convert to LOCAL space for PMC: subtract ChunkOriginWS
+		const float3 p0L = epos[e0] - ChunkOriginWS;
+		const float3 p1L = epos[e1] - ChunkOriginWS;
+		const float3 p2L = epos[e2] - ChunkOriginWS;
+
+		OutVertices[base + outV + 0] = float4(p0L, 1.0f);
+		OutVertices[base + outV + 1] = float4(p1L, 1.0f);
+		OutVertices[base + outV + 2] = float4(p2L, 1.0f);
+
+		outV += 3;
+	}
 }

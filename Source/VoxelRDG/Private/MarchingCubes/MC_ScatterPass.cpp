@@ -33,11 +33,13 @@ public:
 		SHADER_PARAMETER(uint32,   CellsPerAxis)
 		SHADER_PARAMETER(float,    IsoLevel)
 		SHADER_PARAMETER(uint32,   ChunkSeed)
-		SHADER_PARAMETER(uint32,   Padding0)
+		SHADER_PARAMETER(uint32,   bUseCaseIndexPerCell)
+		SHADER_PARAMETER(uint32,   MaxVerts)
 
 		SHADER_PARAMETER_STRUCT_REF(FVoxelNoiseParams, NoiseParams)
 
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, VertOffsets)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, CaseIndexPerCell)
 
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<float4>, OutVertices)
 	END_SHADER_PARAMETER_STRUCT();
@@ -82,13 +84,15 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	FRDGBuilder& GraphBuilder,
 	const FMCChunkParamsCPU& Chunk,
 	const FVoxelNoiseParamsCPU& NoiseCPU,
-	FRDGBufferRef VertCountPerCell,
 	FRDGBufferRef VertOffsets,
-	uint32 NumCells)
+	FRDGBufferRef CaseIndexPerCell,
+	uint32 MaxVerts,
+	bool bUseIndexPerCell
+	)
 {
 	FMCScatterOutputs Out;
 
-	Out.MaxVerts = NumCells * kMaxVertsPerCell;
+	Out.MaxVerts = MaxVerts;
 
 	Out.Vertices = GraphBuilder.CreateBuffer(
 		FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector4f), Out.MaxVerts),
@@ -105,12 +109,13 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	PassParams->CellsPerAxis  = Chunk.CellsPerAxis;
 	PassParams->IsoLevel      = Chunk.IsoLevel;
 	PassParams->ChunkSeed     = Chunk.ChunkSeed;
-	PassParams->Padding0      = 0;
+	PassParams->MaxVerts      = MaxVerts;
+	PassParams->bUseCaseIndexPerCell = bUseIndexPerCell;
 
-	PassParams->NoiseParams = TUniformBufferRef<FVoxelNoiseParams>::CreateUniformBufferImmediate(
-		NoiseGPU, UniformBuffer_SingleFrame);
+	PassParams->NoiseParams = TUniformBufferRef<FVoxelNoiseParams>::CreateUniformBufferImmediate(NoiseGPU, UniformBuffer_SingleFrame);
 
 	PassParams->VertOffsets      = GraphBuilder.CreateSRV(VertOffsets);
+	PassParams->CaseIndexPerCell = GraphBuilder.CreateSRV(CaseIndexPerCell);
 	PassParams->OutVertices      = GraphBuilder.CreateUAV(Out.Vertices);
 
 	TShaderMapRef<FMC_ScatterCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
@@ -124,7 +129,7 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 
 	FComputeShaderUtils::AddPass(
 		GraphBuilder,
-		RDG_EVENT_NAME("MC_Scatter N=%u Cells=%u MaxVerts=%u", N, NumCells, Out.MaxVerts),
+		RDG_EVENT_NAME("MC_Scatter N=%u MaxVerts=%u", N, Out.MaxVerts),
 		CS,
 		PassParams,
 		Groups);
