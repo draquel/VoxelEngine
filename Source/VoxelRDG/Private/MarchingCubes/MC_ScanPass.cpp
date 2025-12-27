@@ -344,3 +344,22 @@ FMCScanCountsOutputs FMC_ScanPass::AddScanCounts(
 	return Out;
 }
 
+FMCScanOutputs FMC_ScanPass::AddMC_ScanPass_VertsAndTris(FRDGBuilder& GraphBuilder, FRDGBufferRef VertCountsPerCell,
+	FRDGBufferRef TriCountsPerCell, uint32 NumElements)
+{
+	// 1) Vertex scan populates VertOffsets/TotalVerts (+ BlockSums/BlockOffsets/DebugTap)
+	FMCScanOutputs V = AddMC_ScanPass(GraphBuilder, VertCountsPerCell, NumElements);
+
+	// 2) Triangle scan: reuse the same scan pipeline
+	//    It will return results in VERT slots, so we remap into the TRI slots.
+	FMCScanOutputs T = AddMC_ScanPass(GraphBuilder, TriCountsPerCell, NumElements);
+
+	// Pack tri results into the “tri” fields of the vertex output.
+	V.TriOffsets = T.VertOffsets;
+	V.TotalTris  = T.TotalVerts;
+
+	// Optional: you usually do NOT need tri debug tap; keep V.DebugTap as-is (vertex scan tap).
+	return V;
+
+}
+
