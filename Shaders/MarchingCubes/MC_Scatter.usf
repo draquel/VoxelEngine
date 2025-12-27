@@ -1,11 +1,43 @@
 ﻿#include "/Engine/Private/Common.ush"
+#include "../Noise/VoxelNoiseParams.ush"
 #include "MC_Tables.ush"
 
-// ----- Params injected by UE parameter struct -----
+// If you have a matching .ush for noise params, you can include it too,
+// but you don't need it for this plane test:
+// #include "VoxelNoiseParams.ush"
+
+// ---- Parameters injected by UE parameter struct ----
 float3 ChunkOriginWS;
 float  StepSizeWS;
 uint   CellsPerAxis;
 float  IsoLevel;
+uint   ChunkSeed;
+uint   Padding0;
+
+// NOTE: Present in parameter struct; not used yet in this plane test.
+// Must stay declared to match the C++ parameter layout.
+// struct FVoxelNoiseParams
+// {
+// 	float3 WorldScale;
+// 	float  HeightAmp;
+//
+// 	float  HeightFreq;
+// 	float  HeightGain;
+// 	uint   HeightOctaves;
+//
+// 	float  OverhangFreq;
+// 	float  OverhangAmp;
+// 	uint   OverhangOctaves;
+//
+// 	float  CaveFreq;
+// 	float  CaveAmp;
+// 	float  CaveThreshold;
+// 	float  CaveSoftness;
+//
+// 	uint   Seed;
+// 	float3 _Padding;
+// };
+ConstantBuffer<FVoxelNoiseParams> NoiseParams;
 
 // Scan output (exclusive prefix sum of VertCountPerCell)
 StructuredBuffer<uint> VertOffsets;     // N cells

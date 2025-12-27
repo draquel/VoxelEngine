@@ -1,6 +1,7 @@
 ﻿// /Plugin/Voxel/MarchingCubes/MC_Count.usf
 
 #include "/Engine/Private/Common.ush"
+#include "../Noise/VoxelNoiseParams.ush"
 #include "MC_Tables.ush"
 
 // NOTE: These globals are injected by UE's shader parameter struct (FMC_CountCS::FParameters)
@@ -11,6 +12,8 @@ uint   CellsPerAxis;
 float  IsoLevel;
 uint   ChunkSeed;   // unused for now
 uint   Padding0;  
+
+FVoxelNoiseParams NoiseParams;
 
 RWStructuredBuffer<uint> OutTriCountPerCell;   // NumCells
 RWStructuredBuffer<uint> OutVertCountPerCell;  // NumCells
