@@ -5,22 +5,6 @@
 #include "RenderGraphUtils.h"
 #include "MarchingCubes/MarchingCubesDispatch.h"
 
-// VoxelRDG/Public/MarchingCubes/MC_Types.h
-// struct FMCVertexCPU
-// {
-// 	FVector3f Position;
-// 	FVector3f Normal;
-// 	FVector2f UV;
-// 	uint32    MaterialId;
-// };
-// static_assert(sizeof(FMCVertexCPU) % 4 == 0, "Align");
-
-// struct FMCScatterOutputs
-// {
-// 	FRDGBufferRef Vertices = nullptr;   // float4[MaxVerts]
-// 	uint32 MaxVerts = 0;
-// };
-
 class FMC_ScatterCS : public FGlobalShader
 {
 public:
