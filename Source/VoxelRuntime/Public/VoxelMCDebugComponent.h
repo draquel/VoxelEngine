@@ -1,150 +1,161 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "ProceduralMeshComponent.h"
-#include "VoxelRDG/Public/VoxelNoiseParams.h"
-#include "RHIGPUReadback.h"
 #include "Components/ActorComponent.h"
-#include "Containers/Array.h"
-#include "HAL/CriticalSection.h"
+#include "RHI.h"
+#include "RHIResources.h"
+#include "VoxelNoiseParams.h"
 #include "VoxelMCDebugComponent.generated.h"
 
-class UproceduralMeshComponent;
+class FRHIGPUBufferReadback;
+class UProceduralMeshComponent;
 
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+UCLASS(ClassGroup=(Voxel), meta=(BlueprintSpawnableComponent))
 class VOXELRUNTIME_API UVoxelMCDebugComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:
 	UVoxelMCDebugComponent();
-	
-	// If true, dispatch once on BeginPlay.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
-	bool bDispatchOnBeginPlay = true;
 
-	// If > 0, keeps dispatching repeatedly (seconds).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
-	float DispatchIntervalSeconds = 0.25f;
-
-	// How many entries to print from TriCountPerCell (starting at 0).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test", meta=(ClampMin="1", ClampMax="32768"))
-	int32 DebugReadbackCount = 64;
-
-	// Chunk params for the test
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
-	int32 CellsPerAxis = 32;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
-	float StepSizeWS = 100.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
-	float IsoLevel = 0.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
-	int32 ChunkSeed = 1337;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
-	int32 DebugReadbackOffset = 0; // in uint32 elements, not bytes
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
-	int32 DebugReadbackZSlice = -1; // -1 = disabled, otherwise uses z*Cells^2
-	
-	// Noise params for the test
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
-	FVoxelNoiseParamsCPU NoiseParamsCPU;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|MC Test")
-	bool bVerbose = true;
-	unsigned DebugScatterReadbackVerts = 64;
-
-	// Manual trigger (Blueprint callable)
-	UFUNCTION(BlueprintCallable, Category="Voxel|MC Test")
-	void DispatchNow();
-	
-	void BuildPMC(UProceduralMeshComponent* PMC, const TArray<FVector>& Verts, int32 TotalVerts);
-
-protected:
 	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
+	// --- Dispatch controls ---
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	float DispatchIntervalSeconds = 0.25f;
+
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	int32 CellsPerAxis = 32;
+
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	float StepSizeWS = 100.f;
+
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	float IsoLevel = 0.f;
+
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	int32 ChunkSeed = 1337;
+
+	// --- Debug toggles ---
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	bool bDebugReadTriCounts = false;
+
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	bool bDebugReadScanTap = true;
+
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	bool bDebugReadScatter = true;
+
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	bool bDebugReadIndices = true;
+
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	bool bRenderToOwnerPMC = true;
+
+	// Read back only first N verts/indices (keeps debug cheap)
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug", meta=(ClampMin="0"))
+	int32 MaxDebugVertsToRead = 6144;
+
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug", meta=(ClampMin="0"))
+	int32 MaxDebugIndicesToRead = 6144*15;
+	
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	FVoxelNoiseParamsCPU Noise;
+	
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	uint32 RequestedScatterVerts = 8;
+
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	uint32 RequestedScatterIndices;
+	
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	double DebugReadbackCount = 64;
+	
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	int DebugReadbackOffset =  0;
+	
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	int DebugReadbackZSlice = 0;
+
 private:
-	
-	//Count
-	FCriticalSection ReadbackCS;
-	TArray<uint32>   PendingTriCounts;   // filled on render thread, consumed on game thread
-	bool bCanFreeCountReadback = false;
-	bool bHasPendingResults = false;
-	
-	//Scan
-	uint32 PendingTotalVerts = 0;
-	uint32 PendingNumBlocks = 0;
-	uint32 PendingSums = 0;
-	uint32 PendingOffs = 0;
-	bool bDebugReadTriCounts = true;
-	bool bCanFreeTotalVertsReadback = false;
-	bool bHasPendingTotalVerts = false;
-	
-	// DebugTap (16 u32)
-	TArray<uint32> PendingDebugTap;   // length 16
-	bool bDebugTapPending = false;
-	bool bHasPendingDebugTap = false;
-	bool bCanFreeDebugTapReadback = false;
+	// --- lifecycle ---
+	void DispatchNow();
+	bool AnyPending() const;
 
-	//Scatter
-	uint32 ScatterReadbackCount = 64;
-	bool bScatterPending;
-	TArray<FVector4f> PendingScatterVerts;
-	bool bHasPendingScatterVerts = false;
-	bool bCanFreeScatterReadback = false;
-
-	//Status
-	TArray<uint32> PendingStatus;
-	bool bStatusPending = false;
-	bool bHasPendingStatus = false;
-	bool bCanFreeStatusReadback = false;
-	
-	//index
-	TArray<uint32> PendingIndices;
-	bool bIndicesPending = false;
-	bool bHasPendingIndices = false;
-	bool bCanFreeIndexReadback = false;
-	
-	//PMC
-	TArray<FVector> PendingPMCVerts;
-	TArray<int> PendingPMCIndices;
-	bool bHasPendingPMC;
-	
-	bool bReadbackPending = false;
-	
-	void PollReadback();
+	// --- polling (tick-thread) ---
+	void PollTriCounts();
 	void PollTotalVerts();
+	void PollScatterVerts();
 	void PollDebugTap();
-	void PollScatter();
-	void PollStatus();
 	void PollIndices();
-	void ConsumePMCResults();
 
-	float TimeSinceLastDispatch = 0.0f;
-	bool bCountPending = false;
-	
-	bool bTotalVertsPending = false;
-	uint32 LastTotalVerts = 0;
-	uint32 LastTotalIndices = 0;
-	
-	// Readback lives on render thread completion, we just poll readiness on game thread.
+	// --- consume (game thread) ---
+	void ConsumeAndLog();
+	void ConsumeAndRenderPMC();
+
+	// Helper to find an existing PMC on owner (your “worldActor existing PMC” pattern)
+	UProceduralMeshComponent* FindOwnerPMC() const;
+
+private:
+	// ---------------------------
+	// State machine (pending flags)
+	// ---------------------------
+	bool bTriPending    = false;
+	bool bTotalPending  = false;
+	bool bDebugTapPending    = false;
+	bool bScatterPending= false;
+	bool bIndicesPending  = false;
+
+	// ---------------------------
+	// Readback objects (created on game thread)
+	// ---------------------------
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> TriCountReadback;
-	
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> TotalVertsReadback;
-	
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> DebugTapReadback;
-	
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> ScatterVertsReadback;
-	
-	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> StatusReadback;
-	
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> IndicesReadback;
+
+	// ---------------------------
+	// Readback “how much did we copy”
+	// ---------------------------
+	uint32 ScatterReadbackVerts = 0;
+	uint32 IndexReadbackCount   = 0;
+
+	// ---------------------------
+	// Threading guards + pending data
+	// ---------------------------
+	mutable FCriticalSection ReadbackCS;
+
+	bool bHasPendingTriCounts   = false;
+	bool bHasPendingTotalVerts  = false;
+	bool bHasPendingDebugTap    = false;
+	bool bHasPendingScatterVerts= false;
+	bool bHasPendingIndices       = false;
+	
+	bool bCanFreeTriCountsReadback   = false;
+	bool bCanFreeTotalVertsReadback  = false;
+	bool bCanFreeTapReadback = false;
+	bool bCanFreeScatterReadback= false;
+	bool bCanFreeIndicesReadback= false;
+
+	TArray<uint32>    PendingTriCounts;     // optional
+	uint32            PendingTotalVerts = 0;
+	TArray<uint32>    PendingDebugTap;      // 16 u32
+	TArray<FVector4f> PendingScatterVerts;  // float4
+	TArray<uint32>    PendingIndices;       // uint
+	
+	uint32 PendingSums;
+	uint32 PendingOffs;
+	uint32 PendingNumBlocks;
+	
+
+	// last-known (for rendering decisions)
+	uint32 LastTotalVerts = 0;
+	uint32 LastIndicesRead = 0;
+	uint32 LastScatterRead = 0;
+	
+
+	// timing
+	float TimeSinceLastDispatch = 0.f;
 };
