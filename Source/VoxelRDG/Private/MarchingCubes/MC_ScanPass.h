@@ -11,6 +11,5 @@ public:
 	
 	// VertCounts is N = Cells^3 (uint32 per cell). Values are typically triCount*3.
 	static FMCScanOutputs AddMC_ScanPass(FRDGBuilder& GraphBuilder, FRDGBufferRef VertCounts, uint32 NumElements);
-	static void AddMC_TriScanPass(FRDGBuilder& GraphBuilder, FRDGBufferRef TriCountPerCell, uint32 NumCells, FRDGBufferRef& OutTriOffsets, FRDGBufferRef& OutTotalTris);
 	static FMCScanCountsOutputs AddScanCounts(FRDGBuilder& GraphBuilder, FRDGBufferRef VertCounts, FRDGBufferRef TriCounts, uint32 NumElements);
 };

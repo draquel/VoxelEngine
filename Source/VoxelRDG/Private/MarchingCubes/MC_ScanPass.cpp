@@ -10,18 +10,6 @@
 #include "RHIStaticStates.h"
 #include "MarchingCubes/MarchingCubesDispatch.h"
 
-// struct FMCScanOutputs
-// {
-// 	FRDGBufferRef VertOffsets = nullptr;   // N
-// 	FRDGBufferRef BlockSums   = nullptr;   // NumBlocks
-// 	FRDGBufferRef BlockOffsets= nullptr;   // NumBlocks
-// 	FRDGBufferRef TotalVerts  = nullptr;   // 1
-// 	FRDGBufferRef DebugTap = nullptr;  // 16 u32
-//
-// 	uint32 NumElements = 0;
-// 	uint32 NumBlocks   = 0;
-// };
-
 // ---------------------- Shaders ----------------------
 
 class FScan_DebugTapCS : public FGlobalShader
@@ -338,69 +326,6 @@ FMCScanOutputs FMC_ScanPass::AddMC_ScanPass(
 	
 	return Out;
 }
-
-// void FMC_ScanPass::AddMC_TriScanPass(
-// 	FRDGBuilder& GraphBuilder,
-// 	FRDGBufferRef TriCountPerCell,
-// 	uint32 NumCells,
-// 	FRDGBufferRef& OutTriOffsets,
-// 	FRDGBufferRef& OutTotalTris)
-// {
-// 	const uint32 NumBlocks = CeilDivU32(NumCells, kScanBlockSize);
-//
-// 	OutTriOffsets = GraphBuilder.CreateBuffer(
-// 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumCells),
-// 		TEXT("MC.TriOffsets"));
-//
-// 	FRDGBufferRef BlockSums = GraphBuilder.CreateBuffer(
-// 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumBlocks),
-// 		TEXT("MC.TriBlockSums"));
-//
-// 	FRDGBufferRef BlockOffsets = GraphBuilder.CreateBuffer(
-// 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumBlocks),
-// 		TEXT("MC.TriBlockOffsets"));
-//
-// 	OutTotalTris = GraphBuilder.CreateBuffer(
-// 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 1),
-// 		TEXT("MC.TotalTris"));
-//
-// 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(OutTriOffsets), 0);
-// 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(BlockSums), 0);
-// 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(BlockOffsets), 0);
-// 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(OutTotalTris), 0);
-//
-// 	// Pass 1
-// 	AddPass_BlockScan1024(
-// 		GraphBuilder,
-// 		TriCountPerCell,
-// 		NumCells,
-// 		OutTriOffsets,
-// 		BlockSums);
-//
-// 	// Pass 2
-// 	AddPass_BlockScan1024(
-// 		GraphBuilder,
-// 		BlockSums,
-// 		NumBlocks,
-// 		BlockOffsets,
-// 		/*dummy*/ BlockOffsets);
-//
-// 	// Pass 3
-// 	AddPass_AddBlockOffsets(
-// 		GraphBuilder,
-// 		OutTriOffsets,
-// 		BlockOffsets,
-// 		NumCells,
-// 		OutTriOffsets);
-//
-// 	// Pass 4
-// 	AddPass_ComputeTotalVerts(
-// 		GraphBuilder,
-// 		BlockSums,
-// 		BlockOffsets,
-// 		NumBlocks,
-// 		OutTotalTris);
-// }
 
 FMCScanCountsOutputs FMC_ScanPass::AddScanCounts(
 	FRDGBuilder& GraphBuilder,
