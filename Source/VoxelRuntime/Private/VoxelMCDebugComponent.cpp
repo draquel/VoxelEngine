@@ -141,7 +141,7 @@ void UVoxelMCDebugComponent::DispatchNow()
             const FMCCountPassOutputs Count = FMC_CountPass::AddMC_CountPass(GraphBuilder, Chunk , Noise);
 
             const uint32 N = Count.CellsPerAxis * Count.CellsPerAxis * Count.CellsPerAxis;
-            const FMCScanOutputs Scan = FMC_ScanPass::AddMC_ScanPass(GraphBuilder, Count.VertCountPerCell, N);
+        	FMCScanOutputs Scan = FMC_ScanPass::AddMC_ScanPass_VertsAndTris(GraphBuilder, Count.VertCountPerCell,Count.TriCountPerCell, N);
 
             // Scatter: you probably want TotalVerts-driven sizing eventually;
             // for now keep your “RequestedVerts” debug approach.
@@ -149,8 +149,8 @@ void UVoxelMCDebugComponent::DispatchNow()
             const FMCScatterOutputs Scatter = FMC_ScatterPass::AddMC_ScatterPass(GraphBuilder, Chunk , Noise, Scan.VertOffsets, Count.VertCountPerCell, RequestedVerts, true);
 
             // Indexless indices: MaxIndices should match what you intend to read back / render
-            const uint32 MaxIndices = RequestedScatterIndices; // indexless: 0..TotalVerts-1 (or debug slice)
-            FRDGBufferRef Indices = FMC_IndexPass::AddMC_IndexScatterPass(GraphBuilder, Scan.TotalVerts, MaxIndices);
+            const uint32 MaxIndices = N * 15; // indexless: 0..TotalVerts-1 (or debug slice)
+            FRDGBufferRef Indices = FMC_IndexPass::AddMC_IndexScatterPass(GraphBuilder, Count.TriCountPerCell, Scan.TriOffsets, Scan.VertOffsets, N, MaxIndices);
 
             // Extract
             TRefCountPtr<FRDGPooledBuffer> ExtractTri;
