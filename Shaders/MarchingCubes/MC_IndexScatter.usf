@@ -1,32 +1,33 @@
 #include "/Engine/Private/Common.ush"
 
-// Matches C++ params:
-//  SHADER_PARAMETER(uint32, MaxIndices)
-//  SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, TotalVertsBuf)
-//  SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutIndices)
+StructuredBuffer<uint> TriCountPerCell;
+StructuredBuffer<uint> TriOffsetPerCell;   // in triangles
+StructuredBuffer<uint> VertOffsetPerCell;  // in vertices (NOT bytes)
 
-uint MaxIndices;
-StructuredBuffer<uint> TotalVertsBuf;
 RWStructuredBuffer<uint> OutIndices;
 
-[numthreads(256,1,1)]
+uint NumCells;
+
+[numthreads(64,1,1)]
 void Main(uint3 DTid : SV_DispatchThreadID)
 {
-    uint i = DTid.x;
-    if (i >= MaxIndices) return;
+    uint cell = DTid.x;
+    if (cell >= NumCells) return;
 
-    // Total verts written by scan pass at [0]
-    uint totalVerts = TotalVertsBuf[0];
+    uint triCount = TriCountPerCell[cell];
+    if (triCount == 0) return;
 
-    // "Indexless" indices: 0..(totalVerts-1)
-    if (i < totalVerts)
+    uint triBase  = TriOffsetPerCell[cell];
+    uint vertBase = VertOffsetPerCell[cell];
+
+    // Each tri = 3 vertices (unique verts strategy)
+    for (uint t = 0; t < triCount; ++t)
     {
-        OutIndices[i] = i;
-    }
-    else
-    {
-        // Optional: keep debug predictable instead of leaving cleared zeros
-        // OutIndices[i] = 0xFFFFFFFF;
-        OutIndices[i] = 0;
+        uint i = (triBase + t) * 3;
+        uint v = vertBase + t * 3;
+        OutIndices[i + 0] = v + 0;
+        OutIndices[i + 1] = v + 1;
+        OutIndices[i + 2] = v + 2;
     }
 }
+
