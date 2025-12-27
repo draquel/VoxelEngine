@@ -93,7 +93,7 @@ public:
 
 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters&) { return true; }
 };
-IMPLEMENT_GLOBAL_SHADER(FScan_ComputeTotalCS, "/Plugin/Voxel/Mesh/ScanTotal.usf", "Main", SF_Compute);
+IMPLEMENT_GLOBAL_SHADER(FScan_ComputeTotalCS, "/Plugin/Voxel/Mesh/ComputeTotal.usf", "Main", SF_Compute);
 
 class FMC_TriToIndexCountsCS : public FGlobalShader
 {
@@ -200,7 +200,7 @@ static void AddPass_AddBlockOffsets(
 		FIntVector((int32)GroupsX, 1, 1));
 }
 
-static void AddPass_ComputeTotalVerts(
+static void AddPass_ComputeTotal(
 	FRDGBuilder& GraphBuilder,
 	FRDGBufferRef BlockSums,
 	FRDGBufferRef BlockOffsets,
@@ -318,7 +318,7 @@ FMCScanOutputs FMC_ScanPass::AddMC_ScanPass(
 	AddPass_AddBlockOffsets(GraphBuilder, OffsetsPartial, Out.BlockOffsets, NumElements, Out.VertOffsets);
 
 	// Pass 4: compute TotalVerts
-	AddPass_ComputeTotalVerts(GraphBuilder, Out.BlockSums, Out.BlockOffsets, Out.NumBlocks, Out.TotalVerts);
+	AddPass_ComputeTotal(GraphBuilder, Out.BlockSums, Out.BlockOffsets, Out.NumBlocks, Out.TotalVerts);
 	
 	// UE_LOG(LogTemp, Log, TEXT("MC_Scan_Pass debug: N=%u NumBlocks=%u"), NumElements, Out.NumBlocks);
 	// Pass 5: debug tap
