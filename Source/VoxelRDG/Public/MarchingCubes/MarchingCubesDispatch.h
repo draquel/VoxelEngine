@@ -71,6 +71,12 @@ struct FMCIndexScatterParameters
 	FRDGBufferRef Indices;	
 };
 
+struct FMCNormalsOutputs
+{
+	FRDGBufferRef Normals = nullptr;
+};
+
+
 
 static_assert(sizeof(FMCVertexCPU) % 4 == 0, "Align");
 class MarchingCubesDispatch
