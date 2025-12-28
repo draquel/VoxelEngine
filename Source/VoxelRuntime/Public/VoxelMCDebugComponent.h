@@ -40,34 +40,15 @@ public:
 	// --- Debug toggles ---
 	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
 	bool bDebugReadTriCounts = false;
-
+	
 	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
 	bool bDebugReadScanTap = true;
-
-	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
-	bool bDebugReadScatter = true;
-
-	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
-	bool bDebugReadIndices = true;
-
+	
 	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
 	bool bRenderToOwnerPMC = true;
 
-	// Read back only first N verts/indices (keeps debug cheap)
-	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug", meta=(ClampMin="0"))
-	int32 MaxDebugVertsToRead = 6144;
-
-	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug", meta=(ClampMin="0"))
-	int32 MaxDebugIndicesToRead = 6144*15;
-	
 	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
 	FVoxelNoiseParamsCPU Noise;
-	
-	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
-	uint32 RequestedScatterVerts = 8;
-
-	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
-	uint32 RequestedScatterIndices;
 	
 	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
 	double DebugReadbackCount = 64;
@@ -157,13 +138,6 @@ private:
 	TArray<uint32>    PendingIndices;       // uint
 	TArray<FVector3f> PendingNormals;
 	
-	// last-known (for rendering decisions)
-	uint32 LastTotalVerts = 0;
-	uint32 LastTotalTris = 0;
-	uint32 LastIndicesRead = 0;
-	uint32 LastScatterRead = 0;
-	uint32 LastNormalsRead = 0;
-
 	// timing
 	float TimeSinceLastDispatch = 0.f;
 };
