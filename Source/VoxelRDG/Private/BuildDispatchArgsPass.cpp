@@ -11,7 +11,7 @@ public:
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER(uint32, ThreadsPerGroup)
-		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, InTotalTris)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(RWBuffer<uint>, InTotalTris)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutDispatchArgs)
 	END_SHADER_PARAMETER_STRUCT()
 };
@@ -36,7 +36,7 @@ FDispatchArgsOutputs BuildDispatchArgsPass::Add(
 
 	auto* Params = GraphBuilder.AllocParameters<FMCBuildDispatchArgsCS::FParameters>();
 	Params->ThreadsPerGroup = ThreadsPerGroup;
-	Params->InTotalTris     = GraphBuilder.CreateSRV(TotalTrisBuffer);
+	Params->InTotalTris     = GraphBuilder.CreateSRV(TotalTrisBuffer, PF_R32_UINT);
 	Params->OutDispatchArgs = GraphBuilder.CreateUAV(Out.DispatchArgs, PF_R32_UINT);
 
 	TShaderMapRef<FMCBuildDispatchArgsCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));

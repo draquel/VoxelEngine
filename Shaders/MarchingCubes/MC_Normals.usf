@@ -5,8 +5,8 @@
 StructuredBuffer<float4> InPositions;
 StructuredBuffer<uint>   InIndices;
 
-StructuredBuffer<uint> InTotalTris;
-StructuredBuffer<uint> InTotalVerts;
+RWBuffer<uint> InTotalTris;
+RWBuffer<uint> InTotalVerts;
 
 RWStructuredBuffer<float3> OutNormals;
 

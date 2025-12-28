@@ -27,7 +27,7 @@ public:
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, BlockSums)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, BlockOffsets)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, VertOffsets)
-		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, TotalVerts)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(RWBuffer<uint>, TotalVerts)
 
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutDebug)
 	END_SHADER_PARAMETER_STRUCT()
@@ -88,7 +88,7 @@ public:
 
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, BlockSums)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, BlockOffsets)
-		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutTotalVerts)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutTotal)
 	END_SHADER_PARAMETER_STRUCT()
 
 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters&) { return true; }
@@ -133,7 +133,7 @@ static void AddPass_DebugTap(
 	Params->BlockSums     = GraphBuilder.CreateSRV(BlockSums);
 	Params->BlockOffsets  = GraphBuilder.CreateSRV(BlockOffsets);
 	Params->VertOffsets   = GraphBuilder.CreateSRV(VertOffsets);
-	Params->TotalVerts    = GraphBuilder.CreateSRV(TotalVerts);
+	Params->TotalVerts    = GraphBuilder.CreateSRV(TotalVerts, PF_R32_UINT);
 	Params->OutDebug      = GraphBuilder.CreateUAV(OutDebugTap);
 
 	// UE_LOG(LogTemp, Log, TEXT("MC_Scan_Pass - AddPass_DebugTap: N=%u NumBlocks=%u"), Params->NumElements, Params->NumBlocks);
@@ -205,13 +205,13 @@ static void AddPass_ComputeTotal(
 	FRDGBufferRef BlockSums,
 	FRDGBufferRef BlockOffsets,
 	uint32 NumBlocks,
-	FRDGBufferRef OutTotalVerts)
+	FRDGBufferRef OutTotal)
 {
 	auto* Params = GraphBuilder.AllocParameters<FScan_ComputeTotalCS::FParameters>();
 	Params->NumBlocks    = NumBlocks;
 	Params->BlockSums    = GraphBuilder.CreateSRV(BlockSums);
 	Params->BlockOffsets = GraphBuilder.CreateSRV(BlockOffsets);
-	Params->OutTotalVerts= GraphBuilder.CreateUAV(OutTotalVerts);
+	Params->OutTotal     = GraphBuilder.CreateUAV(OutTotal, PF_R32_UINT);
 
 	TShaderMapRef<FScan_ComputeTotalCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 
@@ -270,9 +270,7 @@ FMCScanOutputs FMC_ScanPass::AddMC_ScanPass(
 	Out.NumBlocks = CeilDivU32(NumElements, kScanBlockSize);
 
 	// Buffers
-	Out.VertOffsets = GraphBuilder.CreateBuffer(
-		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumElements),
-		TEXT("MC.VertOffsets"));
+	
 
 	FRDGBufferRef OffsetsPartial = GraphBuilder.CreateBuffer(
 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumElements),
@@ -293,8 +291,20 @@ FMCScanOutputs FMC_ScanPass::AddMC_ScanPass(
 		TEXT("MC.BlockSums2"));
 
 	Out.TotalVerts = GraphBuilder.CreateBuffer(
-		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 4),
+		FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), 4),
 		TEXT("MC.TotalVerts"));
+	
+	Out.VertOffsets = GraphBuilder.CreateBuffer(
+		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumElements),
+		TEXT("MC.VertOffsets"));	
+	
+	// Out.TotalTris = GraphBuilder.CreateBuffer(
+	// 	FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), 4),
+	// 	TEXT("MC.TotalTris"));
+	//
+	// Out.TriOffsets = GraphBuilder.CreateBuffer(
+	// 	FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumElements),
+	// 	TEXT("MC.TriOffsets"));
 
 	// Create debug tap buffer
 	Out.DebugTap = GraphBuilder.CreateBuffer(
@@ -305,7 +315,9 @@ FMCScanOutputs FMC_ScanPass::AddMC_ScanPass(
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.BlockSums), 0);
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.BlockOffsets), 0);
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.VertOffsets), 0);
-	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.TotalVerts), 0);
+	// AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.TriOffsets), 0);
+	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.TotalVerts, PF_R32_UINT), 0);
+	// AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.TotalTris, PF_R32_UINT), 0);
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.DebugTap), 0);
 
 	// Pass 1: scan VertCounts into partial offsets + BlockSums

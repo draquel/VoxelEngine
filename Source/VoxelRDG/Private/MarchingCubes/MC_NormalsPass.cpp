@@ -17,8 +17,8 @@ public:
         SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<float4>, InPositions)
         SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>,   InIndices)
 
-        SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, InTotalTris)
-        SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, InTotalVerts)
+        SHADER_PARAMETER_RDG_BUFFER_SRV(RWBuffer<uint>, InTotalTris)
+        SHADER_PARAMETER_RDG_BUFFER_SRV(RWBuffer<uint>, InTotalVerts)
 
         SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<float3>, OutNormals)
     END_SHADER_PARAMETER_STRUCT()
@@ -49,8 +49,8 @@ FMCNormalsOutputs FMC_NormalsPass::AddMC_NormalsPass_Indirect(
     auto* Params = GraphBuilder.AllocParameters<FMCNormalsCS::FParameters>();
     Params->InPositions  = GraphBuilder.CreateSRV(Positions);
     Params->InIndices    = GraphBuilder.CreateSRV(Indices);
-    Params->InTotalTris  = GraphBuilder.CreateSRV(TotalTris);
-    Params->InTotalVerts = GraphBuilder.CreateSRV(TotalVerts);
+    Params->InTotalTris  = GraphBuilder.CreateSRV(TotalTris, PF_R32_UINT);
+    Params->InTotalVerts = GraphBuilder.CreateSRV(TotalVerts, PF_R32_UINT);
     Params->OutNormals   = GraphBuilder.CreateUAV(Out.Normals);
     
     auto* PassParams = GraphBuilder.AllocParameters<FMCNormalsIndirectPassParameters>();

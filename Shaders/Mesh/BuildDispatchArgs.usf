@@ -3,7 +3,7 @@
 // /Plugin/Voxel/Mesh/MC_BuildDispatchArgs.usf
 // Builds DispatchIndirect args from TotalTris[0].
 
-StructuredBuffer<uint> InTotalTris;
+RWBuffer<uint> InTotalTris;
 
 // 3 uints: GroupCountX, GroupCountY, GroupCountZ
 RWBuffer<uint> OutDispatchArgs;

@@ -4,7 +4,7 @@ uint NumBlocks;
 
 StructuredBuffer<uint>   BlockSums;
 StructuredBuffer<uint>   BlockOffsets;
-RWStructuredBuffer<uint> OutTotalVerts;
+RWBuffer<uint> OutTotal;
 
 [numthreads(1,1,1)]
 void Main(uint3 DTid : SV_DispatchThreadID)
@@ -15,8 +15,8 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 	uint offs   = (NumBlocks > 0) ? BlockOffsets[last]: 0;
 	uint total  = offs + sums;
 
-	OutTotalVerts[0] = total;
-	OutTotalVerts[1] = sums;
-	OutTotalVerts[2] = offs;
-	OutTotalVerts[3] = NumBlocks;
+	OutTotal[0] = total;
+	OutTotal[1] = sums;
+	OutTotal[2] = offs;
+	OutTotal[3] = NumBlocks;
 }

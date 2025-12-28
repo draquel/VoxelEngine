@@ -10,7 +10,7 @@ StructuredBuffer<uint> OffsetsPartial;
 StructuredBuffer<uint> BlockSums;
 StructuredBuffer<uint> BlockOffsets;
 StructuredBuffer<uint> VertOffsets;
-StructuredBuffer<uint> TotalVerts;          // same buffer you already produce (at least 1 element)
+RWBuffer<uint> TotalVerts;          // same buffer you already produce (at least 1 element)
 
 RWStructuredBuffer<uint> OutDebug;          // 16 uints
 
