@@ -1,5 +1,5 @@
 ﻿#include "/Engine/Public/Platform.ush"
-#include "VoxelDensity.usf"
+#include "DebugDensity.ush"
 
 RWStructuredBuffer<float4> OutVertices;
 RWStructuredBuffer<uint>   OutIndices;

@@ -1,0 +1,21 @@
+﻿#include "/Engine/Public/Platform.ush"
+
+// -----------------------------------------------------------------------------
+// Voxel Density API (shared across marching cubes, slicing, debug visualizations)
+// -----------------------------------------------------------------------------
+
+// NOTE: For now this is a stub. Next step will be to pipe in your seed/settings
+// and deformation data (EditLayer) via uniform buffers + SRVs and implement real noise.
+
+inline float SampleDensityWS(float3 Pws)
+{
+	// Placeholder: simple plane + low-frequency variation so we can test plumbing.
+	// Replace with your real noise/deformation field later.
+	float plane = Pws.z * 0.01f;                     // increases with height
+	float wobble = sin(Pws.x * 0.01f) * 0.25f
+				 + cos(Pws.y * 0.01f) * 0.25f;
+
+	// For marching cubes, conventionally: density < 0 is "inside", >0 is "outside"
+	// Adjust as you prefer.
+	return plane + wobble;
+}
