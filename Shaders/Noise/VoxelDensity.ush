@@ -1,0 +1,98 @@
+﻿#pragma once
+#include "VoxelNoiseParams.ush"
+#include "VoxelNoiseFast3D.ush"
+
+// ------------------------------------------------------------
+// Density building blocks (all parameterized)
+// Convention: density < 0 => "inside", density > 0 => "outside"
+// iso = 0 is the surface for SDF-style fields.
+// ------------------------------------------------------------
+
+// Simple sphere signed distance field: (distance - radius)
+float Density_SphereSDF(float3 Pws, float3 CenterWS, float RadiusWS)
+{
+    return length(Pws - CenterWS) - RadiusWS;
+}
+
+// "Terrain height" style density: positive above surface, negative below.
+// Here height is computed from FBM.
+float Density_HeightField(float3 Pws, const FVoxelNoiseParams NP, uint seed)
+{
+    // WorldScale lets you normalize large world coords into a stable noise domain.
+    float3 pN = Pws * NP.WorldScale;
+
+    // Height FBM in 2D-ish manner (sample in X/Y, or X/Z depending on your convention)
+    // Here: treat Z as "up" like your plane/sphere tests. Height varies over X/Y.
+    float h = FBM3_Seeded(float3(pN.x * NP.HeightFreq, pN.y * NP.HeightFreq, 0.0f),
+                          (int)NP.HeightOctaves, 2.0f, NP.HeightGain, seed);
+
+    float surfaceZ = h * NP.HeightAmp;
+    return Pws.z - surfaceZ;
+}
+
+// Overhang perturbation: add 3D ridged noise into density to create lateral features.
+float Density_OverhangPerturb(float3 Pws, const FVoxelNoiseParams NP, uint seed)
+{
+    float3 pN = Pws * NP.WorldScale;
+    float o = RidgedFBM3_Seeded(pN * NP.OverhangFreq, (int)NP.OverhangOctaves, 2.0f, 0.5f, seed ^ 0xBADC0DEu);
+    // Center around 0-ish
+    o = (o * 2.0f - 1.0f);
+    return o * NP.OverhangAmp;
+}
+
+// Caves: carve out voids using a thresholded 3D noise mask.
+// Returns a value to ADD to density (making density more positive => more "empty") in cave regions.
+float Density_CavesCarve(float3 Pws, const FVoxelNoiseParams NP, uint seed)
+{
+    float3 pN = Pws * NP.WorldScale;
+    float n = FBM3_Seeded(pN * NP.CaveFreq, 4, 2.0f, 0.5f, seed ^ 0xCA7E123u); // keep cheap
+
+    // Map [-1,1] -> [0,1]
+    float m = saturate(n * 0.5f + 0.5f);
+
+    // Threshold with softness
+    // when m > CaveThreshold => carve
+    float t0 = NP.CaveThreshold;
+    float t1 = NP.CaveThreshold + max(1e-4f, NP.CaveSoftness);
+    float carveMask = smoothstep(t0, t1, m); // 0..1
+
+    return carveMask * NP.CaveAmp;
+}
+
+// ------------------------------------------------------------
+// Final “SampleDensity” variants you can call from Count/Scatter
+// ------------------------------------------------------------
+
+float SampleDensity_Plane(float3 Pws)
+{
+    return Pws.z;
+}
+
+// 1) Sphere-only (matches your working test idea, but parameterized)
+float SampleDensity_Sphere(float3 Pws, float3 CenterWS, float RadiusWS)
+{
+    return Density_SphereSDF(Pws, CenterWS, RadiusWS);
+}
+
+// 2) Sphere + (noise + overhang + caves), all driven by FVoxelNoiseParams
+float SampleDensity_Sphere_Noise(float3 Pws, float3 CenterWS, float RadiusWS, const FVoxelNoiseParams NP, uint seed)
+{
+    float d = Density_SphereSDF(Pws, CenterWS, RadiusWS);
+
+    // Overhangs: perturb the surface (adds/subtracts to d)
+    d += Density_OverhangPerturb(Pws, NP, seed);
+
+    // Caves: carve out empty space by pushing density positive in cave areas
+    d += Density_CavesCarve(Pws, NP, seed);
+
+    return d;
+}
+
+// 3) Terrain heightfield + overhang + caves (useful later)
+float SampleDensity_Terrain_Noise(float3 Pws, const FVoxelNoiseParams NP, uint seed)
+{
+    float d = Density_HeightField(Pws, NP, seed);
+    d += Density_OverhangPerturb(Pws, NP, seed);
+    d += Density_CavesCarve(Pws, NP, seed);
+    return d;
+}
