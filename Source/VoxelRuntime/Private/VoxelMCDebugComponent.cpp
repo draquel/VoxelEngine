@@ -7,10 +7,22 @@
 // Your passes:
 #include "ProceduralMeshComponent.h"
 #include "RHIGPUReadback.h"
+#include "VoxelRDGReadback.h"
 #include "VoxelRDG/Private/MarchingCubes/MC_CountPass.h"
 #include "VoxelRDG/Private/MarchingCubes/MC_ScanPass.h"
 #include "VoxelRDG/Private/MarchingCubes/MC_ScatterPass.h"
 #include "VoxelRDG/Private/MarchingCubes/MC_IndexPass.h"
+#include "VoxelRDG/Private/MarchingCubes/MC_NormalsPass.h"
+#include "VoxelRDG/Private/BuildDispatchArgsPass.h"
+
+BEGIN_SHADER_PARAMETER_STRUCT(FMCDebugReadbackPassParams, )
+	RDG_BUFFER_ACCESS(Verts,      ERHIAccess::CopySrc)
+	RDG_BUFFER_ACCESS(Indices,    ERHIAccess::CopySrc)
+	RDG_BUFFER_ACCESS(Normals,    ERHIAccess::CopySrc)
+	RDG_BUFFER_ACCESS(TotalVerts, ERHIAccess::CopySrc)
+	RDG_BUFFER_ACCESS(TotalTris,  ERHIAccess::CopySrc)
+END_SHADER_PARAMETER_STRUCT()
+
 
 UVoxelMCDebugComponent::UVoxelMCDebugComponent()
 {
@@ -72,7 +84,8 @@ void UVoxelMCDebugComponent::DispatchNow()
         UE_LOG(LogTemp, Warning, TEXT("MC: readback pending; skipping dispatch."));
         return;
     }
-
+	
+	
     const FVector Origin = GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector;
 
     FMCChunkParamsCPU Chunk;
@@ -153,59 +166,97 @@ void UVoxelMCDebugComponent::DispatchNow()
         {
             FRDGBuilder GraphBuilder(RHICmdList);
 
-            const FMCCountPassOutputs Count = FMC_CountPass::AddMC_CountPass(GraphBuilder, Chunk , Noise);
+        	const FMCCountPassOutputs Count = FMC_CountPass::AddMC_CountPass(GraphBuilder, Chunk, Noise);
 
-            const uint32 N = Count.CellsPerAxis * Count.CellsPerAxis * Count.CellsPerAxis;
-        	FMCScanOutputs Scan = FMC_ScanPass::AddMC_ScanPass_VertsAndTris(GraphBuilder, Count.VertCountPerCell,Count.TriCountPerCell, N);
+			const uint32 NumCells =	Count.CellsPerAxis * Count.CellsPerAxis * Count.CellsPerAxis;
 
-            // Scatter: you probably want TotalVerts-driven sizing eventually;
-            // for now keep your “RequestedVerts” debug approach.
-            const uint32 RequestedVerts = RequestedScatterVerts; // UPROPERTY
-            const FMCScatterOutputs Scatter = FMC_ScatterPass::AddMC_ScatterPass(GraphBuilder, Chunk , Noise, Scan.VertOffsets, Count.VertCountPerCell, RequestedVerts, true);
+			FMCScanOutputs Scan =
+				FMC_ScanPass::AddMC_ScanPass_VertsAndTris(
+					GraphBuilder,
+					Count.VertCountPerCell,
+					Count.TriCountPerCell,
+					NumCells);
 
-            // Indexless indices: MaxIndices should match what you intend to read back / render
-            const uint32 MaxIndices = N * 15; // indexless: 0..TotalVerts-1 (or debug slice)
-            FRDGBufferRef Indices = FMC_IndexPass::AddMC_IndexScatterPass(GraphBuilder, Count.TriCountPerCell, Scan.TriOffsets, Scan.VertOffsets, N, MaxIndices);
+			// Use consistent MaxVerts for scatter + normals
+			const uint32 MaxVerts = NumCells * 15;
 
-            // Extract
-            TRefCountPtr<FRDGPooledBuffer> ExtractTri;
-            if (bDebugReadTriCounts)
-                GraphBuilder.QueueBufferExtraction(Count.TriCountPerCell, &ExtractTri);
+        	UE_LOG(LogTemp, Warning, TEXT("Scatter CPU Params: OriginWS=%s Step=%f Cells=%u Iso=%f MaxVerts=%u"),
+				*Chunk.ChunkOriginWS.ToString(), Chunk.StepSizeWS, Chunk.CellsPerAxis, Chunk.IsoLevel, MaxVerts);
+        	
+			const FMCScatterOutputs Scatter =
+				FMC_ScatterPass::AddMC_ScatterPass(
+					GraphBuilder, Chunk, Noise,
+					Scan.VertOffsets,
+					Count.VertCountPerCell,	
+					Count.CaseIndexPerCell,
+					MaxVerts, true);
 
-            TRefCountPtr<FRDGPooledBuffer> ExtractTotal;
-            GraphBuilder.QueueBufferExtraction(Scan.TotalVerts, &ExtractTotal);
+			const uint32 MaxIndices = NumCells * 15;
+			FRDGBufferRef Indices =
+				FMC_IndexPass::AddMC_IndexScatterPass(
+					GraphBuilder,
+					Count.TriCountPerCell,
+					Scan.TriOffsets,
+					Scan.VertOffsets,
+					NumCells,
+					MaxIndices);
 
-            TRefCountPtr<FRDGPooledBuffer> ExtractTap;
-            if (bDebugReadScanTap)
-                GraphBuilder.QueueBufferExtraction(Scan.DebugTap, &ExtractTap);
+			// Build args from TotalTris
+			FDispatchArgsOutputs Args =
+				BuildDispatchArgsPass::Add(GraphBuilder, Scan.TotalTris);
 
-            TRefCountPtr<FRDGPooledBuffer> ExtractScatter;
-            GraphBuilder.QueueBufferExtraction(Scatter.Vertices, &ExtractScatter);
+			// Normals pass should use MANUAL DispatchIndirect internally
+			FMCNormalsOutputs Normals =
+				FMC_NormalsPass::AddMC_NormalsPass_Indirect(
+					GraphBuilder,
+					Scatter.Vertices,
+					Indices,
+					Scan.TotalTris,
+					Scan.TotalVerts,
+					Args.DispatchArgs,
+					MaxVerts);
+        	
+        	auto* RBParams = GraphBuilder.AllocParameters<FMCDebugReadbackPassParams>();
+			RBParams->Verts      = Scatter.Vertices;
+			RBParams->Indices    = Indices;
+			RBParams->Normals    = Normals.Normals;
+			RBParams->TotalVerts = Scan.TotalVerts;
+			RBParams->TotalTris  = Scan.TotalTris;
 
-            TRefCountPtr<FRDGPooledBuffer> ExtractIndices;
-            GraphBuilder.QueueBufferExtraction(Indices, &ExtractIndices);
-
+        	GraphBuilder.AddPass(
+				RDG_EVENT_NAME("MC.EnqueueReadbacks"),
+				RBParams,
+				ERDGPassFlags::Copy | ERDGPassFlags::NeverCull,
+				[RBParams,
+				 VertexRB   = VertexReadback,
+				 IndexRB    = IndicesReadback,
+				 NormalRB   = NormalsReadback,
+				 TotalVRB   = TotalVertsReadback,
+				 TotalTRB   = TotalTrisReadback](FRHICommandListImmediate& RHICmdList)
+				{
+					if (VertexRB.IsValid())  VertexRB->EnqueueCopy(RHICmdList, RBParams->Verts->GetRHI());
+					if (IndexRB.IsValid())   IndexRB->EnqueueCopy(RHICmdList, RBParams->Indices->GetRHI());
+					if (NormalRB.IsValid())  NormalRB->EnqueueCopy(RHICmdList, RBParams->Normals->GetRHI());
+					if (TotalVRB.IsValid())  TotalVRB->EnqueueCopy(RHICmdList, RBParams->TotalVerts->GetRHI());
+					if (TotalTRB.IsValid())  TotalTRB->EnqueueCopy(RHICmdList, RBParams->TotalTris->GetRHI());
+				});
+        	
             GraphBuilder.Execute();
-
-            // Enqueue copies AFTER execute
-            {
-                FScopeLock Lock(&ReadbackCS);
-
-                if (bDebugReadTriCounts && TriCountReadback.IsValid() && ExtractTri.IsValid())
-                    TriCountReadback->EnqueueCopy(RHICmdList, ExtractTri->GetRHI());
-
-                if (TotalVertsReadback.IsValid() && ExtractTotal.IsValid())
-                    TotalVertsReadback->EnqueueCopy(RHICmdList, ExtractTotal->GetRHI());
-
-                if (bDebugReadScanTap && DebugTapReadback.IsValid() && ExtractTap.IsValid())
-                    DebugTapReadback->EnqueueCopy(RHICmdList, ExtractTap->GetRHI());
-
-                if (ScatterVertsReadback.IsValid() && ExtractScatter.IsValid())
-                    ScatterVertsReadback->EnqueueCopy(RHICmdList, ExtractScatter->GetRHI());
-
-                if (IndicesReadback.IsValid() && ExtractIndices.IsValid())
-                    IndicesReadback->EnqueueCopy(RHICmdList, ExtractIndices->GetRHI());
-            }
+        	
+        	bScatterPending    = VertexReadback.IsValid();
+			bIndicesPending    = IndicesReadback.IsValid();
+			bNormalsPending    = NormalsReadback.IsValid();
+			bTotalVertsPending = TotalVertsReadback.IsValid();
+			bTotalTrisPending  = TotalTrisReadback.IsValid();	
+        	
+   //      	UE_LOG(LogTemp, Warning, TEXT("EnqueueCopy: V=%d I=%d N=%d TV=%d TT=%d"),
+			// (VertexReadback.IsValid() && ExtractVerts.IsValid()),
+			// (IndicesReadback.IsValid() && ExtractIndices.IsValid()),
+			// (NormalsReadback.IsValid() && ExtractNormals.IsValid()),
+			// (TotalVertsReadback.IsValid() && ExtractTotalVerts.IsValid()),
+			// (TotalTrisReadback.IsValid() && ExtractTotalTris.IsValid()));
+			// UE_LOG(LogTemp, Warning, TEXT("EnqueueCopy ptrs: EV=%p EI=%p EN=%p"),
+			// ExtractVerts.GetReference(), ExtractIndices.GetReference(), ExtractNormals.GetReference());
         });
 }
 
@@ -679,31 +730,63 @@ UProceduralMeshComponent* UVoxelMCDebugComponent::FindOwnerPMC() const
 void UVoxelMCDebugComponent::ConsumeAndRenderPMC()
 {
 	UProceduralMeshComponent* PMC = FindOwnerPMC();
-	if (!PMC)
-		return;
+	if (!PMC) return;
 
 	TArray<FVector4f> Verts4;
-	TArray<uint32> IndU32;
+	TArray<uint32>    IndU32;
+	TArray<FVector3f> Norm3f;
+
+	uint32 TotalV = 0;
+	uint32 TotalT = 0;
 
 	{
 		FScopeLock Lock(&ReadbackCS);
 
-		if (!bHasPendingScatterVerts || !bHasPendingIndices)
+		if (!bHasPendingScatterVerts || !bHasPendingIndices || !bHasPendingNormals ||
+			!bHasPendingTotalVerts  || !bHasPendingTotalTris)
+		{
 			return;
+		}
 
+		TotalV = PendingTotalVerts;
+		TotalT = PendingTotalTris;
+
+		// MOVE the real data out
 		Verts4 = MoveTemp(PendingScatterVerts);
 		IndU32 = MoveTemp(PendingIndices);
+		Norm3f = MoveTemp(PendingNormals);
 
+		// clear flags now that we consumed them
 		bHasPendingScatterVerts = false;
-		bHasPendingIndices = false;
+		bHasPendingIndices      = false;
+		bHasPendingNormals      = false;
+		bHasPendingTotalVerts   = false;
+		bHasPendingTotalTris    = false;
 	}
 
-	if (Verts4.Num() == 0 || IndU32.Num() == 0)
+	const int32 WantV = (int32)TotalV;
+	const int32 WantI = (int32)TotalT * 3;
+
+	if (WantV <= 0 || WantI <= 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("MCDebugComponent: Empty verts/indices after consume."));
+		UE_LOG(LogTemp, Warning, TEXT("Consume: Totals V=%d I=%d -> empty"), WantV, WantI);
 		return;
 	}
 
+	// Truncate the moved arrays to totals (your readbacks may be larger)
+	if (Verts4.Num() < WantV || IndU32.Num() < WantI)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Consume: readback too small. V=%d/%d I=%d/%d"),
+			Verts4.Num(), WantV, IndU32.Num(), WantI);
+		return;
+	}
+
+	Verts4.SetNum(WantV, EAllowShrinking::No);
+	IndU32.SetNum(WantI, EAllowShrinking::No);
+
+	if (Norm3f.Num() >= WantV) Norm3f.SetNum(WantV, EAllowShrinking::No);
+	else Norm3f.SetNumZeroed(WantV);
+	
 	// Convert verts
 	TArray<FVector> Verts;
 	Verts.Reserve(Verts4.Num());
@@ -711,6 +794,19 @@ void UVoxelMCDebugComponent::ConsumeAndRenderPMC()
 	{
 		Verts.Add(FVector((double)V.X, (double)V.Y, (double)V.Z));
 	}
+	int32 FirstNonZero = INDEX_NONE;
+	for (int32 i = 0; i < Verts4.Num(); ++i)
+	{
+		const FVector4f& V = Verts4[i];
+		if (V.W != 0.0f || V.X != 0.0f || V.Y != 0.0f || V.Z != 0.0f)
+		{
+			FirstNonZero = i;
+			UE_LOG(LogTemp, Warning, TEXT("FirstNonZero Vert[%d]=(%.2f %.2f %.2f %.2f)"), i, V.X, V.Y, V.Z, V.W);
+			break;
+		}
+	}
+	UE_LOG(LogTemp, Warning, TEXT("TotalVerts=%u FirstNonZero=%d"), PendingTotalVerts, FirstNonZero);
+
 
 	// Convert indices
 	TArray<int32> Ind;
@@ -719,23 +815,73 @@ void UVoxelMCDebugComponent::ConsumeAndRenderPMC()
 	{
 		Ind.Add((int32)I);
 	}
+	for (int32 i = 0; i < 3; ++i)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Consume: Verts[%d]=%s"), i, *Verts[i].ToString());
+	}
+	for (int32 i = 0; i < 3; ++i)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Consume: Ind[%d]=%d"), i, Ind[i]);
+	}	
+	//Convert Normals
+	TArray<FVector> Normals;
+	Normals.SetNum(Verts.Num());
+
+	if (Norm3f.Num() >= Verts.Num())
+	{
+		for (int32 i=0;i<Verts.Num();++i)
+		{
+			const FVector3f N = Norm3f[i];
+			Normals[i] = FVector(N.X, N.Y, N.Z);
+		}
+	}
+	else
+	{
+		Normals.Init(FVector::UpVector, Verts.Num()); // fallback
+	}
+	
+	FVector4f A = Verts4[0];
+	int32 Different = 0;
+	for (int32 i = 1; i < Verts4.Num(); ++i)
+	{
+		if (!Verts4[i].Equals(A, 0.001f)) { Different = i; break; }
+	}
+	UE_LOG(LogTemp, Warning, TEXT("Verts4[0]=%s DifferentAt=%d %s"),
+		*A.ToString(),
+		Different,
+		Different ? *Verts4[Different].ToString() : TEXT(""));
 
 	// Quick safety clamp
-	const int32 MaxIndex = Verts.Num() - 1;
-	for (int32& I : Ind)
+	// const uint32 MaxIndexU = (Verts4.Num() > 0) ? uint32(Verts4.Num() - 1) : 0u;
+	// for (uint32& I : IndU32)
+	// {
+	// 	if (I > MaxIndexU) I = MaxIndexU;
+	// }
+	
+	int32 OOR = 0;
+	uint32 MinI = UINT32_MAX, MaxI = 0;
+	for (uint32 I : IndU32)
 	{
-		if (I < 0) I = 0;
-		else if (I > MaxIndex) I = MaxIndex;
+		MinI = FMath::Min(MinI, I);
+		MaxI = FMath::Max(MaxI, I);
+		if (I >= (uint32)TotalV) { OOR++; if (OOR < 8) UE_LOG(LogTemp, Warning, TEXT("OOR index: %u (TotalV=%d)"), I, TotalV); }
 	}
+	UE_LOG(LogTemp, Warning, TEXT("Index stats: OOR=%d Min=%u Max=%u TotalV=%d"), OOR, MinI, MaxI, TotalV);
 
+	if (OOR > 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Refusing to build PMC due to out-of-range indices."));
+		return;
+	}
+	
 	// Minimal normals/uvs (debug)
-	TArray<FVector> Normals;
 	TArray<FVector2D> UV0;
 	TArray<FProcMeshTangent> Tangents;
 	TArray<FLinearColor> Colors;
 
-	Normals.Init(FVector::UpVector, Verts.Num());
+	// Normals.Init(FVector::UpVector, Verts.Num());
 	UV0.Init(FVector2D::ZeroVector, Verts.Num());
+	UE_LOG(LogTemp, Warning, TEXT("PMC: Clearing sections, current=%d"), PMC->GetNumSections());
 
 	PMC->ClearAllMeshSections();
 	PMC->CreateMeshSection_LinearColor(
@@ -748,8 +894,13 @@ void UVoxelMCDebugComponent::ConsumeAndRenderPMC()
 		Tangents,
 		false
 	);
+	UE_LOG(LogTemp, Warning, TEXT("PMC: Created section. V=%d I=%d N=%d Bounds=%s"),
+		Verts.Num(), Ind.Num(), Normals.Num(),
+		*PMC->Bounds.GetBox().ToString());
 
 	// If you’re not seeing it, also ensure:
 	PMC->SetVisibility(true);
 	PMC->SetHiddenInGame(false);
+	PMC->UpdateBounds();
+	PMC->MarkRenderTransformDirty();
 }
