@@ -12,36 +12,15 @@ float  StepSizeWS;
 uint   CellsPerAxis;
 float  IsoLevel;
 uint   ChunkSeed;
-uint   Padding0;
+uint   MaxVerts;
+uint   bUseCaseIndexPerCell;
 
-// NOTE: Present in parameter struct; not used yet in this plane test.
-// Must stay declared to match the C++ parameter layout.
-// struct FVoxelNoiseParams
-// {
-// 	float3 WorldScale;
-// 	float  HeightAmp;
-//
-// 	float  HeightFreq;
-// 	float  HeightGain;
-// 	uint   HeightOctaves;
-//
-// 	float  OverhangFreq;
-// 	float  OverhangAmp;
-// 	uint   OverhangOctaves;
-//
-// 	float  CaveFreq;
-// 	float  CaveAmp;
-// 	float  CaveThreshold;
-// 	float  CaveSoftness;
-//
-// 	uint   Seed;
-// 	float3 _Padding;
-// };
-ConstantBuffer<FVoxelNoiseParams> NoiseParams;
+FVoxelNoiseParams NoiseParams;
 
 // From Count + Scan
 StructuredBuffer<uint> VertCountPerCell; // N cells, verts-per-cell (triCount*3)
 StructuredBuffer<uint> VertOffsets;      // N cells, exclusive prefix sum of VertCountPerCell
+StructuredBuffer<uint> CaseIndexPerCell;
 
 // Output
 RWStructuredBuffer<float4> OutVertices;  // sized to NumCells*15 on CPU; only [0..TotalVerts) is valid
@@ -97,10 +76,16 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 
 	if (x >= CellsPerAxis || y >= CellsPerAxis || z >= CellsPerAxis)
 		return;
-
+	
 	const uint cellsPerSlice = CellsPerAxis * CellsPerAxis;
 	const uint cellIndex = x + y * CellsPerAxis + z * cellsPerSlice;
 
+	// const uint base = cellIndex * 3; // ignore scan offsets entirely for this test
+	// OutVertices[base + 0] = float4(float3(x,y,z) * StepSizeWS, 1);
+	// OutVertices[base + 1] = float4(float3(x,y,z) * StepSizeWS + float3(StepSizeWS,0,0), 1);
+	// OutVertices[base + 2] = float4(float3(x,y,z) * StepSizeWS + float3(0,StepSizeWS,0), 1);
+	// return;
+	
 	// Authoritative per-cell vertex count from Count pass (triCount*3)
 	const uint vc = VertCountPerCell[cellIndex];
 	if (vc == 0)
@@ -108,13 +93,20 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 
 	// Base output index from scan (exclusive prefix sum)
 	const uint base = VertOffsets[cellIndex];
-
+	
 	// Compute densities at corners
 	float3 cellMinWS = ChunkOriginWS + float3(x, y, z) * StepSizeWS;
 
+	uint caseIndex = CaseIndexPerCell[cellIndex]; // authoritative
+	if (caseIndex == 0 || caseIndex == 255) return;
+
 	float3 cpos[8];
 	float  cd[8];
-	uint caseIndex = ComputeCaseIndex(cellMinWS, cpos, cd);
+	[unroll] for (uint i=0;i<8;++i)
+	{
+		cpos[i] = cellMinWS + CornerOfs[i]*StepSizeWS;
+		cd[i]   = SampleDensityWS(cpos[i]);
+	}
 
 	// For safety: if count/scatter disagree, refuse to emit.
 	// (Plane should not create these cases if your count matches.)
@@ -152,7 +144,8 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 		// Don't write past what Count said for this cell.
 		if (outV + 3 > vc)
 			break;
-
+		
+		
 		// Convert to LOCAL space for PMC: subtract ChunkOriginWS
 		const float3 p0L = epos[e0] - ChunkOriginWS;
 		const float3 p1L = epos[e1] - ChunkOriginWS;
@@ -163,5 +156,14 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 		OutVertices[base + outV + 2] = float4(p2L, 1.0f);
 
 		outV += 3;
+	}
+	if (outV != vc)
+	{
+		// write a glaring marker into the first vertex of the cell
+		OutVertices[base] = float4(999999.0, (float)outV, (float)vc, 1.0);
+	}
+	if (DTid.x == 0 && DTid.y == 0 && DTid.z == 0)
+	{
+		OutVertices[0] = float4(11,22,33,1);
 	}
 }

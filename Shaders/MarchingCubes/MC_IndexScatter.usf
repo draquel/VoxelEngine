@@ -1,12 +1,12 @@
 #include "/Engine/Private/Common.ush"
 
+uint NumCells;
+
 StructuredBuffer<uint> TriCountPerCell;
 StructuredBuffer<uint> TriOffsetPerCell;   // in triangles
 StructuredBuffer<uint> VertOffsetPerCell;  // in vertices (NOT bytes)
 
 RWStructuredBuffer<uint> OutIndices;
-
-uint NumCells;
 
 [numthreads(64,1,1)]
 void Main(uint3 DTid : SV_DispatchThreadID)
@@ -23,11 +23,14 @@ void Main(uint3 DTid : SV_DispatchThreadID)
     // Each tri = 3 vertices (unique verts strategy)
     for (uint t = 0; t < triCount; ++t)
     {
-        uint i = (triBase + t) * 3;
-        uint v = vertBase + t * 3;
-        OutIndices[i + 0] = v + 0;
-        OutIndices[i + 1] = v + 1;
-        OutIndices[i + 2] = v + 2;
+        uint i0 = vertBase + t*3 + 0;
+        uint i1 = vertBase + t*3 + 1;
+        uint i2 = vertBase + t*3 + 2;
+
+        uint outIndex = (triBase + t) * 3;
+        OutIndices[outIndex + 0] = i0;
+        OutIndices[outIndex + 1] = i1;
+        OutIndices[outIndex + 2] = i2;
     }
 }
 

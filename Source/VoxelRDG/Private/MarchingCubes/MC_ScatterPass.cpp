@@ -17,12 +17,13 @@ public:
 		SHADER_PARAMETER(uint32,   CellsPerAxis)
 		SHADER_PARAMETER(float,    IsoLevel)
 		SHADER_PARAMETER(uint32,   ChunkSeed)
-		SHADER_PARAMETER(uint32,   bUseCaseIndexPerCell)
 		SHADER_PARAMETER(uint32,   MaxVerts)
+		SHADER_PARAMETER(uint32,   bUseCaseIndexPerCell)
 
 		SHADER_PARAMETER_STRUCT_REF(FVoxelNoiseParams, NoiseParams)
 
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, VertOffsets)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, VertCountPerCell)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, CaseIndexPerCell)
 
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<float4>, OutVertices)
@@ -69,6 +70,7 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	const FMCChunkParamsCPU& Chunk,
 	const FVoxelNoiseParamsCPU& NoiseCPU,
 	FRDGBufferRef VertOffsets,
+	FRDGBufferRef VertCountPerCell,
 	FRDGBufferRef CaseIndexPerCell,
 	uint32 MaxVerts,
 	bool bUseIndexPerCell
@@ -94,11 +96,12 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	PassParams->IsoLevel      = Chunk.IsoLevel;
 	PassParams->ChunkSeed     = Chunk.ChunkSeed;
 	PassParams->MaxVerts      = MaxVerts;
-	PassParams->bUseCaseIndexPerCell = bUseIndexPerCell;
+	PassParams->bUseCaseIndexPerCell = bUseIndexPerCell ? 1u : 0u;
 
 	PassParams->NoiseParams = TUniformBufferRef<FVoxelNoiseParams>::CreateUniformBufferImmediate(NoiseGPU, UniformBuffer_SingleFrame);
 
 	PassParams->VertOffsets      = GraphBuilder.CreateSRV(VertOffsets);
+	PassParams->VertCountPerCell = GraphBuilder.CreateSRV(VertCountPerCell);
 	PassParams->CaseIndexPerCell = GraphBuilder.CreateSRV(CaseIndexPerCell);
 	PassParams->OutVertices      = GraphBuilder.CreateUAV(Out.Vertices);
 
