@@ -1,0 +1,80 @@
+﻿
+// ------------------------------------------------------------
+// Helpers (seeded hash / noise)
+// ------------------------------------------------------------
+float Hash31_Seeded(float3 p, uint seed)
+{
+    // Seeded variant of Inigo-style hash:
+    // push seed into p deterministically without tables/textures.
+    float s = (float)(seed & 1023u) * 0.001953125f; // ~[0,2)
+    p += float3(s, s*2.17f, s*3.31f);
+
+    p = frac(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return frac((p.x + p.y) * p.z);
+}
+
+float ValueNoise3D_Seeded(float3 x, uint seed)
+{
+    float3 i = floor(x);
+    float3 f = frac(x);
+
+    // Smooth interpolation
+    float3 u = f * f * (3.0 - 2.0 * f);
+
+    float n000 = Hash31_Seeded(i + float3(0,0,0), seed);
+    float n100 = Hash31_Seeded(i + float3(1,0,0), seed);
+    float n010 = Hash31_Seeded(i + float3(0,1,0), seed);
+    float n110 = Hash31_Seeded(i + float3(1,1,0), seed);
+    float n001 = Hash31_Seeded(i + float3(0,0,1), seed);
+    float n101 = Hash31_Seeded(i + float3(1,0,1), seed);
+    float n011 = Hash31_Seeded(i + float3(0,1,1), seed);
+    float n111 = Hash31_Seeded(i + float3(1,1,1), seed);
+
+    float nx00 = lerp(n000, n100, u.x);
+    float nx10 = lerp(n010, n110, u.x);
+    float nx01 = lerp(n001, n101, u.x);
+    float nx11 = lerp(n011, n111, u.x);
+
+    float nxy0 = lerp(nx00, nx10, u.y);
+    float nxy1 = lerp(nx01, nx11, u.y);
+
+    return (lerp(nxy0, nxy1, u.z) * 2.0 - 1.0); // [-1,1]
+}
+
+float FBM3_Seeded(float3 p, int octaves, float lacunarity, float gain, uint seed)
+{
+    float sum = 0.0;
+    float amp = 0.5;
+    float freq = 1.0;
+
+    [unroll]
+    for (int o = 0; o < 8; ++o) // clamp to <= 8
+    {
+        if (o >= octaves) break;
+        sum += amp * ValueNoise3D_Seeded(p * freq, seed + (uint)o * 101u);
+        freq *= lacunarity;
+        amp *= gain;
+    }
+    return sum; // ~[-1,1]
+}
+
+float RidgedFBM3_Seeded(float3 p, int octaves, float lacunarity, float gain, uint seed)
+{
+    float sum = 0.0;
+    float amp = 0.5;
+    float freq = 1.0;
+
+    [unroll]
+    for (int o = 0; o < 8; ++o)
+    {
+        if (o >= octaves) break;
+        float n = ValueNoise3D_Seeded(p * freq, seed + (uint)o * 131u);
+        n = 1.0 - abs(n);
+        n *= n;
+        sum += n * amp;
+        freq *= lacunarity;
+        amp *= gain;
+    }
+    return sum; // [0, ~1]
+}
