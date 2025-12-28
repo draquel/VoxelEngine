@@ -32,10 +32,16 @@ void UVoxelMCDebugComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	// 1) Poll (each poll only does work when IsReady() == true)
 	// PollTriCounts();
 	PollTotalVerts();
+	PollTotalTris();
 	PollDebugTap();
 	PollScatterVerts();
 	PollIndices();
-
+	PollNormals();
+	
+	UE_LOG(LogTemp, Warning, TEXT("Pending: Scatter=%d Index=%d Normals=%d TotalVerts=%d TotalTris=%d  Has: V=%d I=%d N=%d TV=%d TT=%d"),
+			bScatterPending, bIndicesPending, bNormalsPending, bTotalVertsPending, bTotalTrisPending,
+			bHasPendingScatterVerts, bHasPendingIndices, bHasPendingNormals, bHasPendingTotalVerts, bHasPendingTotalTris);
+	
 	// 2) Consume on Game Thread
 	if (bRenderToOwnerPMC) {
 		ConsumeAndRenderPMC();
@@ -96,6 +102,10 @@ void UVoxelMCDebugComponent::DispatchNow()
         TotalVertsReadback = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.TotalVertsReadback"));
         bTotalPending = true;
         bCanFreeTotalVertsReadback = false;
+    	
+    	TotalTrisReadback = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.TotalTrisReadback"));
+    	bTotalTrisPending = true;
+    	bCanFreeTotalTrisReadback = false;
 
         if (bDebugReadScanTap)
         {
@@ -116,9 +126,14 @@ void UVoxelMCDebugComponent::DispatchNow()
         IndicesReadback = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.IndicesReadback"));
         bIndicesPending = true;
     	bCanFreeIndicesReadback = false;
+    	
+    	NormalsReadback = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.NormalsReadback"));
+    	bNormalsPending = true;
+    	bCanFreeNormalsReadback = false;
 
     	LastIndicesRead = RequestedScatterIndices;
     	LastScatterRead = RequestedScatterVerts;
+    	LastNormalsRead = RequestedScatterVerts;
     	
     	UE_LOG(LogTemp, Warning, TEXT("Dispatch: ScatterPending=%d IndexPending=%d ReadScatter=%d ReadIndex=%d"),
 		bScatterPending, bIndicesPending, LastScatterRead, LastIndicesRead);
@@ -197,7 +212,8 @@ void UVoxelMCDebugComponent::DispatchNow()
 
 bool UVoxelMCDebugComponent::AnyPending() const
 {
-	return bTriPending || bTotalPending || bDebugTapPending || bScatterPending || bIndicesPending;
+	return bTriCountPending || bTotalVertsPending || bDebugTapPending || bScatterPending || bIndicesPending || bNormalsPending || bTotalTrisPending;
+
 }
 
 //POLLING FUNCTIONS
@@ -322,6 +338,51 @@ void UVoxelMCDebugComponent::PollTotalVerts()
 			});
 		});
 }
+
+void UVoxelMCDebugComponent::PollTotalTris()
+{
+	if (!bTotalTrisPending) return;
+
+	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> RB;
+	{
+		FScopeLock Lock(&ReadbackCS);
+		RB = TotalTrisReadback;
+	}
+
+	if (!RB.IsValid()) { bTotalTrisPending = false; return; }
+	if (!RB->IsReady()) return;
+
+	bTotalTrisPending = false;
+	TWeakObjectPtr<UVoxelMCDebugComponent> WeakThis(this);
+
+	ENQUEUE_RENDER_COMMAND(MC_TotalTris_LockCopy)(
+	[WeakThis, RB](FRHICommandListImmediate& RHICmdList)
+		{
+			if (!WeakThis.IsValid()) 
+				return;
+			
+			const uint32 Bytes = 4 * sizeof(uint32);
+			const uint32* Data = reinterpret_cast<const uint32*>(RB->Lock(Bytes));
+			const uint32 Total = Data ? Data[0] : 0u;
+			const uint32 Sums = Data ? Data[1] : 0;
+			const uint32 Offs = Data ? Data[2] : 0;
+			const uint32 NumBlocks = Data ? Data[3] : 0;
+			UE_LOG(LogTemp, Warning, TEXT("TotalTris: %d Sums: %d Offsets: %d Blocks: %d"), Total, Sums, Offs, NumBlocks);
+			RB->Unlock();
+
+			AsyncTask(ENamedThreads::GameThread, [WeakThis, Total]()
+			{
+				if (!WeakThis.IsValid()) 
+					return;
+				
+				FScopeLock Lock(&WeakThis->ReadbackCS);
+				WeakThis->PendingTotalTris = Total;
+				WeakThis->bHasPendingTotalTris = true;
+				WeakThis->bCanFreeTotalTrisReadback = true;
+			});
+		});
+}
+
 void UVoxelMCDebugComponent::PollScatterVerts()
 {
 	if (!bScatterPending)
@@ -496,7 +557,73 @@ void UVoxelMCDebugComponent::PollIndices()
 			});
 		});
 }
+void UVoxelMCDebugComponent::PollNormals()
+{
+	
+	if (!bNormalsPending)
+		return;
 
+	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> RB;
+	int32 Count = 0;
+	{
+		FScopeLock Lock(&ReadbackCS);
+		RB = NormalsReadback;
+		Count = (int32)PendingTotalVerts;   // prefer totals
+		if (Count <= 0) Count = LastScatterRead; // fallback only
+		UE_LOG(LogTemp, Warning, TEXT("PollNormals: Pending=%d Ready=%d Count=%d Bytes=%u"),
+			bNormalsPending, RB->IsReady(), Count, uint32(Count) * sizeof(FVector3f));
+	}
+
+	if (!RB.IsValid())
+	{
+		bNormalsPending = false;
+		return;
+	}
+
+	if (!RB->IsReady())
+		return;
+
+	bNormalsPending = false;
+
+	Count = FMath::Clamp(Count, 0, 1 << 20);
+	TWeakObjectPtr<UVoxelMCDebugComponent> WeakThis(this);
+
+	ENQUEUE_RENDER_COMMAND(MC_Normals_LockCopy)(
+		[WeakThis, RB, Count](FRHICommandListImmediate& RHICmdList)
+		{
+			if (!WeakThis.IsValid())
+				return;
+
+			const uint32 Bytes = uint32(Count) * sizeof(FVector3f);
+			UE_LOG(LogTemp, Warning, TEXT("PollNormals: Count=%d Bytes=%u"), Count, Bytes);
+
+			const FVector3f* Data = reinterpret_cast<const FVector3f*>(RB->Lock(Bytes));
+			UE_LOG(LogTemp, Warning, TEXT("PollNormals: Lock=%p"), Data);
+
+			TArray<FVector3f> Copy;
+			Copy.SetNumZeroed(Count);
+
+			if (Data)
+			{
+				FMemory::Memcpy(Copy.GetData(), Data, Bytes);
+			}
+
+			RB->Unlock();
+			UE_LOG(LogTemp, Warning, TEXT("PollNormals: Copied %d normals"), Copy.Num());
+
+			AsyncTask(ENamedThreads::GameThread, [WeakThis, Copy = MoveTemp(Copy)]() mutable
+			{
+				if (!WeakThis.IsValid())
+					return;
+
+				FScopeLock Lock(&WeakThis->ReadbackCS);
+				WeakThis->PendingNormals = MoveTemp(Copy);
+				WeakThis->bHasPendingNormals = true;
+				WeakThis->bCanFreeNormalsReadback = true;
+				UE_LOG(LogTemp, Warning, TEXT("PollNormals: Stored PendingNormals=%d"), WeakThis->PendingNormals.Num());
+			});
+		});
+}
 
 // CONSUME FUNCTIONS
 

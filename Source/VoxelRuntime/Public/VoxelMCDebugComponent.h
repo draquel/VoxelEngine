@@ -86,9 +86,11 @@ private:
 	// --- polling (tick-thread) ---
 	void PollTriCounts();
 	void PollTotalVerts();
+	void PollTotalTris();
 	void PollScatterVerts();
 	void PollDebugTap();
 	void PollIndices();
+	void PollNormals();
 
 	// --- consume (game thread) ---
 	void ConsumeAndLog();
@@ -106,6 +108,8 @@ private:
 	bool bDebugTapPending    = false;
 	bool bScatterPending= false;
 	bool bIndicesPending  = false;
+	bool bNormalsPending  = false;
+	bool bTotalTrisPending  = false;
 
 	// ---------------------------
 	// Readback objects (created on game thread)
@@ -115,6 +119,8 @@ private:
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> DebugTapReadback;
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> ScatterVertsReadback;
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> IndicesReadback;
+	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> NormalsReadback;
+	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> TotalTrisReadback;
 
 	// ---------------------------
 	// Readback “how much did we copy”
@@ -132,6 +138,8 @@ private:
 	bool bHasPendingDebugTap    = false;
 	bool bHasPendingScatterVerts= false;
 	bool bHasPendingIndices       = false;
+	bool bHasPendingNormals     = false;
+	bool bHasPendingTotalTris      = false;
 	
 	bool bCanFreeTriCountsReadback   = false;
 	bool bCanFreeTotalVertsReadback  = false;
@@ -141,9 +149,11 @@ private:
 
 	TArray<uint32>    PendingTriCounts;     // optional
 	uint32            PendingTotalVerts = 0;
+	uint32			  PendingTotalTris = 0;
 	TArray<uint32>    PendingDebugTap;      // 16 u32
 	TArray<FVector4f> PendingScatterVerts;  // float4
 	TArray<uint32>    PendingIndices;       // uint
+	TArray<FVector3f> PendingNormals;
 	
 	uint32 PendingSums;
 	uint32 PendingOffs;
@@ -152,9 +162,10 @@ private:
 
 	// last-known (for rendering decisions)
 	uint32 LastTotalVerts = 0;
+	uint32 LastTotalTris = 0;
 	uint32 LastIndicesRead = 0;
 	uint32 LastScatterRead = 0;
-	
+	uint32 LastNormalsRead = 0;
 
 	// timing
 	float TimeSinceLastDispatch = 0.f;
