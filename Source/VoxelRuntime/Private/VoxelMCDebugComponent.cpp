@@ -52,9 +52,9 @@ void UVoxelMCDebugComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 	// PollDebugTap();
 	
-	UE_LOG(LogTemp, Warning, TEXT("Pending: Scatter=%d Index=%d Normals=%d TotalVerts=%d TotalTris=%d  Has: V=%d I=%d N=%d TV=%d TT=%d"),
-			bScatterPending, bIndicesPending, bNormalsPending, bTotalVertsPending, bTotalTrisPending,
-			bHasPendingScatterVerts, bHasPendingIndices, bHasPendingNormals, bHasPendingTotalVerts, bHasPendingTotalTris);
+	// UE_LOG(LogTemp, Warning, TEXT("Pending: Scatter=%d Index=%d Normals=%d TotalVerts=%d TotalTris=%d  Has: V=%d I=%d N=%d TV=%d TT=%d"),
+	// 		bScatterPending, bIndicesPending, bNormalsPending, bTotalVertsPending, bTotalTrisPending,
+	// 		bHasPendingScatterVerts, bHasPendingIndices, bHasPendingNormals, bHasPendingTotalVerts, bHasPendingTotalTris);
 	
 	// 2) Consume on Game Thread
 	if (bRenderToOwnerPMC) {
@@ -345,7 +345,7 @@ void UVoxelMCDebugComponent::PollTotalVerts()
 			const uint32 Sums = Data ? Data[1] : 0;
 			const uint32 Offs = Data ? Data[2] : 0;
 			const uint32 NumBlocks = Data ? Data[3] : 0;
-			UE_LOG(LogTemp, Warning, TEXT("TotalVerts: %d Sums: %d Offsets: %d Blocks: %d"), Total, Sums, Offs, NumBlocks);
+			// UE_LOG(LogTemp, Warning, TEXT("TotalVerts: %d Sums: %d Offsets: %d Blocks: %d"), Total, Sums, Offs, NumBlocks);
 			RB->Unlock();
 
 			AsyncTask(ENamedThreads::GameThread, [WeakThis, Total]()
@@ -389,7 +389,7 @@ void UVoxelMCDebugComponent::PollTotalTris()
 			const uint32 Sums = Data ? Data[1] : 0;
 			const uint32 Offs = Data ? Data[2] : 0;
 			const uint32 NumBlocks = Data ? Data[3] : 0;
-			UE_LOG(LogTemp, Warning, TEXT("TotalTris: %d Sums: %d Offsets: %d Blocks: %d"), Total, Sums, Offs, NumBlocks);
+			// UE_LOG(LogTemp, Warning, TEXT("TotalTris: %d Sums: %d Offsets: %d Blocks: %d"), Total, Sums, Offs, NumBlocks);
 			RB->Unlock();
 
 			AsyncTask(ENamedThreads::GameThread, [WeakThis, Total]()
@@ -570,10 +570,10 @@ void UVoxelMCDebugComponent::PollNormals()
 				return;
 
 			const uint32 Bytes = uint32(Count) * sizeof(FVector3f);
-			UE_LOG(LogTemp, Warning, TEXT("PollNormals: Count=%d Bytes=%u"), Count, Bytes);
+			// UE_LOG(LogTemp, Warning, TEXT("PollNormals: Count=%d Bytes=%u"), Count, Bytes);
 
 			const FVector3f* Data = reinterpret_cast<const FVector3f*>(RB->Lock(Bytes));
-			UE_LOG(LogTemp, Warning, TEXT("PollNormals: Lock=%p"), Data);
+			// UE_LOG(LogTemp, Warning, TEXT("PollNormals: Lock=%p"), Data);
 
 			TArray<FVector3f> Copy;
 			Copy.SetNumZeroed(Count);
@@ -584,7 +584,7 @@ void UVoxelMCDebugComponent::PollNormals()
 			}
 
 			RB->Unlock();
-			UE_LOG(LogTemp, Warning, TEXT("PollNormals: Copied %d normals"), Copy.Num());
+			// UE_LOG(LogTemp, Warning, TEXT("PollNormals: Copied %d normals"), Copy.Num());
 
 			AsyncTask(ENamedThreads::GameThread, [WeakThis, Copy = MoveTemp(Copy)]() mutable
 			{
@@ -595,7 +595,7 @@ void UVoxelMCDebugComponent::PollNormals()
 				WeakThis->PendingNormals = MoveTemp(Copy);
 				WeakThis->bHasPendingNormals = true;
 				WeakThis->bCanFreeNormalsReadback = true;
-				UE_LOG(LogTemp, Warning, TEXT("PollNormals: Stored PendingNormals=%d"), WeakThis->PendingNormals.Num());
+				// UE_LOG(LogTemp, Warning, TEXT("PollNormals: Stored PendingNormals=%d"), WeakThis->PendingNormals.Num());
 			});
 		});
 }
@@ -665,7 +665,7 @@ void UVoxelMCDebugComponent::ConsumeAndLog()
 	{
 		bHasPendingTotalVerts = false;
 
-		UE_LOG(LogTemp, Warning, TEXT("MC Scan: TotalVerts=%u"), PendingTotalVerts);
+		// UE_LOG(LogTemp, Warning, TEXT("MC Scan: TotalVerts=%u"), PendingTotalVerts);
 	}
 
 	if (bHasPendingScatterVerts)
@@ -673,12 +673,12 @@ void UVoxelMCDebugComponent::ConsumeAndLog()
 		bHasPendingScatterVerts = false;
 
 		const int32 N = PendingScatterVerts.Num();
-		UE_LOG(LogTemp, Warning, TEXT("MC Scatter: ReadbackVerts=%d"), N);
+		// UE_LOG(LogTemp, Warning, TEXT("MC Scatter: ReadbackVerts=%d"), N);
 
 		for (int32 i = 0; i < FMath::Min(N, 8); ++i)
 		{
 			const FVector4f V = PendingScatterVerts[i];
-			UE_LOG(LogTemp, Warning, TEXT("Scatter[%d] Pos=(%f,%f,%f) W=%f"), i, V.X, V.Y, V.Z, V.W);
+			// UE_LOG(LogTemp, Warning, TEXT("Scatter[%d] Pos=(%f,%f,%f) W=%f"), i, V.X, V.Y, V.Z, V.W);
 		}
 	}
 
@@ -687,7 +687,7 @@ void UVoxelMCDebugComponent::ConsumeAndLog()
 		bHasPendingIndices = false;
 
 		const int32 N = PendingIndices.Num();
-		UE_LOG(LogTemp, Warning, TEXT("MC Indices: Readback=%d"), N);
+		// UE_LOG(LogTemp, Warning, TEXT("MC Indices: Readback=%d"), N);
 
 		if (N > 0)
 		{
@@ -696,7 +696,7 @@ void UVoxelMCDebugComponent::ConsumeAndLog()
 			{
 				S += FString::Printf(TEXT("%u "), PendingIndices[i]);
 			}
-			UE_LOG(LogTemp, Warning, TEXT("MC Indices[0..%d): %s"), FMath::Min(N, 64), *S);
+			// UE_LOG(LogTemp, Warning, TEXT("MC Indices[0..%d): %s"), FMath::Min(N, 64), *S);
 		}
 	}
 }
@@ -776,18 +776,18 @@ void UVoxelMCDebugComponent::ConsumeAndRenderPMC()
 	{
 		Verts.Add(FVector((double)V.X, (double)V.Y, (double)V.Z));
 	}
-	int32 FirstNonZero = INDEX_NONE;
-	for (int32 i = 0; i < Verts4.Num(); ++i)
-	{
-		const FVector4f& V = Verts4[i];
-		if (V.W != 0.0f || V.X != 0.0f || V.Y != 0.0f || V.Z != 0.0f)
-		{
-			FirstNonZero = i;
-			UE_LOG(LogTemp, Warning, TEXT("FirstNonZero Vert[%d]=(%.2f %.2f %.2f %.2f)"), i, V.X, V.Y, V.Z, V.W);
-			break;
-		}
-	}
-	UE_LOG(LogTemp, Warning, TEXT("TotalVerts=%u FirstNonZero=%d"), PendingTotalVerts, FirstNonZero);
+	// int32 FirstNonZero = INDEX_NONE;
+	// for (int32 i = 0; i < Verts4.Num(); ++i)
+	// {
+	// 	const FVector4f& V = Verts4[i];
+	// 	if (V.W != 0.0f || V.X != 0.0f || V.Y != 0.0f || V.Z != 0.0f)
+	// 	{
+	// 		FirstNonZero = i;
+	// 		UE_LOG(LogTemp, Warning, TEXT("FirstNonZero Vert[%d]=(%.2f %.2f %.2f %.2f)"), i, V.X, V.Y, V.Z, V.W);
+	// 		break;
+	// 	}
+	// }
+	// UE_LOG(LogTemp, Warning, TEXT("TotalVerts=%u FirstNonZero=%d"), PendingTotalVerts, FirstNonZero);
 
 
 	// Convert indices
@@ -797,14 +797,14 @@ void UVoxelMCDebugComponent::ConsumeAndRenderPMC()
 	{
 		Ind.Add((int32)I);
 	}
-	for (int32 i = 0; i < 3; ++i)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Consume: Verts[%d]=%s"), i, *Verts[i].ToString());
-	}
-	for (int32 i = 0; i < 3; ++i)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Consume: Ind[%d]=%d"), i, Ind[i]);
-	}	
+	// for (int32 i = 0; i < 3; ++i)
+	// {
+	// 	UE_LOG(LogTemp, Warning, TEXT("Consume: Verts[%d]=%s"), i, *Verts[i].ToString());
+	// }
+	// for (int32 i = 0; i < 3; ++i)
+	// {
+	// 	UE_LOG(LogTemp, Warning, TEXT("Consume: Ind[%d]=%d"), i, Ind[i]);
+	// }	
 	//Convert Normals
 	TArray<FVector> Normals;
 	Normals.SetNum(Verts.Num());
@@ -840,21 +840,21 @@ void UVoxelMCDebugComponent::ConsumeAndRenderPMC()
 	// 	if (I > MaxIndexU) I = MaxIndexU;
 	// }
 	
-	int32 OOR = 0;
-	uint32 MinI = UINT32_MAX, MaxI = 0;
-	for (uint32 I : IndU32)
-	{
-		MinI = FMath::Min(MinI, I);
-		MaxI = FMath::Max(MaxI, I);
-		if (I >= (uint32)TotalV) { OOR++; if (OOR < 8) UE_LOG(LogTemp, Warning, TEXT("OOR index: %u (TotalV=%d)"), I, TotalV); }
-	}
-	UE_LOG(LogTemp, Warning, TEXT("Index stats: OOR=%d Min=%u Max=%u TotalV=%d"), OOR, MinI, MaxI, TotalV);
-
-	if (OOR > 0)
-	{
-		UE_LOG(LogTemp, Error, TEXT("Refusing to build PMC due to out-of-range indices."));
-		return;
-	}
+	// int32 OOR = 0;
+	// uint32 MinI = UINT32_MAX, MaxI = 0;
+	// for (uint32 I : IndU32)
+	// {
+	// 	MinI = FMath::Min(MinI, I);
+	// 	MaxI = FMath::Max(MaxI, I);
+	// 	if (I >= (uint32)TotalV) { OOR++; if (OOR < 8) UE_LOG(LogTemp, Warning, TEXT("OOR index: %u (TotalV=%d)"), I, TotalV); }
+	// }
+	// UE_LOG(LogTemp, Warning, TEXT("Index stats: OOR=%d Min=%u Max=%u TotalV=%d"), OOR, MinI, MaxI, TotalV);
+	//
+	// if (OOR > 0)
+	// {
+	// 	UE_LOG(LogTemp, Error, TEXT("Refusing to build PMC due to out-of-range indices."));
+	// 	return;
+	// }
 	
 	// Minimal normals/uvs (debug)
 	TArray<FVector2D> UV0;
@@ -863,8 +863,12 @@ void UVoxelMCDebugComponent::ConsumeAndRenderPMC()
 
 	// Normals.Init(FVector::UpVector, Verts.Num());
 	UV0.Init(FVector2D::ZeroVector, Verts.Num());
-	UE_LOG(LogTemp, Warning, TEXT("PMC: Clearing sections, current=%d"), PMC->GetNumSections());
+	// UE_LOG(LogTemp, Warning, TEXT("PMC: Clearing sections, current=%d"), PMC->GetNumSections());
 
+	UMaterialInterface* LoadedMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/LevelPrototyping/Materials/M_PrototypeGrid.M_PrototypeGrid"));
+	if (LoadedMaterial)
+		PMC->SetMaterial(0,LoadedMaterial);
+	
 	PMC->ClearAllMeshSections();
 	PMC->CreateMeshSection_LinearColor(
 		0,

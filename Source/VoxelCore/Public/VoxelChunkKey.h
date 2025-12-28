@@ -16,5 +16,5 @@ struct FVoxelChunkKey
 
 FORCEINLINE uint32 GetTypeHash(const FVoxelChunkKey& K)
 {
-	return HashCombine(GetTypeHash(K.LOD), GetTypeHash(K.Coord));
+	return HashCombine(::GetTypeHash(K.LOD), GetTypeHash(K.Coord));
 }
