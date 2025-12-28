@@ -1,5 +1,5 @@
 ﻿#include "/Engine/Private/Common.ush"
-#include "../Noise/VoxelNoiseParams.ush"
+#include "../Noise/VoxelDensity.ush"
 #include "MC_Tables.ush"
 
 // If you have a matching .ush for noise params, you can include it too,
@@ -15,7 +15,7 @@ uint   ChunkSeed;
 uint   MaxVerts;
 uint   bUseCaseIndexPerCell;
 
-FVoxelNoiseParams NoiseParams;
+StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
 
 // From Count + Scan
 StructuredBuffer<uint> VertCountPerCell; // N cells, verts-per-cell (triCount*3)
@@ -24,26 +24,6 @@ StructuredBuffer<uint> CaseIndexPerCell;
 
 // Output
 RWStructuredBuffer<float4> OutVertices;  // sized to NumCells*15 on CPU; only [0..TotalVerts) is valid
-
-// ---- Helpers ----
-// static const float3 CornerOfs[8] =
-// {
-// 	float3(0,0,0), float3(1,0,0), float3(1,1,0), float3(0,1,0),
-// 	float3(0,0,1), float3(1,0,1), float3(1,1,1), float3(0,1,1)
-// };
-//
-// static const uint2 EdgeCorners[12] =
-// {
-// 	uint2(0,1), uint2(1,2), uint2(2,3), uint2(3,0),
-// 	uint2(4,5), uint2(5,6), uint2(6,7), uint2(7,4),
-// 	uint2(0,4), uint2(1,5), uint2(2,6), uint2(3,7)
-// };
-
-// World-space density. Plane test: z = 0 plane in world.
-float SampleDensityWS(float3 Pws)
-{
-	return Pws.z;
-}
 
 float3 VertexInterp(float iso, float3 p0, float3 p1, float d0, float d1)
 {
@@ -59,7 +39,9 @@ uint ComputeCaseIndex(float3 cellMinWS, out float3 cpos[8], out float cd[8])
 	[unroll] for (uint i = 0; i < 8; ++i)
 	{
 		cpos[i] = cellMinWS + CornerOfs[i] * StepSizeWS;
-		cd[i]   = SampleDensityWS(cpos[i]);
+		// cd[i]   = SampleDensityWS(cpos[i]);
+		FVoxelNoiseParams NP = NoiseParamsBuf[0];
+		cd[i]   = SampleDensity_Terrain_Noise(cpos[i],NP,ChunkSeed);
 		caseIndex |= (cd[i] < IsoLevel) ? (1u << i) : 0u;
 	}
 	return caseIndex;
@@ -80,12 +62,6 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 	const uint cellsPerSlice = CellsPerAxis * CellsPerAxis;
 	const uint cellIndex = x + y * CellsPerAxis + z * cellsPerSlice;
 
-	// const uint base = cellIndex * 3; // ignore scan offsets entirely for this test
-	// OutVertices[base + 0] = float4(float3(x,y,z) * StepSizeWS, 1);
-	// OutVertices[base + 1] = float4(float3(x,y,z) * StepSizeWS + float3(StepSizeWS,0,0), 1);
-	// OutVertices[base + 2] = float4(float3(x,y,z) * StepSizeWS + float3(0,StepSizeWS,0), 1);
-	// return;
-	
 	// Authoritative per-cell vertex count from Count pass (triCount*3)
 	const uint vc = VertCountPerCell[cellIndex];
 	if (vc == 0)
@@ -105,7 +81,9 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 	[unroll] for (uint i=0;i<8;++i)
 	{
 		cpos[i] = cellMinWS + CornerOfs[i]*StepSizeWS;
-		cd[i]   = SampleDensityWS(cpos[i]);
+		// cd[i]   = SampleDensityWS(cpos[i]);
+		FVoxelNoiseParams NP = NoiseParamsBuf[0];
+		cd[i]   = SampleDensity_Terrain_Noise(cpos[i],NP,ChunkSeed);
 	}
 
 	// For safety: if count/scatter disagree, refuse to emit.

@@ -1,7 +1,7 @@
 ﻿// /Plugin/Voxel/MarchingCubes/MC_Count.usf
 
 #include "/Engine/Private/Common.ush"
-#include "../Noise/VoxelNoiseParams.ush"
+#include "../Noise/VoxelDensity.ush"
 #include "MC_Tables.ush"
 
 // NOTE: These globals are injected by UE's shader parameter struct (FMC_CountCS::FParameters)
@@ -13,7 +13,7 @@ float  IsoLevel;
 uint   ChunkSeed;   // unused for now
 uint   Padding0;  
 
-FVoxelNoiseParams NoiseParams;
+StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
 
 RWStructuredBuffer<uint> OutTriCountPerCell;   // NumCells
 RWStructuredBuffer<uint> OutVertCountPerCell;  // NumCells
@@ -26,7 +26,7 @@ RWStructuredBuffer<uint> OutCaseIndexPerCell;  // NumCells
 // };
 
 // Deterministic test field: plane at Z == 0 (IsoLevel still applied in the compare)
-float SampleDensityWS(float3 Pws)
+float SampleDensityWS(float3 Pws, uint Seed)
 {
     return Pws.z; // simple plane
 }
@@ -39,7 +39,9 @@ uint ComputeCaseIndex(float3 cellMinWS)
     for (uint i = 0; i < 8; ++i)
     {
         float3 p = cellMinWS + CornerOfs[i] * StepSizeWS;
-        float  d = SampleDensityWS(p);
+        // float  d = SampleDensityWS(p,NoiseParams.Seed);
+        FVoxelNoiseParams NP = NoiseParamsBuf[0];
+        float d = SampleDensity_Terrain_Noise(p,NP,ChunkSeed);
 
         // "inside" if d < IsoLevel
         caseIndex |= (d < IsoLevel) ? (1u << i) : 0u;
@@ -80,7 +82,9 @@ void Main(uint3 DTid : SV_DispatchThreadID)
     for (uint i = 0; i < 8; ++i)
     {
         float3 p = cellMinWS + CornerOfs[i] * StepSizeWS;
-        float d  = SampleDensityWS(p);
+        // float d  = SampleDensityWS(p,NoiseParams.Seed);
+        FVoxelNoiseParams NP = NoiseParamsBuf[0];
+        float d = SampleDensity_Terrain_Noise(p,NP,ChunkSeed);
         caseIndex |= (d < IsoLevel) ? (1u << i) : 0u;
     }
 

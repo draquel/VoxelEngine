@@ -20,8 +20,8 @@ public:
 		SHADER_PARAMETER(uint32,   MaxVerts)
 		SHADER_PARAMETER(uint32,   bUseCaseIndexPerCell)
 
-		SHADER_PARAMETER_STRUCT_REF(FVoxelNoiseParams, NoiseParams)
-
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelNoiseParams>, NoiseParamsBuf)
+	
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, VertOffsets)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, VertCountPerCell)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, CaseIndexPerCell)
@@ -68,7 +68,7 @@ public:
 FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	FRDGBuilder& GraphBuilder,
 	const FMCChunkParamsCPU& Chunk,
-	const FVoxelNoiseParamsCPU& NoiseCPU,
+	const FVoxelNoiseParamsCPU& NoiseParamsCPU,
 	FRDGBufferRef VertOffsets,
 	FRDGBufferRef VertCountPerCell,
 	FRDGBufferRef CaseIndexPerCell,
@@ -87,8 +87,6 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	// Optional clear for debugging (not required)
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.Vertices), 0);
 
-	const FVoxelNoiseParams NoiseGPU = MakeVoxelNoiseParams(NoiseCPU);
-
 	auto* PassParams = GraphBuilder.AllocParameters<FMC_ScatterCS::FParameters>();
 	PassParams->ChunkOriginWS = FVector3f(Chunk.ChunkOriginWS);
 	PassParams->StepSizeWS    = Chunk.StepSizeWS;
@@ -98,7 +96,17 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	PassParams->MaxVerts      = MaxVerts;
 	PassParams->bUseCaseIndexPerCell = bUseIndexPerCell ? 1u : 0u;
 
-	PassParams->NoiseParams = TUniformBufferRef<FVoxelNoiseParams>::CreateUniformBufferImmediate(NoiseGPU, UniformBuffer_SingleFrame);
+	const FVoxelNoiseParams NoiseParamsGPU = MakeVoxelNoiseParams(NoiseParamsCPU);
+	FRDGBufferRef NoiseParamsBuffer =
+		CreateStructuredBuffer(
+			GraphBuilder,
+			TEXT("Voxel.NoiseParams"),
+			sizeof(FVoxelNoiseParams),
+			1,
+			&NoiseParamsGPU,
+			sizeof(FVoxelNoiseParams));
+	FRDGBufferSRVRef NoiseParamsSRV = GraphBuilder.CreateSRV(NoiseParamsBuffer);
+	PassParams->NoiseParamsBuf = NoiseParamsSRV;
 
 	PassParams->VertOffsets      = GraphBuilder.CreateSRV(VertOffsets);
 	PassParams->VertCountPerCell = GraphBuilder.CreateSRV(VertCountPerCell);
