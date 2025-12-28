@@ -89,18 +89,18 @@ void UVoxelMCDebugComponent::DispatchNow()
         if (bDebugReadTriCounts)
         {
             TriCountReadback = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.TriCountReadback"));
-            bTriPending = true;
+            bTriCountPending = true;
             bCanFreeTriCountsReadback = false;
         }
         else
         {
             TriCountReadback.Reset();
-            bTriPending = false;
+            bTriCountPending = false;
         }
 
         // Scan
         TotalVertsReadback = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.TotalVertsReadback"));
-        bTotalPending = true;
+        bTotalVertsPending = true;
         bCanFreeTotalVertsReadback = false;
     	
     	TotalTrisReadback = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.TotalTrisReadback"));
@@ -119,7 +119,7 @@ void UVoxelMCDebugComponent::DispatchNow()
             bDebugTapPending = false;
         }
 
-        ScatterVertsReadback = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.ScatterVertsReadback"));
+        VertexReadback = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.ScatterVertsReadback"));
         bScatterPending = true;
     	bCanFreeScatterReadback = false;
 
@@ -220,7 +220,7 @@ bool UVoxelMCDebugComponent::AnyPending() const
 
 void UVoxelMCDebugComponent::PollTriCounts()
 {
-	if (!bTriPending)
+	if (!bTriCountPending)
 		return;
 
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> RB;
@@ -231,7 +231,7 @@ void UVoxelMCDebugComponent::PollTriCounts()
 
 	if (!RB.IsValid())
 	{
-		bTriPending = false;
+		bTriCountPending = false;
 		return;
 	}
 
@@ -239,7 +239,7 @@ void UVoxelMCDebugComponent::PollTriCounts()
 		return;
 
 	// Transition to “lock+copy” phase once
-	bTriPending = false;
+	bTriCountPending = false;
 
 	const int32 Count = FMath::Clamp(DebugReadbackCount, 1, 4096);
 
@@ -285,7 +285,7 @@ void UVoxelMCDebugComponent::PollTriCounts()
 
 void UVoxelMCDebugComponent::PollTotalVerts()
 {
-	if (!bTotalPending)
+	if (!bTotalVertsPending)
 		return;
 
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> RB;
@@ -296,43 +296,40 @@ void UVoxelMCDebugComponent::PollTotalVerts()
 
 	if (!RB.IsValid())
 	{
-		bTotalPending = false;
+		bTotalVertsPending = false;
 		return;
 	}
 
 	if (!RB->IsReady())
 		return;
 
-	bTotalPending = false;
+	bTotalVertsPending = false;
 
 	TWeakObjectPtr<UVoxelMCDebugComponent> WeakThis(this);
 
-	ENQUEUE_RENDER_COMMAND(MC_Total_LockCopy)(
+	ENQUEUE_RENDER_COMMAND(MC_TotalVerts_LockCopy)(
 		[WeakThis, RB](FRHICommandListImmediate& RHICmdList)
 		{
 			if (!WeakThis.IsValid())
 				return;
 
-			const uint32 CountU32 = 4;
-			const uint32 Bytes = CountU32 * sizeof(uint32);
+			const uint32 Bytes = 4 * sizeof(uint32);
 
 			const uint32* Data = reinterpret_cast<const uint32*>(RB->Lock(Bytes));
 			const uint32 Total = Data ? Data[0] : 0;
-			const uint32 Sums  = Data ? Data[1] : 0;
-			const uint32 Offs  = Data ? Data[2] : 0;
-			const uint32 NB    = Data ? Data[3] : 0;
+			const uint32 Sums = Data ? Data[1] : 0;
+			const uint32 Offs = Data ? Data[2] : 0;
+			const uint32 NumBlocks = Data ? Data[3] : 0;
+			UE_LOG(LogTemp, Warning, TEXT("TotalVerts: %d Sums: %d Offsets: %d Blocks: %d"), Total, Sums, Offs, NumBlocks);
 			RB->Unlock();
 
-			AsyncTask(ENamedThreads::GameThread, [WeakThis, Total, Sums, Offs, NB]()
+			AsyncTask(ENamedThreads::GameThread, [WeakThis, Total]()
 			{
 				if (!WeakThis.IsValid())
 					return;
 
 				FScopeLock Lock(&WeakThis->ReadbackCS);
 				WeakThis->PendingTotalVerts = Total;
-				WeakThis->PendingSums = Sums;
-				WeakThis->PendingOffs = Offs;
-				WeakThis->PendingNumBlocks = NB;
 				WeakThis->bHasPendingTotalVerts = true;
 				WeakThis->bCanFreeTotalVertsReadback = true;
 			});
@@ -389,11 +386,11 @@ void UVoxelMCDebugComponent::PollScatterVerts()
 		return;
 
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> RB;
-	int32 ReadCount = 0;
+	int32 Count = 0;
 	{
 		FScopeLock Lock(&ReadbackCS);
-		RB = ScatterVertsReadback;
-		ReadCount = LastScatterRead; // set during Dispatch
+		RB = VertexReadback;
+		Count = LastScatterRead; // fallback only
 	}
 
 	if (!RB.IsValid())
@@ -408,7 +405,6 @@ void UVoxelMCDebugComponent::PollScatterVerts()
 	// Only flip pending once we're definitely going to enqueue the lock/copy
 	bScatterPending = false;
 
-	const int32 Count = FMath::Clamp(ReadCount, 1, 1 << 20); // safety cap
 	TWeakObjectPtr<UVoxelMCDebugComponent> WeakThis(this);
 
 	ENQUEUE_RENDER_COMMAND(MC_ScatterVerts_LockCopy)(
@@ -504,12 +500,12 @@ void UVoxelMCDebugComponent::PollIndices()
 		return;
 
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> RB;
-	uint32 LocalCount = 0;
+	uint32 Count = 0;
 
 	{
 		FScopeLock Lock(&ReadbackCS);
 		RB = IndicesReadback;
-		LocalCount = LastIndicesRead;     // capture under lock
+		Count = LastIndicesRead; // fallback only
 	}
 
 	if (!RB.IsValid())
@@ -526,12 +522,12 @@ void UVoxelMCDebugComponent::PollIndices()
 	TWeakObjectPtr<UVoxelMCDebugComponent> WeakThis(this);
 
 	ENQUEUE_RENDER_COMMAND(MC_Indices_LockCopy)(
-		[WeakThis, RB, LocalCount](FRHICommandListImmediate& RHICmdList)
+		[WeakThis, RB, Count](FRHICommandListImmediate& RHICmdList)
 		{
 			if (!WeakThis.IsValid())
 				return;
 
-			const uint32 CountU32 = FMath::Max(1u, LocalCount);
+			const uint32 CountU32 = FMath::Max(1u, Count);
 			const uint32 Bytes = CountU32 * sizeof(uint32);
 
 			const uint32* Data = reinterpret_cast<const uint32*>(RB->Lock(Bytes));

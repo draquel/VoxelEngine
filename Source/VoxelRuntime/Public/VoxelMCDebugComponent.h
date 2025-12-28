@@ -103,8 +103,8 @@ private:
 	// ---------------------------
 	// State machine (pending flags)
 	// ---------------------------
-	bool bTriPending    = false;
-	bool bTotalPending  = false;
+	bool bTriCountPending    = false;
+	bool bTotalVertsPending  = false;
 	bool bDebugTapPending    = false;
 	bool bScatterPending= false;
 	bool bIndicesPending  = false;
@@ -117,7 +117,7 @@ private:
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> TriCountReadback;
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> TotalVertsReadback;
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> DebugTapReadback;
-	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> ScatterVertsReadback;
+	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> VertexReadback;
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> IndicesReadback;
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> NormalsReadback;
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> TotalTrisReadback;
@@ -137,15 +137,17 @@ private:
 	bool bHasPendingTotalVerts  = false;
 	bool bHasPendingDebugTap    = false;
 	bool bHasPendingScatterVerts= false;
-	bool bHasPendingIndices       = false;
+	bool bHasPendingIndices     = false;
 	bool bHasPendingNormals     = false;
 	bool bHasPendingTotalTris      = false;
 	
-	bool bCanFreeTriCountsReadback   = false;
-	bool bCanFreeTotalVertsReadback  = false;
-	bool bCanFreeTapReadback = false;
-	bool bCanFreeScatterReadback= false;
-	bool bCanFreeIndicesReadback= false;
+	bool bCanFreeTriCountsReadback  = false;
+	bool bCanFreeTotalVertsReadback = false;
+	bool bCanFreeTapReadback        = false;
+	bool bCanFreeScatterReadback    = false;
+	bool bCanFreeIndicesReadback    = false;
+	bool bCanFreeNormalsReadback    = false;
+	bool bCanFreeTotalTrisReadback  = false;
 
 	TArray<uint32>    PendingTriCounts;     // optional
 	uint32            PendingTotalVerts = 0;
@@ -155,11 +157,6 @@ private:
 	TArray<uint32>    PendingIndices;       // uint
 	TArray<FVector3f> PendingNormals;
 	
-	uint32 PendingSums;
-	uint32 PendingOffs;
-	uint32 PendingNumBlocks;
-	
-
 	// last-known (for rendering decisions)
 	uint32 LastTotalVerts = 0;
 	uint32 LastTotalTris = 0;
