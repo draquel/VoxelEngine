@@ -22,6 +22,10 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	// --- Dispatch controls ---
+	
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	bool bEnableDispatch = true;
+	
 	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
 	float DispatchIntervalSeconds = 0.25f;
 
@@ -58,7 +62,7 @@ public:
 	
 	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
 	int DebugReadbackZSlice = 0;
-
+	
 private:
 	// --- lifecycle ---
 	void DispatchNow();

@@ -79,6 +79,7 @@ void AVoxelWorldActor::BeginPlay()
 	if (ChunkSubsystem)
 	{
 		ChunkSubsystem->InitializeVoxel(Settings, EditLayer);
+		// ChunkSubsystem->AttachReadyToRender();
 	};
 }
 
@@ -87,7 +88,15 @@ void AVoxelWorldActor::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	if (ChunkSubsystem)
 	{
-		ChunkSubsystem->TickStreaming(DeltaSeconds, GetWorld(), GetActorLocation());
+		FVector CameraWS = GetActorLocation();
+		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		{
+			FVector Loc; FRotator Rot;
+			PC->GetPlayerViewPoint(Loc, Rot);
+			CameraWS = Loc;
+		}
+		
+		ChunkSubsystem->TickStreaming(DeltaSeconds, GetWorld(), CameraWS);
 		ChunkSubsystem->DebugTryConsumeAndBuildMesh(DebugPMC, DensityDebugComponent); 
 	}
 }

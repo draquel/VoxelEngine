@@ -73,6 +73,17 @@ float SampleDensity_Sphere(float3 Pws, float3 CenterWS, float RadiusWS)
 {
     return Density_SphereSDF(Pws, CenterWS, RadiusWS);
 }
+// Example: sphere centered in chunk, parameterized by chunk info.
+// Note: CellsPerAxis and StepSizeWS must be passed by caller (count/scatter already have them).
+float SampleDensityWS_SphereInChunk(float3 Pws, float3 ChunkOriginWS, float StepSizeWS, uint CellsPerAxis, float RadiusScale01)
+{
+    float chunkSize = (float)CellsPerAxis * StepSizeWS;
+    float3 center = ChunkOriginWS + float3(0.5, 0.5, 0.5) * chunkSize;
+
+    // radiusScale01=0.75 -> sphere radius = 0.75 * half-diagonal-ish; here use half chunk size.
+    float radius = (0.5 * chunkSize) * RadiusScale01;
+    return SampleDensity_Sphere(Pws, center, radius);
+}
 
 // 2) Sphere + (noise + overhang + caves), all driven by FVoxelNoiseParams
 float SampleDensity_Sphere_Noise(float3 Pws, float3 CenterWS, float RadiusWS, const FVoxelNoiseParams NP, uint seed)
@@ -86,6 +97,18 @@ float SampleDensity_Sphere_Noise(float3 Pws, float3 CenterWS, float RadiusWS, co
     d += Density_CavesCarve(Pws, NP, seed);
 
     return d;
+}
+
+// Example: sphere centered in chunk, parameterized by chunk info.
+// Note: CellsPerAxis and StepSizeWS must be passed by caller (count/scatter already have them).
+float SampleDensityWS_SphereInChunk_Noise(float3 Pws, float3 ChunkOriginWS, float StepSizeWS, uint CellsPerAxis, float RadiusScale01, const FVoxelNoiseParams NP, uint seed)
+{
+    float chunkSize = (float)CellsPerAxis * StepSizeWS;
+    float3 center = ChunkOriginWS + float3(0.5, 0.5, 0.5) * chunkSize;
+
+    // radiusScale01=0.75 -> sphere radius = 0.75 * half-diagonal-ish; here use half chunk size.
+    float radius = (0.5 * chunkSize) * RadiusScale01;
+    return SampleDensity_Sphere_Noise(Pws, center, radius,NP, seed);
 }
 
 // 3) Terrain heightfield + overhang + caves (useful later)

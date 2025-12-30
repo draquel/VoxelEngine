@@ -4,8 +4,6 @@
 #include "../Noise/VoxelDensity.ush"
 #include "MC_Tables.ush"
 
-// NOTE: These globals are injected by UE's shader parameter struct (FMC_CountCS::FParameters)
-
 float3 ChunkOriginWS;
 float  StepSizeWS;
 uint   CellsPerAxis;
@@ -18,18 +16,6 @@ StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
 RWStructuredBuffer<uint> OutTriCountPerCell;   // NumCells
 RWStructuredBuffer<uint> OutVertCountPerCell;  // NumCells
 RWStructuredBuffer<uint> OutCaseIndexPerCell;  // NumCells
-
-// static const float3 CornerOfs[8] =
-// {
-//     float3(0,0,0), float3(1,0,0), float3(1,1,0), float3(0,1,0),
-//     float3(0,0,1), float3(1,0,1), float3(1,1,1), float3(0,1,1)
-// };
-
-// Deterministic test field: plane at Z == 0 (IsoLevel still applied in the compare)
-float SampleDensityWS(float3 Pws, uint Seed)
-{
-    return Pws.z; // simple plane
-}
 
 uint ComputeCaseIndex(float3 cellMinWS)
 {

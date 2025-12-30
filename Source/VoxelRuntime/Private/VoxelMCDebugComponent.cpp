@@ -40,37 +40,40 @@ void UVoxelMCDebugComponent::BeginPlay()
 void UVoxelMCDebugComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	// 1) Poll (each poll only does work when IsReady() == true)
-	// PollTriCounts();
-	PollTotalVerts();
-	PollTotalTris();
-	//Only after totals are known
-	PollScatterVerts();
-	PollIndices();
-	PollNormals();
-
-	// PollDebugTap();
 	
-	// UE_LOG(LogTemp, Warning, TEXT("Pending: Scatter=%d Index=%d Normals=%d TotalVerts=%d TotalTris=%d  Has: V=%d I=%d N=%d TV=%d TT=%d"),
-	// 		bScatterPending, bIndicesPending, bNormalsPending, bTotalVertsPending, bTotalTrisPending,
-	// 		bHasPendingScatterVerts, bHasPendingIndices, bHasPendingNormals, bHasPendingTotalVerts, bHasPendingTotalTris);
-	
-	// 2) Consume on Game Thread
-	if (bRenderToOwnerPMC) {
-		ConsumeAndRenderPMC();
-	} else {
-		ConsumeAndLog();
-	}
-
-	// 3) Periodic dispatch
-	if (DispatchIntervalSeconds > 0.f)
+	if (bEnableDispatch)
 	{
-		TimeSinceLastDispatch += DeltaTime;
-		if (TimeSinceLastDispatch >= DispatchIntervalSeconds)
+		// 1) Poll (each poll only does work when IsReady() == true)
+		// PollTriCounts();
+		PollTotalVerts();
+		PollTotalTris();
+		//Only after totals are known
+		PollScatterVerts();
+		PollIndices();
+		PollNormals();
+
+		// PollDebugTap();
+	
+		// UE_LOG(LogTemp, Warning, TEXT("Pending: Scatter=%d Index=%d Normals=%d TotalVerts=%d TotalTris=%d  Has: V=%d I=%d N=%d TV=%d TT=%d"),
+		// 		bScatterPending, bIndicesPending, bNormalsPending, bTotalVertsPending, bTotalTrisPending,
+		// 		bHasPendingScatterVerts, bHasPendingIndices, bHasPendingNormals, bHasPendingTotalVerts, bHasPendingTotalTris);
+	
+		// 2) Consume on Game Thread
+		if (bRenderToOwnerPMC) {
+			ConsumeAndRenderPMC();
+		} else {
+			ConsumeAndLog();
+		}
+
+		// 3) Periodic dispatch
+		if (DispatchIntervalSeconds > 0.f)
 		{
-			TimeSinceLastDispatch = 0.f;
-			DispatchNow();
+			TimeSinceLastDispatch += DeltaTime;
+			if (TimeSinceLastDispatch >= DispatchIntervalSeconds)
+			{
+				TimeSinceLastDispatch = 0.f;
+				DispatchNow();
+			}
 		}
 	}
 }

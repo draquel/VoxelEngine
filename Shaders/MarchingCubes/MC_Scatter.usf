@@ -39,9 +39,8 @@ uint ComputeCaseIndex(float3 cellMinWS, out float3 cpos[8], out float cd[8])
 	[unroll] for (uint i = 0; i < 8; ++i)
 	{
 		cpos[i] = cellMinWS + CornerOfs[i] * StepSizeWS;
-		// cd[i]   = SampleDensityWS(cpos[i]);
 		FVoxelNoiseParams NP = NoiseParamsBuf[0];
-		cd[i]   = SampleDensity_Terrain_Noise(cpos[i],NP,ChunkSeed);
+		cd[i] = SampleDensity_Terrain_Noise(cpos[i],NP,ChunkSeed);
 		caseIndex |= (cd[i] < IsoLevel) ? (1u << i) : 0u;
 	}
 	return caseIndex;
@@ -81,7 +80,6 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 	[unroll] for (uint i=0;i<8;++i)
 	{
 		cpos[i] = cellMinWS + CornerOfs[i]*StepSizeWS;
-		// cd[i]   = SampleDensityWS(cpos[i]);
 		FVoxelNoiseParams NP = NoiseParamsBuf[0];
 		cd[i]   = SampleDensity_Terrain_Noise(cpos[i],NP,ChunkSeed);
 	}
