@@ -1,12 +1,12 @@
 ﻿#include "VoxelRuntime/Public/VoxelChunkSubsystem.h"
+
+#include "PMCDebugChunkRenderConsumer.h"
 #include "ProceduralMeshComponent.h"
 #include "RHICommandList.h"
 #include "RendererInterface.h"
 #include "VoxelChunkGPUResources.h"
 #include "VoxelChunkRecord.h"
-#include "VoxelChunkRenderPayload.h"
-#include "VoxelDebugPMCBuilder.h"
-#include "VoxelDensityDebugComponent.h"
+#include "VoxelCore/Public/VoxelChunkRenderPayload.h"
 #include "VoxelRDGPipeline.h"
 
 void UVoxelChunkSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -45,6 +45,30 @@ void UVoxelChunkSubsystem::SetRenderConsumer(TSharedPtr<Voxel::IVoxelChunkRender
 	RenderConsumer = MoveTemp(In);
 }
 
+uint8 UVoxelChunkSubsystem::ComputeSkirtMaskSameLOD(FVoxelChunkKey Key)
+{
+	auto HasNeighborResidentOrReadySameLOD = [&](const FVoxelChunkKey& K, int dx, int dy) -> bool
+	{
+		FVoxelChunkKey N = K;
+		N.Coord += FIntVector(dx, dy, 0);
+
+		if (const FVoxelChunkRecord* NR = Chunks.Find(N))
+		{
+			return NR->State == EVoxelChunkState::Resident || NR->State == EVoxelChunkState::Ready;
+		}
+		return false;
+	};
+
+	uint8 Mask = 0;
+	// Skirt only if neighbor is missing/not ready (i.e. edge is exposed)
+	if (!HasNeighborResidentOrReadySameLOD(Key, -1, 0)) Mask |= 1; // MinX
+	if (!HasNeighborResidentOrReadySameLOD(Key, +1, 0)) Mask |= 2; // MaxX
+	if (!HasNeighborResidentOrReadySameLOD(Key, 0, -1)) Mask |= 4; // MinY
+	if (!HasNeighborResidentOrReadySameLOD(Key, 0, +1)) Mask |= 8; // MaxY
+	
+	return Mask;
+}
+
 void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, const FVector& CameraWS)
 {
 	if (IsEngineExitRequested() || !World || !RDGPipeline)
@@ -53,7 +77,6 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 	for (auto& KVP : Chunks)
 	{
 		FVoxelChunkRecord& R = KVP.Value;
-		R.ChunkCenterWS = ComputeChunkCenterWS(R.Key);
 		R.LastDistanceToCamera = FVector::Dist2D(R.ChunkCenterWS, CameraWS);
 	}
 
@@ -64,8 +87,14 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 	ScheduleGeneration(CameraWS);
 
 	AttachReadyToRender();
+	
 	EvictUnwanted(Desired);
-
+	
+	if (RenderConsumer.IsValid())
+	{
+		RenderConsumer->Tick(DeltaSeconds);
+	}
+	
 	EmitTelemetry(DeltaSeconds, Desired.Num());
 	
 	for (auto& KVP : Chunks)
@@ -401,11 +430,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		{
 			Rec->GPU->bReadbackEnqueued = false;
 		}
-		if (UVoxelDensityDebugComponent* D = DensityDebug.Get())
-		{
-			D->SetLastChunkParams(Inputs.ChunkOriginWS, Inputs.CellsPerAxis, Inputs.StepSizeWS);
-		}
-		
+
 		Rec->BuildId++;
 		const uint64 ThisBuildId = Rec->BuildId;
 		Rec->bCancelRequested = false;
@@ -427,36 +452,91 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 
 void UVoxelChunkSubsystem::AttachReadyToRender()
 {
+	const double Now = FPlatformTime::Seconds();
+
 	for (auto& KVP : Chunks)
 	{
 		FVoxelChunkRecord& R = KVP.Value;
 		if (R.State != EVoxelChunkState::Generating) continue;
 		if (!R.GPU.IsValid()) continue;
 
-		FVoxelChunkGPUResources& G = *R.GPU.Get();
-		if (!G.VertexReadback || !G.IndexReadback || !G.VertexCountReadback || !G.IndexCountReadback)
-			continue;
-		
+		// cancel gate
 		if (R.bCancelRequested)
 		{
 			R.GPU.Reset();
-			R.State = EVoxelChunkState::Unloaded; // or Evicting then remove
-			R.LastStateChangeSec = FPlatformTime::Seconds();
+			R.State = EVoxelChunkState::Unloaded;
+			R.LastStateChangeSec = Now;
 			Telemetry_Canceled++;
 			continue;
 		}
 
-		if (G.VertexReadback->IsReady() && G.IndexReadback->IsReady() &&
-			G.VertexCountReadback->IsReady() && G.IndexCountReadback->IsReady())
+		FVoxelChunkGPUResources& G = *R.GPU.Get();
+		if (!G.VertexReadback || !G.IndexReadback || !G.VertexCountReadback || !G.IndexCountReadback)
+			continue;
+
+		const bool bReady =
+			G.VertexReadback->IsReady() && G.IndexReadback->IsReady() &&
+			G.VertexCountReadback->IsReady() && G.IndexCountReadback->IsReady();
+
+		if (!bReady)
+			continue;
+
+		// Now it is READY (GPU done, CPU readback available)
+		R.State = EVoxelChunkState::Ready;
+		R.LastStateChangeSec = Now;
+		Telemetry_BecameReady++;
+
+		// Submit to render consumer (do NOT mark Resident here)
+		if (RenderConsumer)
 		{
-			R.State = EVoxelChunkState::Ready;
-			R.LastStateChangeSec = FPlatformTime::Seconds();
-			Telemetry_BecameReady++;
+			FVoxelChunkRenderPayload P;
+			P.Key = R.Key;
+			P.GPU = R.GPU;
+			P.BuildId = R.BuildId;
+			P.ChunkOriginWS = ComputeChunkOriginWS(R.Key); // add helper you mentioned
+			P.ChunkSize = ChunkSizeWS(Settings, R.Key.LOD);
+			P.SkirtDepth = Settings.BaseStepSize * 4.0f;
+
+			// skirt mask logic stays here (or move into consumer later)
+			P.SkirtEdgeMask = ComputeSkirtMaskSameLOD(R.Key);
+
+			RenderConsumer->EnqueueBuild(P);
 		}
-		
 	}
 }
 
+
+// void UVoxelChunkSubsystem::AttachReadyToRender()
+// {
+// 	for (auto& KVP : Chunks)
+// 	{
+// 		FVoxelChunkRecord& R = KVP.Value;
+// 		if (R.State != EVoxelChunkState::Generating) continue;
+// 		if (!R.GPU.IsValid()) continue;
+//
+// 		FVoxelChunkGPUResources& G = *R.GPU.Get();
+// 		if (!G.VertexReadback || !G.IndexReadback || !G.VertexCountReadback || !G.IndexCountReadback)
+// 			continue;
+// 		
+// 		if (R.bCancelRequested)
+// 		{
+// 			R.GPU.Reset();
+// 			R.State = EVoxelChunkState::Unloaded; // or Evicting then remove
+// 			R.LastStateChangeSec = FPlatformTime::Seconds();
+// 			Telemetry_Canceled++;
+// 			continue;
+// 		}
+//
+// 		if (G.VertexReadback->IsReady() && G.IndexReadback->IsReady() &&
+// 			G.VertexCountReadback->IsReady() && G.IndexCountReadback->IsReady())
+// 		{
+// 			R.State = EVoxelChunkState::Ready;
+// 			R.LastStateChangeSec = FPlatformTime::Seconds();
+// 			Telemetry_BecameReady++;
+// 		}
+// 		
+// 	}
+// }
 
 void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 {
@@ -504,10 +584,10 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 	{
 		if (Evicted >= MaxEvictPerTick) break;
 
-		if (DebugPMCWeak.IsValid())
+		if (RenderConsumer)
 		{
-			ClearSectionForKey(R->Key);
-		}	
+			RenderConsumer->RemoveChunk(R->Key);
+		}
 		R->GPU.Reset();
 		ToRemove.Add(R->Key);
 		++Evicted;
@@ -540,93 +620,26 @@ void UVoxelChunkSubsystem::DebugRequestChunkOnce(const FVoxelChunkKey& Key)
     ScheduleGeneration(FVector::ZeroVector);
 }
 
-void UVoxelChunkSubsystem::DebugTryConsumeAndBuildMesh(UProceduralMeshComponent* PMC, UVoxelDensityDebugComponent* DensityDebugComponent)
+void UVoxelChunkSubsystem::OnConsumerBuilt(const FVoxelChunkKey& Key, uint64 BuiltBuildId)
 {
-	if (!PMC) return;
-
-	DebugPMCWeak = PMC; 
-	SetDensityDebug(DensityDebugComponent);
-
-	TArray<FVoxelChunkRenderPayload> Payloads;
-	Payloads.Reserve(Chunks.Num());
-
-	for (auto& KVP : Chunks)
+	if (FVoxelChunkRecord* R = Chunks.Find(Key))
 	{
-		FVoxelChunkRecord& Rec = KVP.Value;
-		if (Rec.State != EVoxelChunkState::Ready) continue;
-		if (!Rec.GPU.IsValid()) continue;
+		if (R->BuildId != BuiltBuildId) return;   // stale
+		if (R->bCancelRequested) return;          // canceled
 
-		auto HasNeighborResidentOrReadySameLOD = [&](const FVoxelChunkKey& K, int dx, int dy) -> bool
+		// Only transition if we were still waiting for render attach
+		if (R->State == EVoxelChunkState::Ready)
 		{
-			FVoxelChunkKey N = K;
-			N.Coord += FIntVector(dx, dy, 0);
-
-			if (const FVoxelChunkRecord* NR = Chunks.Find(N))
-			{
-				return NR->State == EVoxelChunkState::Resident || NR->State == EVoxelChunkState::Ready;
-			}
-			return false;
-		};
-
-		uint8 Mask = 0;
-		// Skirt only if neighbor is missing/not ready (i.e. edge is exposed)
-		if (!HasNeighborResidentOrReadySameLOD(Rec.Key, -1, 0)) Mask |= 1; // MinX
-		if (!HasNeighborResidentOrReadySameLOD(Rec.Key, +1, 0)) Mask |= 2; // MaxX
-		if (!HasNeighborResidentOrReadySameLOD(Rec.Key, 0, -1)) Mask |= 4; // MinY
-		if (!HasNeighborResidentOrReadySameLOD(Rec.Key, 0, +1)) Mask |= 8; // MaxY
-		
-		const float ChunkSize = ChunkSizeWS(Settings, Rec.Key.LOD);
-		const float SkirtDepth = Settings.BaseStepSize * 4.0f; // tune later
-
-		Payloads.Add({ Rec.Key, Rec.GPU, Rec.BuildId, Mask, ChunkSize, SkirtDepth });
+			R->State = EVoxelChunkState::Resident;
+			R->LastStateChangeSec = FPlatformTime::Seconds();
+			Telemetry_BecameResident++;
+		}
 	}
+}
 
-	FVoxelDebugPMCBuilder::TryConsumeAndBuild(
-		PMC,
-		Payloads,
-	[this](const FVoxelChunkKey& Key) { return GetOrCreateSection(Key); },
-	[this](const FVoxelChunkKey& Key, uint64 BuiltBuildId)
-		{
-			if (FVoxelChunkRecord* R = Chunks.Find(Key))
-			{
-				// Ignore stale completion (a newer build has been dispatched)
-				if (R->BuildId != BuiltBuildId)	return;
-
-				// Ignore canceled chunks (became undesired while in-flight)
-				if (R->bCancelRequested) return;
-				
-				if (R->State == EVoxelChunkState::Ready)
-				{
-					R->State = EVoxelChunkState::Resident;
-					R->LastStateChangeSec = FPlatformTime::Seconds();
-					Telemetry_BecameResident++;
-					
-					auto BumpNeighborForSkirtRefresh = [&](const FVoxelChunkKey& K, int dx, int dy)
-					{
-						FVoxelChunkKey N = K;
-						N.Coord += FIntVector(dx, dy, 0);
-
-						if (FVoxelChunkRecord* NR = Chunks.Find(N))
-						{
-							const double Now = FPlatformTime::Seconds();
-							if (NR->State == EVoxelChunkState::Resident && (Now - NR->LastSkirtRefreshRequestSec) > 0.25)
-							{
-								NR->LastSkirtRefreshRequestSec = Now;
-								NR->State = EVoxelChunkState::Ready;
-							}
-							
-							// If neighbor is already resident, re-run PMC build once to update skirts
-							if (NR->State == EVoxelChunkState::Resident) NR->State = EVoxelChunkState::Ready;
-						}
-					};
-
-					BumpNeighborForSkirtRefresh(Key, -1, 0);
-					BumpNeighborForSkirtRefresh(Key, +1, 0);
-					BumpNeighborForSkirtRefresh(Key, 0, -1);
-					BumpNeighborForSkirtRefresh(Key, 0, +1);
-				}
-			}
-		});
+void UVoxelChunkSubsystem::OnConsumerRemoved(const FVoxelChunkKey& Key)
+{
+	
 }
 
 static const TCHAR* ToString(EVoxelChunkState S)

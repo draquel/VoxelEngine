@@ -40,11 +40,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Voxel")
 	void DebugRequestChunkOnce(const FVoxelChunkKey& Key);
+	void OnConsumerBuilt(const FVoxelChunkKey& Key, uint64 BuiltBuildId);
+	void OnConsumerRemoved(const FVoxelChunkKey& Key);
 
-	void DebugTryConsumeAndBuildMesh(UProceduralMeshComponent* PMC, UVoxelDensityDebugComponent* DensityDebugComponent);
 	void EmitTelemetry(float DeltaSeconds, int32 DesiredCount);
 	int32 AllocateSection();
 	void SetRenderConsumer(TSharedPtr<Voxel::IVoxelChunkRenderConsumer> In);
+	uint8 ComputeSkirtMaskSameLOD(FVoxelChunkKey Key);
 	void AttachReadyToRender();
 	
 private:
@@ -58,9 +60,6 @@ private:
 
 	TMap<FVoxelChunkKey, FVoxelChunkRecord> Chunks;
 	
-	TWeakObjectPtr<UVoxelDensityDebugComponent> DensityDebug;
-	void SetDensityDebug(UVoxelDensityDebugComponent* In) { DensityDebug = In; }
-
 	TMap<FVoxelChunkKey, int32> ChunkToSection;
 	int32 NextSectionIndex = 0;
 	
@@ -79,7 +78,8 @@ private:
 
 	// Helpers
 	FVector ComputeChunkCenterWS(const FVoxelChunkKey& Key) const;
-	
+	FVector ComputeChunkOriginWS(const FVoxelChunkKey& Key) const;
+
 	// Telemetry
 	float TelemetryAccum = 0.0f;
 	float TelemetryPeriod = 0.25f; // print 4x per second
