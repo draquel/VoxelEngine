@@ -1,4 +1,4 @@
-﻿// VoxelRuntime/Public/VoxelChunkState.h
+﻿// VoxelCore/Public/VoxelChunkState.h
 #pragma once
 #include "CoreMinimal.h"
 

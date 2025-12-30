@@ -126,6 +126,8 @@ FVoxelChunkRecord& UVoxelChunkSubsystem::GetOrCreateChunk(const FVoxelChunkKey& 
 
 	FVoxelChunkRecord& NewRecord = Chunks.Add(Key);
 	NewRecord.Key = Key;
+	NewRecord.ChunkCenterWS = ComputeChunkCenterWS(Key);
+	NewRecord.ChunkOriginWS = ComputeChunkOriginWS(Key);
 	NewRecord.State = EVoxelChunkState::Unloaded;
 	NewRecord.Priority = 0.f;
 	NewRecord.GPU = nullptr;
@@ -174,6 +176,16 @@ FVector UVoxelChunkSubsystem::ComputeChunkCenterWS(const FVoxelChunkKey& Key) co
 	const float Size = ChunkSizeWS(Settings, Key.LOD);
 	const FVector Min(Key.Coord.X * Size, Key.Coord.Y * Size, 0.0f);
 	return Min + FVector(Size * 0.5f, Size * 0.5f, 0.0f);
+}
+
+FVector UVoxelChunkSubsystem::ComputeChunkOriginWS(const FVoxelChunkKey& Key) const
+{
+	const float Size = ChunkSizeWS(Settings, Key.LOD);
+	return FVector(
+		Key.Coord.X * Size,
+		Key.Coord.Y * Size,
+		0.0f
+	);
 }
 
 void UVoxelChunkSubsystem::BuildDesiredSet(const FVector& CameraWS, TSet<FVoxelChunkKey>& OutDesired) const
@@ -370,14 +382,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		Inputs.EditLayer = EditLayer;
 		Inputs.CellsPerAxis = FMath::Max<uint32>(Settings.CellsPerAxis, 8);
 		Inputs.StepSizeWS = Settings.BaseStepSize * float(1 << Rec->Key.LOD);
-		// Inputs.ChunkOriginWS = /* derive from Key */ FVector(Rec->Key.Coord) * (Inputs.StepSizeWS * Settings.CellsPerAxis);
-		const float ChunkSize = Inputs.StepSizeWS * Settings.CellsPerAxis;
-		Inputs.ChunkOriginWS = FVector(
-			Rec->Key.Coord.X * ChunkSize,
-			Rec->Key.Coord.Y * ChunkSize,
-			0.0f
-		);
-		
+		Inputs.ChunkOriginWS = ComputeChunkOriginWS(Rec->Key);
 		
 		if (!Rec->GPU.IsValid())
 		{

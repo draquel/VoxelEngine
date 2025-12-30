@@ -3,7 +3,7 @@
 #include "VoxelChunkKey.generated.h"
 
 USTRUCT(BlueprintType)
-struct FVoxelChunkKey
+struct VOXELCORE_API FVoxelChunkKey
 {
 	GENERATED_BODY()
 

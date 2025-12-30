@@ -31,12 +31,14 @@ struct VOXELRUNTIME_API FVoxelChunkRecord
 	// Priority / scoring (derived each tick)
 	UPROPERTY() float Priority = 0.f;
 	UPROPERTY() FVector ChunkCenterWS = FVector::ZeroVector;
+	UPROPERTY() FVector ChunkOriginWS = FVector::ZeroVector;
 
 	// Build tracking
 	uint64 BuildId = 0;
 	bool bCancelRequested = false;
 	bool bWasDesiredLastTick = false;
 
+	uint64 LastEnqueuedRenderBuildId = 0;
 	double LastSkirtRefreshRequestSec = 0.0;
 	
 	// Existing debug pipeline handle

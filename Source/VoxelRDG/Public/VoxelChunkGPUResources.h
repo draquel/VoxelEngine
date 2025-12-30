@@ -5,7 +5,7 @@
 // Opaque GPU outputs owned by a chunk.
 #include "RHIGPUReadback.h"
 
-struct FVoxelChunkGPUResources
+struct VOXELRDG_API FVoxelChunkGPUResources
 {
     // existing RDG refs...
     FRDGBufferRef VertexBufferRDG = nullptr;
