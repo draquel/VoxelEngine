@@ -21,14 +21,20 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
 	uint x = DTid.x;
 	uint y = DTid.y;
 
-	//  allow 0..CellsPerAxis
 	if (x > CellsPerAxis || y > CellsPerAxis) return;
 
 	uint v = y * stride + x;
 
-	float3 pos = ChunkOriginWS.xyz + float3(x * StepSizeWS, y * StepSizeWS, 0);
-	float d = SampleDensityWS(pos);
-	OutVertices[v] = float4(pos, d);
+	// LOCAL (chunk) space position
+	float3 posL = float3(x * StepSizeWS, y * StepSizeWS, 0);
+
+	// WORLD space position (only for density sampling)
+	float3 posWS = ChunkOriginWS.xyz + posL;
+
+	float d = SampleDensityWS(posWS);
+
+	// Store LOCAL position in vertex buffer (matches MC pipeline contract)
+	OutVertices[v] = float4(posL, d);
 
 	if (x < CellsPerAxis && y < CellsPerAxis)
 	{
@@ -52,5 +58,4 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
 		VertexCount[0] = stride * stride;
 		IndexCount[0]  = CellsPerAxis * CellsPerAxis * 6;
 	}
-
 }
