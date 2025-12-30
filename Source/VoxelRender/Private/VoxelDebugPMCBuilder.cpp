@@ -127,8 +127,7 @@ static void AppendBoundarySkirts_ChunkLocalMasked(
 	if (EdgeMask & 8) StitchEdge(MaxY, EEdge::MaxY, false);
 }
 
-void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, const TArray<FVoxelChunkRenderPayload>& Payloads, TFunction<int32(const FVoxelChunkKey&
-	                                               Key)> GetSectionIndex, TFunction<void(const FVoxelChunkKey& Key, uint64 BuildId)> OnBuilt)
+void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, const TArray<FVoxelChunkRenderPayload>& Payloads, TFunction<int32(const FVoxelChunkKey& Key)> GetSectionIndex, TFunction<void(const FVoxelChunkKey& Key, uint64 BuildId)> OnBuilt)
 {
 	if (!PMC) return;
 	if (IsEngineExitRequested()) return;
@@ -163,7 +162,7 @@ void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, co
 		TSharedPtr<TArray<FVector>> OutVerts = MakeShared<TArray<FVector>>();
 		TSharedPtr<TArray<int32>> OutInds = MakeShared<TArray<int32>>();
 
-		ENQUEUE_RENDER_COMMAND(VoxelConsumeReadback)([PMCWeak = TWeakObjectPtr<UProceduralMeshComponent>(PMC), OutVerts, OutInds, GPU, BuiltKey, ChunkSize=P.ChunkSize, SkirtDepth = P.SkirtDepth, SkirtEdgeMask = P.SkirtEdgeMask, PayloadBuildId, OnBuiltRef, GetSectionIndexRef](FRHICommandListImmediate&) mutable
+		ENQUEUE_RENDER_COMMAND(VoxelConsumeReadback)([PMCWeak = TWeakObjectPtr<UProceduralMeshComponent>(PMC), OutVerts, OutInds, GPU, BuiltKey, ChunkOriginWS = P.ChunkOriginWS, ChunkSize=P.ChunkSize, SkirtDepth = P.SkirtDepth, SkirtEdgeMask = P.SkirtEdgeMask, PayloadBuildId, OnBuiltRef, GetSectionIndexRef](FRHICommandListImmediate&) mutable
 			{
 				FVoxelChunkGPUResources& G = *GPU.Get();
 
@@ -191,7 +190,9 @@ void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, co
 				OutVerts->SetNum((int32)VCount);
 				for (uint32 i = 0; i < VCount; i++)
 				{
-					(*OutVerts)[(int32)i] = FVector(VPtr[i].X, VPtr[i].Y, VPtr[i].Z);
+					const FVector ChunkOffset = ChunkOriginWS; // payload field you add
+					(*OutVerts)[i] = FVector(VPtr[i].X, VPtr[i].Y, VPtr[i].Z) + ChunkOffset;
+
 				}
 
 				OutInds->SetNum((int32)ICount);
