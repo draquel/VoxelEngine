@@ -133,13 +133,4 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 
 		outV += 3;
 	}
-	if (outV != vc)
-	{
-		// write a glaring marker into the first vertex of the cell
-		OutVertices[base] = float4(999999.0, (float)outV, (float)vc, 1.0);
-	}
-	if (DTid.x == 0 && DTid.y == 0 && DTid.z == 0)
-	{
-		OutVertices[0] = float4(11,22,33,1);
-	}
 }
