@@ -17,7 +17,12 @@ namespace VoxelRender
 
 	void FPMCDebugChunkRenderConsumer::EnqueueBuild(const FVoxelChunkRenderPayload& Payload)
 	{
-		// Latest payload wins (important for BuildId / refresh)
+		uint64& Last = LastAppliedBuildId.FindOrAdd(Payload.Key);
+		if (Payload.BuildId <= Last)
+		{
+			return; // stale or duplicate
+		}
+		Last = Payload.BuildId;
 		PendingBuilds.Add(Payload.Key, Payload);
 	}
 

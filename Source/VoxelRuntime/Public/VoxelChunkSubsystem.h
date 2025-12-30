@@ -33,8 +33,6 @@ public:
 
 
 	FVoxelChunkRecord& GetOrCreateChunk(const FVoxelChunkKey& Key);
-	int32 GetOrCreateSection(const FVoxelChunkKey& Key);
-	void ClearSectionForKey(const FVoxelChunkKey& Key);
 	static float ChunkSizeWS(const FVoxelWorldSettings& S, int32 LOD);
 	void ScheduleGeneration(const FVector& CameraWS);
 
@@ -44,7 +42,6 @@ public:
 	void OnConsumerRemoved(const FVoxelChunkKey& Key);
 
 	void EmitTelemetry(float DeltaSeconds, int32 DesiredCount);
-	int32 AllocateSection();
 	void SetRenderConsumer(TSharedPtr<Voxel::IVoxelChunkRenderConsumer> In);
 	uint8 ComputeSkirtMaskSameLOD(FVoxelChunkKey Key);
 	void AttachReadyToRender();
@@ -98,5 +95,5 @@ private:
 	// Budgets (you already have these)
 	int32 MaxInFlightBuilds = 4;
 	
-	TArray<int32> FreePMCSections;
+	// TArray<int32> FreePMCSections;
 };

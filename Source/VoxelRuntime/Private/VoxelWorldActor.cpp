@@ -16,6 +16,7 @@ AVoxelWorldActor::AVoxelWorldActor()
 	SetRootComponent(DebugPMC);
 	DebugPMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	DebugPMC->bUseAsyncCooking = true;
+	
 #if WITH_EDITOR	
 	DensityDebugComponent = CreateDefaultSubobject<UVoxelDensityDebugComponent>(TEXT("DensityDebugComponent"));
 	DensityDebugComponent->SetComponentTickEnabled(false);
@@ -79,40 +80,40 @@ void AVoxelWorldActor::BeginPlay()
 {
 	Super::BeginPlay();
 
-	ChunkSubsystem = GetWorld()->GetSubsystem<UVoxelChunkSubsystem>();
-	if (!ChunkSubsystem) return;
+    ChunkSubsystem = GetWorld()->GetSubsystem<UVoxelChunkSubsystem>();
+    if (!ChunkSubsystem) return;
 
-	ChunkSubsystem->InitializeVoxel(Settings, EditLayer);
-	ChunkSubsystem = GetWorld()->GetSubsystem<UVoxelChunkSubsystem>();
-	if (ChunkSubsystem)
-	{
-		ChunkSubsystem->InitializeVoxel(Settings, EditLayer);
+    ChunkSubsystem->InitializeVoxel(Settings, EditLayer);
 
-		// Create PMC consumer (in your VoxelRender module)
-		TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer =
-			MakeShared<VoxelRender::FPMCDebugChunkRenderConsumer>(
-				DebugPMC,
-				[this](const FVoxelChunkKey& Key, uint64 BuiltBuildId){ ChunkSubsystem->OnConsumerBuilt(Key, BuiltBuildId); },
-				[this](const FVoxelChunkKey& Key){ ChunkSubsystem->OnConsumerRemoved(Key); }
-			);
+    TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer =
+        MakeShared<VoxelRender::FPMCDebugChunkRenderConsumer>(
+            DebugPMC,
+            [this](const FVoxelChunkKey& Key, uint64 BuiltBuildId)
+            {
+                if (ChunkSubsystem) ChunkSubsystem->OnConsumerBuilt(Key, BuiltBuildId);
+            },
+            [this](const FVoxelChunkKey& Key)
+            {
+                if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key);
+            }
+        );
 
-		ChunkSubsystem->SetRenderConsumer(Consumer);
-	}
+    ChunkSubsystem->SetRenderConsumer(Consumer);
 }
 
 void AVoxelWorldActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (ChunkSubsystem)
+
+	if (!ChunkSubsystem) return;
+
+	FVector CameraWS = GetActorLocation();
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
 	{
-		FVector CameraWS = GetActorLocation();
-		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
-		{
-			FVector Loc; FRotator Rot;
-			PC->GetPlayerViewPoint(Loc, Rot);
-			CameraWS = Loc;
-		}
-		
-		ChunkSubsystem->TickStreaming(DeltaSeconds, GetWorld(), CameraWS);
+		FVector Loc; FRotator Rot;
+		PC->GetPlayerViewPoint(Loc, Rot);
+		CameraWS = Loc;
 	}
+
+	ChunkSubsystem->TickStreaming(DeltaSeconds, GetWorld(), CameraWS);
 }

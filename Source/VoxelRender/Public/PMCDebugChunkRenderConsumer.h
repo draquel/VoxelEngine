@@ -39,8 +39,9 @@ namespace VoxelRender
 		int32 AllocateSection();
 		void ClearSectionForKey(const FVoxelChunkKey& Key);
 
-	private:
 		TWeakObjectPtr<UProceduralMeshComponent> PMCWeak;
+		
+		TMap<FVoxelChunkKey, uint64> LastAppliedBuildId;
 
 		// Pending payloads keyed by chunk (latest wins)
 		TMap<FVoxelChunkKey, FVoxelChunkRenderPayload> PendingBuilds;

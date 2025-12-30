@@ -77,23 +77,21 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 	for (auto& KVP : Chunks)
 	{
 		FVoxelChunkRecord& R = KVP.Value;
+		R.ChunkCenterWS = ComputeChunkCenterWS(R.Key);
 		R.LastDistanceToCamera = FVector::Dist2D(R.ChunkCenterWS, CameraWS);
 	}
 
 	TSet<FVoxelChunkKey> Desired;
 	BuildDesiredSet(CameraWS, Desired);
-
 	RequestMissing(Desired, CameraWS);
 	ScheduleGeneration(CameraWS);
-
 	AttachReadyToRender();
 	
-	EvictUnwanted(Desired);
-	
 	if (RenderConsumer.IsValid())
-	{
 		RenderConsumer->Tick(DeltaSeconds);
-	}
+	
+	
+	EvictUnwanted(Desired);
 	
 	EmitTelemetry(DeltaSeconds, Desired.Num());
 	
@@ -161,38 +159,6 @@ FVoxelChunkRecord& UVoxelChunkSubsystem::GetOrCreateChunk(const FVoxelChunkKey& 
 	NewRecord.Priority = 0.f;
 	NewRecord.GPU = nullptr;
 	return NewRecord;
-}
-
-int32 UVoxelChunkSubsystem::AllocateSection()
-{
-	if (FreePMCSections.Num() > 0)
-		return FreePMCSections.Pop(EAllowShrinking::No);
-	
-	return NextSectionIndex++;
-}
-
-int32 UVoxelChunkSubsystem::GetOrCreateSection(const FVoxelChunkKey& Key)
-{
-	if (int32* Existing = ChunkToSection.Find(Key))
-		return *Existing;
-
-	const int32 NewIdx = AllocateSection();
-	ChunkToSection.Add(Key, NewIdx);
-	return NewIdx;
-}
-
-void UVoxelChunkSubsystem::ClearSectionForKey(const FVoxelChunkKey& Key)
-{
-	if (int32* Sec = ChunkToSection.Find(Key))
-	{
-		if (UProceduralMeshComponent* PMC = DebugPMCWeak.Get())
-		{
-			PMC->ClearMeshSection(*Sec);
-		}
-
-		FreePMCSections.Add(*Sec);   // <— reuse later
-		ChunkToSection.Remove(Key);
-	}
 }
 
 float UVoxelChunkSubsystem::ChunkSizeWS(const FVoxelWorldSettings& S, int32 LOD)
@@ -480,12 +446,16 @@ void UVoxelChunkSubsystem::AttachReadyToRender()
 
 		if (!bReady)
 			continue;
+		
+		if (R.LastEnqueuedRenderBuildId == R.BuildId)
+			continue;
 
 		// Now it is READY (GPU done, CPU readback available)
 		R.State = EVoxelChunkState::Ready;
 		R.LastStateChangeSec = Now;
+		R.LastEnqueuedRenderBuildId = R.BuildId;
 		Telemetry_BecameReady++;
-
+		
 		// Submit to render consumer (do NOT mark Resident here)
 		if (RenderConsumer)
 		{
@@ -504,39 +474,6 @@ void UVoxelChunkSubsystem::AttachReadyToRender()
 		}
 	}
 }
-
-
-// void UVoxelChunkSubsystem::AttachReadyToRender()
-// {
-// 	for (auto& KVP : Chunks)
-// 	{
-// 		FVoxelChunkRecord& R = KVP.Value;
-// 		if (R.State != EVoxelChunkState::Generating) continue;
-// 		if (!R.GPU.IsValid()) continue;
-//
-// 		FVoxelChunkGPUResources& G = *R.GPU.Get();
-// 		if (!G.VertexReadback || !G.IndexReadback || !G.VertexCountReadback || !G.IndexCountReadback)
-// 			continue;
-// 		
-// 		if (R.bCancelRequested)
-// 		{
-// 			R.GPU.Reset();
-// 			R.State = EVoxelChunkState::Unloaded; // or Evicting then remove
-// 			R.LastStateChangeSec = FPlatformTime::Seconds();
-// 			Telemetry_Canceled++;
-// 			continue;
-// 		}
-//
-// 		if (G.VertexReadback->IsReady() && G.IndexReadback->IsReady() &&
-// 			G.VertexCountReadback->IsReady() && G.IndexCountReadback->IsReady())
-// 		{
-// 			R.State = EVoxelChunkState::Ready;
-// 			R.LastStateChangeSec = FPlatformTime::Seconds();
-// 			Telemetry_BecameReady++;
-// 		}
-// 		
-// 	}
-// }
 
 void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 {
