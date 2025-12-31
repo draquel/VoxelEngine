@@ -242,6 +242,7 @@ void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, co
 
 					PMCStrong->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 					const int32 Section = (*GetSectionIndexRef)(BuiltKey);
+					PMCStrong->ClearMeshSection(Section);
 					PMCStrong->CreateMeshSection_LinearColor(Section, *OutVerts, *OutInds, Normals, UV0, Colors, Tangents, false);
 
 					(*OnBuiltRef)(BuiltKey, PayloadBuildId);
