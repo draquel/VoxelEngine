@@ -60,7 +60,7 @@ private:
 	// Budgets (tune later)
 	int32 MaxGeneratePerTick = 2;
 	int32 MaxAttachPerTick   = 4;
-	int32 MaxEvictPerTick    = 4;
+	int32 MaxEvictPerTick    = 64;
 
 	// LOD / streaming policy
 	void BuildDesiredSet(const FVector& CameraWS, TSet<FVoxelChunkKey>& OutDesired) const;
@@ -69,6 +69,7 @@ private:
 	// Lifecycle steps
 	void RequestMissing(const TSet<FVoxelChunkKey>& Desired, const FVector& CameraWS);
 	void EvictUnwanted(const TSet<FVoxelChunkKey>& Desired);
+	void EvictOverlappingLODs(const FVoxelChunkKey& NewKey);
 
 	// Helpers
 	FVector ComputeChunkCenterWS(const FVoxelChunkKey& Key) const;

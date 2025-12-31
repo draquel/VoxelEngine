@@ -149,73 +149,79 @@ float UVoxelChunkSubsystem::ChunkSizeWS(const FVoxelWorldSettings& S, int32 LOD)
 	return (S.BaseStepSize * float(1 << LOD)) * float(S.CellsPerAxis);
 }
 
-FVector UVoxelChunkSubsystem::ComputeChunkCenterWS(const FVoxelChunkKey& Key) const
-{
-	const float Size = ChunkSizeWS(Settings, Key.LOD);
-	const FVector Min(Key.Coord.X * Size, Key.Coord.Y * Size, 0.0f);
-	return Min + FVector(Size * 0.5f, Size * 0.5f, 0.0f);
-}
-
 FVector UVoxelChunkSubsystem::ComputeChunkOriginWS(const FVoxelChunkKey& Key) const
 {
 	const float Size = ChunkSizeWS(Settings, Key.LOD);
 	return FVector(
 		Key.Coord.X * Size,
 		Key.Coord.Y * Size,
-		0.0f
+		Key.Coord.Z * Size
 	);
+}
+
+FVector UVoxelChunkSubsystem::ComputeChunkCenterWS(const FVoxelChunkKey& Key) const
+{
+	const float Size = ChunkSizeWS(Settings, Key.LOD);
+	return ComputeChunkOriginWS(Key) + FVector(Size * 0.5f, Size * 0.5f, Size * 0.5f);
 }
 
 void UVoxelChunkSubsystem::BuildDesiredSet(const FVector& CameraWS, TSet<FVoxelChunkKey>& OutDesired) const
 {
 	OutDesired.Reset();
 
-	// Start with 3 LODs. Tune later.
-	const int32 MaxLOD = 2;
+	const float ZMinWS = -2500.f;
+	const float ZMaxWS = +2500.f;
 
-	// Outer coverage per LOD (world units). Adjust to taste.
+	const int32 MaxLOD = 0; // change later
+
 	const float RingMeters[3] = { 800.f, 1600.f, 3200.f };
-
-	// Hysteresis
 	const float ExitScale = 1.10f;
 
-	// Collect candidates per LOD first
-	TArray<TSet<FVoxelChunkKey>> CandidatesPerLOD;
+	// Candidates per LOD (ordered, not a set)
+	TArray<TArray<FVoxelChunkKey>> CandidatesPerLOD;
 	CandidatesPerLOD.SetNum(MaxLOD + 1);
 
 	for (int32 LOD = 0; LOD <= MaxLOD; ++LOD)
 	{
 		const float Size = ChunkSizeWS(Settings, LOD);
 
-		// Guard band to avoid geometric holes near boundary
-		const float HalfDiag = 0.5f * Size * 1.41421356f;
-		const float EnterRadius = RingMeters[LOD] + HalfDiag;
-		const float ExitRadius  = EnterRadius * ExitScale;
+		// Absolute Z slab in *chunk coords* for this LOD
+		const int32 MinZChunk = FMath::FloorToInt(ZMinWS / Size);
+		const int32 MaxZChunk = FMath::FloorToInt(ZMaxWS / Size);
 
-		// Iterate using Exit radius so we include “sticky” chunks in the scan
+		const float HalfDiag     = 0.5f * Size * 1.41421356f;
+		const float EnterRadius  = RingMeters[LOD] + HalfDiag;
+		const float ExitRadius   = EnterRadius * ExitScale;
 		const int32 RadiusChunks = FMath::CeilToInt(ExitRadius / Size);
 
-		// camera coord at this LOD grid
+		// Camera XY coord at this LOD grid (Z is NOT used for A2 selection)
 		const FVector Local = CameraWS / Size;
-		const FIntVector CamCoord(FMath::FloorToInt(Local.X), FMath::FloorToInt(Local.Y), 0);
+		const FIntVector CamCoord(
+			FMath::FloorToInt(Local.X),
+			FMath::FloorToInt(Local.Y),
+			FMath::FloorToInt(Local.Z)
+		);
 
-		TSet<FVoxelChunkKey>& Cand = CandidatesPerLOD[LOD];
+		TArray<FVoxelChunkKey>& Cand = CandidatesPerLOD[LOD];
 
+		// Rough reserve: square in XY times slab height
+		const int32 XYCount = (RadiusChunks * 2 + 1) * (RadiusChunks * 2 + 1);
+		const int32 ZCount  = (MaxZChunk - MinZChunk + 1);
+		Cand.Reserve(XYCount * ZCount);
+
+		for (int32 dz = MinZChunk; dz <= MaxZChunk; ++dz)          // ABSOLUTE z chunk coord
 		for (int32 dy = -RadiusChunks; dy <= RadiusChunks; ++dy)
 		for (int32 dx = -RadiusChunks; dx <= RadiusChunks; ++dx)
 		{
 			FVoxelChunkKey K;
 			K.LOD = LOD;
-			K.Coord = CamCoord + FIntVector(dx, dy, 0);
+			K.Coord = FIntVector(CamCoord.X + dx, CamCoord.Y + dy, dz); // <-- NOTE: dz (not CamCoord.Z+dz)
 
-			const FVector Center = (FVector(K.Coord) * Size) + FVector(Size * 0.5f, Size * 0.5f, 0.f);
+			const FVector Center = ComputeChunkCenterWS(K);
 			const float Dist = FVector::Dist2D(Center, CameraWS);
 
 			const FVoxelChunkRecord* Existing = Chunks.Find(K);
-
-			// Prefer a dedicated flag if you have it; this is fine for now.
 			const bool bWasDesired = Existing ? Existing->bWasDesiredLastTick : false;
-
 			const float Threshold = bWasDesired ? ExitRadius : EnterRadius;
 
 			if (Dist <= Threshold)
@@ -225,21 +231,22 @@ void UVoxelChunkSubsystem::BuildDesiredSet(const FVector& CameraWS, TSet<FVoxelC
 		}
 	}
 
-	// ---- Masking fine -> coarse (use LOD0 base grid coverage) ----
-	// A chunk at LOD L covers (1<<L) x (1<<L) base cells in LOD0 chunk space.
-	TSet<FIntPoint> CoveredBaseCells;
-	CoveredBaseCells.Reserve(4096);
+	// ---- Masking fine -> coarse in base grid space (stable due to deterministic candidate order) ----
+	TSet<FIntVector> CoveredBaseCells;
+	CoveredBaseCells.Reserve(8192);
 
 	auto CoversAnyUncoveredBaseCell = [&CoveredBaseCells](const FVoxelChunkKey& K) -> bool
 	{
-		const int32 Scale = 1 << K.LOD;
+		const int32 Scale  = 1 << K.LOD;
 		const int32 BaseX0 = K.Coord.X * Scale;
 		const int32 BaseY0 = K.Coord.Y * Scale;
+		const int32 BaseZ0 = K.Coord.Z * Scale;
 
+		for (int32 z = 0; z < Scale; ++z)
 		for (int32 y = 0; y < Scale; ++y)
 		for (int32 x = 0; x < Scale; ++x)
 		{
-			if (!CoveredBaseCells.Contains(FIntPoint(BaseX0 + x, BaseY0 + y)))
+			if (!CoveredBaseCells.Contains(FIntVector(BaseX0 + x, BaseY0 + y, BaseZ0 + z)))
 				return true;
 		}
 		return false;
@@ -247,21 +254,23 @@ void UVoxelChunkSubsystem::BuildDesiredSet(const FVector& CameraWS, TSet<FVoxelC
 
 	auto MarkCoveredBaseCells = [&CoveredBaseCells](const FVoxelChunkKey& K)
 	{
-		const int32 Scale = 1 << K.LOD;
+		const int32 Scale  = 1 << K.LOD;
 		const int32 BaseX0 = K.Coord.X * Scale;
 		const int32 BaseY0 = K.Coord.Y * Scale;
+		const int32 BaseZ0 = K.Coord.Z * Scale;
 
+		for (int32 z = 0; z < Scale; ++z)
 		for (int32 y = 0; y < Scale; ++y)
 		for (int32 x = 0; x < Scale; ++x)
 		{
-			CoveredBaseCells.Add(FIntPoint(BaseX0 + x, BaseY0 + y));
+			CoveredBaseCells.Add(FIntVector(BaseX0 + x, BaseY0 + y, BaseZ0 + z));
 		}
 	};
 
-	// Apply fine->coarse. LOD0 first.
 	for (int32 LOD = 0; LOD <= MaxLOD; ++LOD)
 	{
-		for (const FVoxelChunkKey& K : CandidatesPerLOD[LOD])
+		const TArray<FVoxelChunkKey>& Cand = CandidatesPerLOD[LOD];
+		for (const FVoxelChunkKey& K : Cand)
 		{
 			if (CoversAnyUncoveredBaseCell(K))
 			{
@@ -271,6 +280,7 @@ void UVoxelChunkSubsystem::BuildDesiredSet(const FVector& CameraWS, TSet<FVoxelC
 		}
 	}
 }
+
 
 float UVoxelChunkSubsystem::ScoreChunk(const FVoxelChunkKey& Key, const FVector& CameraWS) const
 {
@@ -379,6 +389,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		Rec->BuildId++;
 		const uint64 ThisBuildId = Rec->BuildId;
 		Rec->bCancelRequested = false;
+		Rec->LastEnqueuedRenderBuildId = 0;
 		Telemetry_Dispatched++;
 
 		FVoxelChunkBuildRequest Req;
@@ -397,7 +408,6 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 			return;
 			// fallback: if you want, keep old direct pipeline path or just early-out
 		}
-
 		
 		Rec->GPU = GPU;
 		// Rec->State = EVoxelChunkState::Ready; // in real code: mark Ready after fence or completion signal
@@ -407,62 +417,68 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 
 void UVoxelChunkSubsystem::AttachReadyToRender()
 {
-	const double Now = FPlatformTime::Seconds();
+    const double Now = FPlatformTime::Seconds();
 
-	for (auto& KVP : Chunks)
-	{
-		FVoxelChunkRecord& R = KVP.Value;
-		if (R.State != EVoxelChunkState::Generating) continue;
-		if (!R.GPU.IsValid()) continue;
+    for (auto& KVP : Chunks)
+    {
+        FVoxelChunkRecord& R = KVP.Value;
 
-		// cancel gate
-		if (R.bCancelRequested)
-		{
-			R.GPU.Reset();
-			R.State = EVoxelChunkState::Unloaded;
-			R.LastStateChangeSec = Now;
-			// BuildService->CancelBuild(R.Key,R.BuildId); // if needed i think this goes here
-			Telemetry_Canceled++;
-			continue;
-		}
+        if (R.State != EVoxelChunkState::Generating)
+            continue;
 
-		FVoxelChunkGPUResources& G = *R.GPU.Get();
-		if (!G.VertexReadback || !G.IndexReadback || !G.VertexCountReadback || !G.IndexCountReadback)
-			continue;
+        if (!R.GPU.IsValid())
+            continue;
 
-		const bool bReady =
-			G.VertexReadback->IsReady() && G.IndexReadback->IsReady() &&
-			G.VertexCountReadback->IsReady() && G.IndexCountReadback->IsReady();
+        if (R.bCancelRequested)
+        {
+            R.GPU.Reset();
+            R.State = EVoxelChunkState::Unloaded;
+            R.LastStateChangeSec = Now;
+            Telemetry_Canceled++;
+            continue;
+        }
 
-		if (!bReady)
-			continue;
-		
-		if (R.LastEnqueuedRenderBuildId == R.BuildId)
-			continue;
+        FVoxelChunkGPUResources& G = *R.GPU.Get();
+        if (!G.VertexReadback || !G.IndexReadback || !G.VertexCountReadback || !G.IndexCountReadback)
+            continue;
 
-		// Now it is READY (GPU done, CPU readback available)
-		R.State = EVoxelChunkState::Ready;
-		R.LastStateChangeSec = Now;
-		R.LastEnqueuedRenderBuildId = R.BuildId;
-		Telemetry_BecameReady++;
-		
-		// Submit to render consumer (do NOT mark Resident here)
-		if (RenderConsumer)
-		{
-			FVoxelChunkRenderPayload P;
-			P.Key = R.Key;
-			P.GPU = R.GPU;
-			P.BuildId = R.BuildId;
-			P.ChunkOriginWS = ComputeChunkOriginWS(R.Key); // add helper you mentioned
-			P.ChunkSize = ChunkSizeWS(Settings, R.Key.LOD);
-			P.SkirtDepth = Settings.BaseStepSize * 4.0f;
+        const bool bReady =
+            G.VertexReadback->IsReady() && G.IndexReadback->IsReady() &&
+            G.VertexCountReadback->IsReady() && G.IndexCountReadback->IsReady();
 
-			// skirt mask logic stays here (or move into consumer later)
-			P.SkirtEdgeMask = ComputeSkirtMaskSameLOD(R.Key);
+        if (!bReady)
+            continue;
 
-			RenderConsumer->EnqueueBuild(P);
-		}
-	}
+        // Already submitted this build to the consumer?
+        if (R.LastEnqueuedRenderBuildId == R.BuildId)
+            continue;
+
+        // Mark READY (GPU work done + CPU readback available)
+        R.State = EVoxelChunkState::Ready;
+        R.LastStateChangeSec = Now;
+        Telemetry_BecameReady++;
+
+        if (RenderConsumer)
+        {
+            FVoxelChunkRenderPayload P;
+            P.Key         = R.Key;
+            P.BuildId      = R.BuildId;
+            P.GPU          = R.GPU;
+            P.VertexSpace  = EVoxelVertexSpace::ChunkLocal;
+            P.ChunkOriginWS= ComputeChunkOriginWS(R.Key);
+            P.ChunkSize    = ChunkSizeWS(Settings, R.Key.LOD);
+            P.StepSizeWS   = Settings.BaseStepSize * float(1 << R.Key.LOD);
+            P.CellsPerAxis = Settings.CellsPerAxis;
+
+            P.SkirtDepth   = Settings.BaseStepSize * 4.0f;
+            P.SkirtEdgeMask= ComputeSkirtMaskSameLOD(R.Key);
+
+            RenderConsumer->EnqueueBuild(P);
+
+            // IMPORTANT: set after enqueue
+            R.LastEnqueuedRenderBuildId = R.BuildId;
+        }
+    }
 }
 
 void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
@@ -471,7 +487,7 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 	EvictCandidates.Reserve(Chunks.Num());
 	
 	const double Now = FPlatformTime::Seconds();
-	const double EvictDelaySec = 0.5;
+	const double EvictDelaySec = 0;
 
 	for (auto& KVP : Chunks)
 	{
@@ -514,6 +530,7 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 		if (RenderConsumer)
 		{
 			RenderConsumer->RemoveChunk(R->Key);
+			R->LastEnqueuedRenderBuildId = 0;
 		}
 		R->GPU.Reset();
 		ToRemove.Add(R->Key);
@@ -524,6 +541,59 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 	{
 		Telemetry_Evicted++;
 		Chunks.Remove(K);
+	}
+}
+
+void UVoxelChunkSubsystem::EvictOverlappingLODs(const FVoxelChunkKey& NewKey)
+{
+	const double Now = FPlatformTime::Seconds();
+
+	for (auto& KVP : Chunks)
+	{
+		FVoxelChunkRecord& Other = KVP.Value;
+
+		if (Other.Key == NewKey)
+			continue;
+
+		if (!KeysOverlapInBaseGrid(NewKey, Other.Key))
+			continue;
+
+		// Only remove COARSER chunks (bigger LOD number).
+		if (Other.Key.LOD <= NewKey.LOD)
+			continue;
+
+		// If it's queued to be built, retire it so ScheduleGeneration won't pick it again.
+		if (Other.State == EVoxelChunkState::Requested)
+		{
+			Other.bCancelRequested = true;
+			Other.State = EVoxelChunkState::Evicting;
+			Other.LastStateChangeSec = Now;
+			Other.LastEnqueuedRenderBuildId = 0;
+			continue;
+		}
+
+		// If it's building, request cancel AND mark evicting so AttachReadyToRender won't submit it.
+		if (Other.State == EVoxelChunkState::Generating)
+		{
+			Other.bCancelRequested = true;
+			Other.State = EVoxelChunkState::Evicting;
+			Other.LastStateChangeSec = Now;
+			Other.LastEnqueuedRenderBuildId = 0;
+
+			// If/when you add it: BuildService->CancelBuild(Other.Key, Other.BuildId);
+			continue;
+		}
+
+		// If it is already visible, remove it now.
+		if (Other.State == EVoxelChunkState::Resident || Other.State == EVoxelChunkState::Ready)
+		{
+			if (RenderConsumer)
+				RenderConsumer->RemoveChunk(Other.Key);
+
+			Other.State = EVoxelChunkState::Evicting;
+			Other.LastStateChangeSec = Now;
+			Other.LastEnqueuedRenderBuildId = 0;
+		}
 	}
 }
 
@@ -549,18 +619,19 @@ void UVoxelChunkSubsystem::DebugRequestChunkOnce(const FVoxelChunkKey& Key)
 
 void UVoxelChunkSubsystem::OnConsumerBuilt(const FVoxelChunkKey& Key, uint64 BuiltBuildId)
 {
-	if (FVoxelChunkRecord* R = Chunks.Find(Key))
-	{
-		if (R->BuildId != BuiltBuildId) return;   // stale
-		if (R->bCancelRequested) return;          // canceled
+	FVoxelChunkRecord* R = Chunks.Find(Key);
+	if (!R) return;
 
-		// Only transition if we were still waiting for render attach
-		if (R->State == EVoxelChunkState::Ready)
-		{
-			R->State = EVoxelChunkState::Resident;
-			R->LastStateChangeSec = FPlatformTime::Seconds();
-			Telemetry_BecameResident++;
-		}
+	if (BuiltBuildId != R->BuildId)
+		return;
+
+	if (R->State == EVoxelChunkState::Ready || R->State == EVoxelChunkState::Generating)
+	{
+		R->State = EVoxelChunkState::Resident;
+		R->LastStateChangeSec = FPlatformTime::Seconds();
+
+		// NOW it's safe to remove overlapping coarser LODs.
+		// EvictOverlappingLODs(Key);
 	}
 }
 
