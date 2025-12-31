@@ -18,3 +18,37 @@ FORCEINLINE uint32 GetTypeHash(const FVoxelChunkKey& K)
 {
 	return HashCombine(::GetTypeHash(K.LOD), GetTypeHash(K.Coord));
 }
+
+static FORCEINLINE void GetBaseGridRect(const FVoxelChunkKey& K, FIntPoint& OutMin, FIntPoint& OutMaxExcl)
+{
+	const int32 Scale = 1 << K.LOD; // how many LOD0 chunks this chunk spans per axis
+	OutMin = FIntPoint(K.Coord.X * Scale, K.Coord.Y * Scale);
+	OutMaxExcl = OutMin + FIntPoint(Scale, Scale);
+}
+
+static bool RangesOverlapInclusive(int32 AMin, int32 AMax, int32 BMin, int32 BMax)
+{
+	return (AMin <= BMax) && (BMin <= AMax);
+}
+
+static void KeyToBaseRangeInclusive(const FVoxelChunkKey& K, FIntVector& OutMin, FIntVector& OutMax)
+{
+	const int32 Scale = 1 << K.LOD;
+
+	OutMin = FIntVector(K.Coord.X * Scale, K.Coord.Y * Scale, K.Coord.Z * Scale);
+	OutMax = OutMin + FIntVector(Scale - 1, Scale - 1, Scale - 1);
+}
+
+static bool KeysOverlapInBaseGrid(const FVoxelChunkKey& A, const FVoxelChunkKey& B)
+{
+	FIntVector AMin, AMax, BMin, BMax;
+	KeyToBaseRangeInclusive(A, AMin, AMax);
+	KeyToBaseRangeInclusive(B, BMin, BMax);
+
+	return
+		RangesOverlapInclusive(AMin.X, AMax.X, BMin.X, BMax.X) &&
+		RangesOverlapInclusive(AMin.Y, AMax.Y, BMin.Y, BMax.Y) &&
+		RangesOverlapInclusive(AMin.Z, AMax.Z, BMin.Z, BMax.Z);
+}
+
+
