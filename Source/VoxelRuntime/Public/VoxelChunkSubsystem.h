@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "CoreMinimal.h"
+#include "IVoxelChunkBuildService.h"
 #include "IVoxelChunkRenderConsumer.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "VoxelChunkKey.h"
@@ -9,7 +10,6 @@
 
 class UVoxelDensityDebugComponent;
 class UProceduralMeshComponent;
-class FVoxelRDGPipeline;
 class UVoxelEditLayer;
 
 UCLASS()
@@ -31,7 +31,6 @@ public:
 	void InvalidateRegionSphere(const FVector& CenterWS, float RadiusWS);
 	void PollGeneratingToReady();
 
-
 	FVoxelChunkRecord& GetOrCreateChunk(const FVoxelChunkKey& Key);
 	static float ChunkSizeWS(const FVoxelWorldSettings& S, int32 LOD);
 	void ScheduleGeneration(const FVector& CameraWS);
@@ -42,23 +41,21 @@ public:
 	void OnConsumerRemoved(const FVoxelChunkKey& Key);
 
 	void EmitTelemetry(float DeltaSeconds, int32 DesiredCount);
-	void SetRenderConsumer(TSharedPtr<Voxel::IVoxelChunkRenderConsumer> In);
+	void SetRenderConsumer(TSharedPtr<Voxel::IVoxelChunkRenderConsumer> In) { RenderConsumer = MoveTemp(In); };
+	void SetBuildService(TSharedPtr<Voxel::IVoxelChunkBuildService> In) { BuildService = MoveTemp(In); }
 	uint8 ComputeSkirtMaskSameLOD(FVoxelChunkKey Key);
 	void AttachReadyToRender();
 	
 private:
-	FVoxelRDGPipeline* RDGPipeline = nullptr;
-	TWeakObjectPtr<UProceduralMeshComponent> DebugPMCWeak;
 
 	TSharedPtr<Voxel::IVoxelChunkRenderConsumer> RenderConsumer;
+	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService;
 	
 	FVoxelWorldSettings Settings;
+	
 	UPROPERTY() TObjectPtr<UVoxelEditLayer> EditLayer;
 
 	TMap<FVoxelChunkKey, FVoxelChunkRecord> Chunks;
-	
-	TMap<FVoxelChunkKey, int32> ChunkToSection;
-	int32 NextSectionIndex = 0;
 	
 	// Budgets (tune later)
 	int32 MaxGeneratePerTick = 2;
@@ -94,6 +91,4 @@ private:
 
 	// Budgets (you already have these)
 	int32 MaxInFlightBuilds = 4;
-	
-	// TArray<int32> FreePMCSections;
 };

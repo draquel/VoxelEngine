@@ -1,33 +1,22 @@
 ﻿#include "VoxelRuntime/Public/VoxelChunkSubsystem.h"
 
 #include "PMCDebugChunkRenderConsumer.h"
-#include "ProceduralMeshComponent.h"
 #include "RHICommandList.h"
 #include "RendererInterface.h"
 #include "VoxelChunkGPUResources.h"
 #include "VoxelChunkRecord.h"
 #include "VoxelCore/Public/VoxelChunkRenderPayload.h"
-#include "VoxelRDGPipeline.h"
+#include "VoxelCore/Public/IVoxelChunkBuildService.h"
 
 void UVoxelChunkSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	RDGPipeline = new FVoxelRDGPipeline();
-	// Optional: default state init that doesn't require Settings yet
 }
 
 void UVoxelChunkSubsystem::Deinitialize()
 {
 	// cleanup
 	Chunks.Empty();
-	
-	delete RDGPipeline;
-	RDGPipeline = nullptr;
-	
-	ChunkToSection.Reset();
-	NextSectionIndex = 0;
-	DebugPMCWeak.Reset();
-	
 	Super::Deinitialize();
 }
 
@@ -35,14 +24,6 @@ void UVoxelChunkSubsystem::InitializeVoxel(const FVoxelWorldSettings& InSettings
 {
 	Settings = InSettings;
 	EditLayer = InEditLayer;
-	
-	ChunkToSection.Reset();
-	NextSectionIndex = 0;
-}
-
-void UVoxelChunkSubsystem::SetRenderConsumer(TSharedPtr<Voxel::IVoxelChunkRenderConsumer> In)
-{
-	RenderConsumer = MoveTemp(In);
 }
 
 uint8 UVoxelChunkSubsystem::ComputeSkirtMaskSameLOD(FVoxelChunkKey Key)
@@ -71,7 +52,7 @@ uint8 UVoxelChunkSubsystem::ComputeSkirtMaskSameLOD(FVoxelChunkKey Key)
 
 void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, const FVector& CameraWS)
 {
-	if (IsEngineExitRequested() || !World || !RDGPipeline)
+	if (IsEngineExitRequested() || !World)
 		return;
 
 	for (auto& KVP : Chunks)
@@ -89,7 +70,9 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 	
 	if (RenderConsumer.IsValid())
 		RenderConsumer->Tick(DeltaSeconds);
-	
+
+	if (BuildService)
+		BuildService->Tick(DeltaSeconds);
 	
 	EvictUnwanted(Desired);
 	
@@ -386,11 +369,6 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		TSharedPtr<FVoxelChunkGPUResources> GPU = Rec->GPU; // copy for lambda
 		EVoxelMeshMode Mode = EVoxelMeshMode::DebugGrid;
 
-		FVoxelRDGPipeline* Pipeline = RDGPipeline;
-		if (!Pipeline)
-		{
-			continue;
-		}
 		UE_LOG(LogTemp, Warning, TEXT("Voxel Inputs: CellsPerAxis=%u Step=%f Seed=%d"),Inputs.CellsPerAxis, Inputs.StepSizeWS, Inputs.Seed);
 		if (Rec->GPU.IsValid())
 		{
@@ -402,12 +380,22 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		Rec->bCancelRequested = false;
 		Telemetry_Dispatched++;
 
-		ENQUEUE_RENDER_COMMAND(VoxelBuildChunk)(
-			[Pipeline, Inputs, Mode, GPU](FRHICommandListImmediate& RHICmdList) mutable
-			{
-				UE_LOG(LogTemp, Warning, TEXT("Voxel: enqueued build for chunk"));
-				Pipeline->BuildChunk_RenderThread(RHICmdList, Inputs, Mode, GPU);
-			});
+		FVoxelChunkBuildRequest Req;
+		Req.Key    = Rec->Key;
+		Req.BuildId= ThisBuildId;
+		Req.Mode   = EVoxelMeshMode::DebugGrid; // or MarchingCubes later
+		Req.Inputs = Inputs;
+		Req.GPU    = Rec->GPU;
+
+		if (BuildService)
+		{
+			BuildService->EnqueueBuild(Req);
+		}
+		else
+		{
+			return;
+			// fallback: if you want, keep old direct pipeline path or just early-out
+		}
 
 		
 		Rec->GPU = GPU;
@@ -432,6 +420,7 @@ void UVoxelChunkSubsystem::AttachReadyToRender()
 			R.GPU.Reset();
 			R.State = EVoxelChunkState::Unloaded;
 			R.LastStateChangeSec = Now;
+			// BuildService->CancelBuild(R.Key,R.BuildId); // if needed i think this goes here
 			Telemetry_Canceled++;
 			continue;
 		}

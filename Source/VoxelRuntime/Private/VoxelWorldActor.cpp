@@ -1,6 +1,7 @@
 ﻿#include "VoxelWorldActor.h"
 
 #include "VoxelRender/Public/PMCDebugChunkRenderConsumer.h"
+#include "VoxelRDG/Public/VoxelRDGChunkBuildService.h"
 #include "VoxelChunkSubsystem.h"
 #include "ProceduralMeshComponent.h"
 #include "VoxelDensityDebugComponent.h"
@@ -99,6 +100,9 @@ void AVoxelWorldActor::BeginPlay()
         );
 
     ChunkSubsystem->SetRenderConsumer(Consumer);
+	
+	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService = MakeShared<VoxelRender::FVoxelRDGChunkBuildService>();
+	ChunkSubsystem->SetBuildService(BuildService);
 }
 
 void AVoxelWorldActor::Tick(float DeltaSeconds)
