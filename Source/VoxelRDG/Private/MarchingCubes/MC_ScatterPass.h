@@ -1,6 +1,7 @@
 ﻿#pragma once
 
-struct FVoxelNoiseParamsCPU;
+#include "VoxelCore/Public/VoxelNoiseParams.h"
+
 struct FMCChunkParamsCPU;
 struct FMCScatterOutputs;
 

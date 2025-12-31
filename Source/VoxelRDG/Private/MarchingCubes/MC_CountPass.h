@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include "VoxelNoiseParams.h"
+#include "VoxelCore/Public/VoxelNoiseParams.h"
 
 struct FMCCountPassOutputs;
 struct FMCChunkParamsCPU;

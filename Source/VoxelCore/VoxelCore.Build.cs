@@ -10,6 +10,7 @@ public class VoxelCore : ModuleRules
             new string[]
             {
                 "Core",
+                "RenderCore",
                 "CoreUObject",
                 "Engine",
             }

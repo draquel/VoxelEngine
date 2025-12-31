@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "VoxelChunkKey.h"
+#include "VoxelNoiseParams.h"
 #include "VoxelWorldSettings.h"
 
 class UVoxelEditLayer;
@@ -30,6 +31,7 @@ struct FVoxelChunkBuildInputs
 
 	// MC-specific knobs can live here too if you want:
 	float IsoLevel = 0.f;
+	FVoxelNoiseParamsCPU NoiseParameters;
 };
 
 struct FVoxelChunkBuildRequest

@@ -27,7 +27,7 @@ public:
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, BlockSums)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, BlockOffsets)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, VertOffsets)
-		SHADER_PARAMETER_RDG_BUFFER_SRV(RWBuffer<uint>, TotalVerts)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, TotalVerts)
 
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutDebug)
 	END_SHADER_PARAMETER_STRUCT()
@@ -88,7 +88,7 @@ public:
 
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, BlockSums)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, BlockOffsets)
-		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutTotal)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutTotal)
 	END_SHADER_PARAMETER_STRUCT()
 
 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters&) { return true; }
@@ -135,7 +135,7 @@ static void AddPass_DebugTap(
 	Params->VertOffsets   = GraphBuilder.CreateSRV(VertOffsets);
 	Params->TotalVerts    = GraphBuilder.CreateSRV(TotalVerts, PF_R32_UINT);
 	Params->OutDebug      = GraphBuilder.CreateUAV(OutDebugTap);
-
+	
 	// UE_LOG(LogTemp, Log, TEXT("MC_Scan_Pass - AddPass_DebugTap: N=%u NumBlocks=%u"), Params->NumElements, Params->NumBlocks);
 	
 	TShaderMapRef<FScan_DebugTapCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
@@ -211,7 +211,7 @@ static void AddPass_ComputeTotal(
 	Params->NumBlocks    = NumBlocks;
 	Params->BlockSums    = GraphBuilder.CreateSRV(BlockSums);
 	Params->BlockOffsets = GraphBuilder.CreateSRV(BlockOffsets);
-	Params->OutTotal     = GraphBuilder.CreateUAV(OutTotal, PF_R32_UINT);
+	Params->OutTotal     = GraphBuilder.CreateUAV(OutTotal);
 
 	TShaderMapRef<FScan_ComputeTotalCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 
@@ -291,7 +291,7 @@ FMCScanOutputs FMC_ScanPass::AddMC_ScanPass(
 		TEXT("MC.BlockSums2"));
 
 	Out.TotalVerts = GraphBuilder.CreateBuffer(
-		FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), 4),
+		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 1),
 		TEXT("MC.TotalVerts"));
 	
 	Out.VertOffsets = GraphBuilder.CreateBuffer(

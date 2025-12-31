@@ -361,6 +361,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		Inputs.CellsPerAxis = FMath::Max<uint32>(Settings.CellsPerAxis, 8);
 		Inputs.StepSizeWS = Settings.BaseStepSize * float(1 << Rec->Key.LOD);
 		Inputs.ChunkOriginWS = ComputeChunkOriginWS(Rec->Key);
+		Inputs.NoiseParameters = FVoxelNoiseParamsCPU();
 		
 		if (!Rec->GPU.IsValid())
 		{
@@ -383,7 +384,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		FVoxelChunkBuildRequest Req;
 		Req.Key    = Rec->Key;
 		Req.BuildId= ThisBuildId;
-		Req.Mode   = EVoxelMeshMode::DebugGrid; // or MarchingCubes later
+		Req.Mode   = EVoxelMeshMode::MarchingCubes; // or MarchingCubes later
 		Req.Inputs = Inputs;
 		Req.GPU    = Rec->GPU;
 

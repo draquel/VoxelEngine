@@ -7,6 +7,11 @@
 #include "ShaderParameterStruct.h"
 
 #include "VoxelChunkGPUResources.h"
+#include "MarchingCubes/MarchingCubesDispatch.h"
+#include "MarchingCubes/MC_CountPass.h"
+#include "MarchingCubes/MC_IndexPass.h"
+#include "MarchingCubes/MC_ScanPass.h"
+#include "MarchingCubes/MC_ScatterPass.h"
 
 // --------------------
 // Debug Grid: writes a trivial grid mesh into buffers.
@@ -37,6 +42,21 @@ class FDebugGridCS : public FGlobalShader
 
 IMPLEMENT_GLOBAL_SHADER(FDebugGridCS, "/Plugin/Voxel/DebugGrid.usf", "MainCS", SF_Compute);
 
+class FMCCopyCountsCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FMCCopyCountsCS);
+	SHADER_USE_PARAMETER_STRUCT(FMCCopyCountsCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, InTotalVerts)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, InTotalTris)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutVertexCount)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutIndexCount)
+	END_SHADER_PARAMETER_STRUCT()
+};
+IMPLEMENT_GLOBAL_SHADER(FMCCopyCountsCS, "/Plugin/Voxel/MarchingCubes/MC_CopyCounts.usf", "Main", SF_Compute);
+
+
 // --------------------
 // END GLOBAL SHADER IMPLEMENTATIONS
 // --------------------
@@ -46,22 +66,10 @@ FVoxelRDGPipeline::FVoxelRDGPipeline() {}
 static void AllocateChunkBuffers(
 	FRDGBuilder& GraphBuilder,
 	const FVoxelChunkBuildInputs& Inputs,
+	EVoxelMeshMode Mode,
 	FVoxelChunkGPUResources& Res)
 {
-	// Conservative max for a debug grid:
-	// A (N+1)x(N+1) vertex grid and N*N*2 triangles => 6 indices per cell.
-	const uint32 N = Inputs.CellsPerAxis;
-	const uint32 MaxVerts = (N + 1) * (N + 1);
-	const uint32 MaxIndices = (N * N) * 6;
-
-	Res.VertexBufferRDG = GraphBuilder.CreateBuffer(
-		FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector4f), MaxVerts),
-		TEXT("Voxel.DebugGrid.Vertices"));
-
-	Res.IndexBufferRDG = GraphBuilder.CreateBuffer(
-		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), MaxIndices),
-		TEXT("Voxel.DebugGrid.Indices"));
-
+	// Always allocate the contract count buffers (1 uint each).
 	Res.VertexCountRDG = GraphBuilder.CreateBuffer(
 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 1),
 		TEXT("Voxel.VertexCount"));
@@ -69,7 +77,28 @@ static void AllocateChunkBuffers(
 	Res.IndexCountRDG = GraphBuilder.CreateBuffer(
 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 1),
 		TEXT("Voxel.IndexCount"));
+
+	if (Mode == EVoxelMeshMode::DebugGrid)
+	{
+		const uint32 N = Inputs.CellsPerAxis;
+		const uint32 MaxVerts   = (N + 1) * (N + 1);
+		const uint32 MaxIndices = (N * N) * 6;
+
+		Res.VertexBufferRDG = GraphBuilder.CreateBuffer(
+			FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector4f), MaxVerts),
+			TEXT("Voxel.DebugGrid.Vertices"));
+
+		Res.IndexBufferRDG = GraphBuilder.CreateBuffer(
+			FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), MaxIndices),
+			TEXT("Voxel.DebugGrid.Indices"));
+	}
+	else if (Mode == EVoxelMeshMode::MarchingCubes)
+	{
+		Res.VertexBufferRDG = nullptr;
+		Res.IndexBufferRDG  = nullptr;
+	}
 }
+
 
 void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	FRHICommandListImmediate& RHICmdList,
@@ -85,13 +114,19 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	FRDGBuilder GraphBuilder(RHICmdList);
 
 	// 1) Allocate buffers
-	AllocateChunkBuffers(GraphBuilder, Inputs, *InOutResources);
+	AllocateChunkBuffers(GraphBuilder, Inputs, Mode, *InOutResources);
+
 
 	// 2) Clear counters
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(InOutResources->VertexCountRDG), 0);
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(InOutResources->IndexCountRDG), 0);
-	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(InOutResources->VertexBufferRDG), 0);
-	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(InOutResources->IndexBufferRDG), 0);
+
+	if (Mode == EVoxelMeshMode::DebugGrid)
+	{
+		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(InOutResources->VertexBufferRDG), 0);
+		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(InOutResources->IndexBufferRDG), 0);
+	}
+
 	
 	// 3) Dispatch
 	if (Mode == EVoxelMeshMode::DebugGrid)
@@ -125,7 +160,75 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 			Params,
 			FIntVector(GroupsX, GroupsY, 1));
 	}
+	if (Mode == EVoxelMeshMode::MarchingCubes)
+	{
+		// Build chunk params for MC
+		FMCChunkParamsCPU ChunkParams;
+		ChunkParams.CellsPerAxis   = Inputs.CellsPerAxis;
+		ChunkParams.StepSizeWS     = Inputs.StepSizeWS;
+		ChunkParams.IsoLevel       = Inputs.IsoLevel;      // ensure FVoxelChunkBuildInputs has this
+		ChunkParams.ChunkOriginWS  = Inputs.ChunkOriginWS;
+		ChunkParams.ChunkSeed      = (uint32)Inputs.Seed;
 
+		const FMCCountPassOutputs Count =
+			FMC_CountPass::AddMC_CountPass(GraphBuilder, ChunkParams, Inputs.NoiseParameters);
+
+		const uint32 NumCells = Count.CellsPerAxis * Count.CellsPerAxis * Count.CellsPerAxis;
+
+		const FMCScanOutputs Scan =
+			FMC_ScanPass::AddMC_ScanPass_VertsAndTris(
+				GraphBuilder,
+				Count.VertCountPerCell,
+				Count.TriCountPerCell,
+				NumCells);
+
+		// Max bounds
+		const uint32 MaxVerts   = NumCells * 15;
+		const uint32 MaxTris    = NumCells * 5;
+		const uint32 MaxIndices = MaxTris * 3; // == NumCells * 15
+
+		const FMCScatterOutputs Scatter =
+			FMC_ScatterPass::AddMC_ScatterPass(
+				GraphBuilder,
+				ChunkParams,
+				Inputs.NoiseParameters,
+				Scan.VertOffsets,
+				Count.VertCountPerCell,
+				Count.CaseIndexPerCell,
+				MaxVerts,
+				/*bUseCaseIndexPerCell*/ true);
+
+		FRDGBufferRef Indices =
+			FMC_IndexPass::AddMC_IndexScatterPass(
+				GraphBuilder,
+				Count.TriCountPerCell,
+				Scan.TriOffsets,
+				Scan.VertOffsets,
+				NumCells,
+				MaxIndices);
+
+		// Bind outputs to the common contract
+		InOutResources->VertexBufferRDG = Scatter.Vertices;
+		InOutResources->IndexBufferRDG  = Indices;
+
+		// Copy totals -> contract counts (IndexCount = TotalTris*3)
+		{
+			auto* Params = GraphBuilder.AllocParameters<FMCCopyCountsCS::FParameters>();
+			Params->InTotalVerts = GraphBuilder.CreateSRV(Scan.TotalVerts);
+			Params->InTotalTris  = GraphBuilder.CreateSRV(Scan.TotalTris);
+			Params->OutVertexCount = GraphBuilder.CreateUAV(InOutResources->VertexCountRDG);
+			Params->OutIndexCount  = GraphBuilder.CreateUAV(InOutResources->IndexCountRDG);
+
+			TShaderMapRef<FMCCopyCountsCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+			FComputeShaderUtils::AddPass(
+				GraphBuilder,
+				RDG_EVENT_NAME("Voxel.MC.CopyCounts"),
+				CS,
+				Params,
+				FIntVector(1,1,1));
+		}
+	}
+	
 	// After buffers are created:
 	GraphBuilder.QueueBufferExtraction(InOutResources->VertexBufferRDG, &InOutResources->VertexPooled);
 	GraphBuilder.QueueBufferExtraction(InOutResources->IndexBufferRDG,  &InOutResources->IndexPooled);
@@ -164,5 +267,4 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	InOutResources->IndexCountReadback->EnqueueCopy(RHICmdList,  InOutResources->IndexCountPooled->GetRHI());
 	
 	// UE_LOG(LogTemp, Warning, TEXT("Voxel: executed Buffer Readback"));
-
 }

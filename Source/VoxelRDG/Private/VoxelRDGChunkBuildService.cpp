@@ -1,6 +1,7 @@
 ﻿// VoxelRDG/Private/VoxelRDGChunkBuildService.cpp
-#include "IVoxelChunkBuildService.h"
+
 #include "VoxelRDGChunkBuildService.h"
+#include "IVoxelChunkBuildService.h"
 #include "VoxelRDGPipeline.h"
 #include "RHICommandList.h"
 

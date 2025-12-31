@@ -7,7 +7,6 @@
 // Your passes:
 #include "ProceduralMeshComponent.h"
 #include "RHIGPUReadback.h"
-#include "VoxelRDGReadback.h"
 #include "VoxelRDG/Private/MarchingCubes/MC_CountPass.h"
 #include "VoxelRDG/Private/MarchingCubes/MC_ScanPass.h"
 #include "VoxelRDG/Private/MarchingCubes/MC_ScatterPass.h"

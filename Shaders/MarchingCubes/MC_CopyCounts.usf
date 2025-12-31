@@ -1,0 +1,16 @@
+﻿#include "/Engine/Public/Platform.ush"
+
+StructuredBuffer<uint> InTotalVerts; // [0]
+StructuredBuffer<uint> InTotalTris;  // [0]
+
+RWStructuredBuffer<uint> OutVertexCount; // [0]
+RWStructuredBuffer<uint> OutIndexCount;  // [0]
+
+[numthreads(1,1,1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	const uint v = InTotalVerts[0];
+	const uint t = InTotalTris[0];
+	OutVertexCount[0] = v;
+	OutIndexCount[0]  = t * 3;
+}

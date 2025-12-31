@@ -6,7 +6,6 @@
 #include "RenderGraphBuilder.h"
 #include "RenderGraphUtils.h"
 #include "RHIStaticStates.h"
-#include "VoxelNoiseParams.h"
 #include "MarchingCubes/MarchingCubesDispatch.h"
 
 class FMC_CountCS : public FGlobalShader

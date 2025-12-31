@@ -3,7 +3,7 @@
 #include "VoxelNoiseParams.generated.h"
 
 USTRUCT(BlueprintType)
-struct VOXELRDG_API FVoxelNoiseParamsCPU
+struct VOXELCORE_API FVoxelNoiseParamsCPU
 {
 	GENERATED_BODY()
 
@@ -47,7 +47,7 @@ struct VOXELRDG_API FVoxelNoiseParamsCPU
 	int32 Seed = 1337;
 };
 
-BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FVoxelNoiseParams, VOXELRDG_API)
+BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FVoxelNoiseParams, VOXELCORE_API)
 	SHADER_PARAMETER(FVector3f, WorldScale)      // world -> noise units
 	SHADER_PARAMETER(float,    HeightAmp)
 
