@@ -41,7 +41,7 @@ namespace VoxelRender
 
 		TWeakObjectPtr<UProceduralMeshComponent> PMCWeak;
 		
-		TMap<FVoxelChunkKey, uint64> LastAppliedBuildId;
+		TMap<FVoxelChunkKey, uint64> LastBuiltBuildId;
 
 		// Pending payloads keyed by chunk (latest wins)
 		TMap<FVoxelChunkKey, FVoxelChunkRenderPayload> PendingBuilds;

@@ -17,25 +17,34 @@ namespace VoxelRender
 
 	void FPMCDebugChunkRenderConsumer::EnqueueBuild(const FVoxelChunkRenderPayload& Payload)
 	{
-		uint64& Last = LastAppliedBuildId.FindOrAdd(Payload.Key);
-		if (Payload.BuildId <= Last)
-		{
-			return; // stale or duplicate
-		}
-		Last = Payload.BuildId;
-		PendingBuilds.Add(Payload.Key, Payload);
+		// Ignore stale/duplicate vs what we already *built*
+		const uint64* Built = LastBuiltBuildId.Find(Payload.Key);
+		if (Built && Payload.BuildId <= *Built)
+			return;
+
+		// Latest-wins queue
+		FVoxelChunkRenderPayload& Slot = PendingBuilds.FindOrAdd(Payload.Key);
+		if (Slot.BuildId > Payload.BuildId)
+			return; // already queued something newer
+
+		Slot = Payload;
 	}
 
 	void FPMCDebugChunkRenderConsumer::RemoveChunk(const FVoxelChunkKey& Key)
 	{
+		// Drop any queued build
 		PendingBuilds.Remove(Key);
+
+		// Clear any live section
 		ClearSectionForKey(Key);
 
+		// Forget built id so if it comes back later it can render again
+		LastBuiltBuildId.Remove(Key);
+
 		if (OnRemoved)
-		{
 			OnRemoved(Key);
-		}
 	}
+
 
 	void FPMCDebugChunkRenderConsumer::Tick(float /*DeltaSeconds*/)
 	{
@@ -69,6 +78,7 @@ namespace VoxelRender
 			{
 				if (OnBuilt)
 				{
+					LastBuiltBuildId.Add(Key, BuildId);
 					OnBuilt(Key, BuildId);
 				}
 			});
