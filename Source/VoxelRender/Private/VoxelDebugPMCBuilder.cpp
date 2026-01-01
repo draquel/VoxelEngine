@@ -161,8 +161,9 @@ void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, co
 
 		TSharedPtr<TArray<FVector>> OutVerts = MakeShared<TArray<FVector>>();
 		TSharedPtr<TArray<int32>> OutInds = MakeShared<TArray<int32>>();
+		TSharedPtr<TArray<FVector>> OutNorms = MakeShared<TArray<FVector>>();
 
-		ENQUEUE_RENDER_COMMAND(VoxelConsumeReadback)([PMCWeak = TWeakObjectPtr<UProceduralMeshComponent>(PMC), OutVerts, OutInds, GPU, BuiltKey, ChunkOriginWS = P.ChunkOriginWS, ChunkSize=P.ChunkSize, SkirtDepth = P.SkirtDepth, SkirtEdgeMask = P.SkirtEdgeMask, PayloadBuildId, OnBuiltRef, GetSectionIndexRef](FRHICommandListImmediate&) mutable
+		ENQUEUE_RENDER_COMMAND(VoxelConsumeReadback)([PMCWeak = TWeakObjectPtr<UProceduralMeshComponent>(PMC), OutVerts, OutInds, OutNorms, GPU, BuiltKey, VertSpace = P.VertexSpace, ChunkOriginWS = P.ChunkOriginWS, ChunkSize=P.ChunkSize, SkirtDepth = P.SkirtDepth, SkirtEdgeMask = P.SkirtEdgeMask, PayloadBuildId, OnBuiltRef, GetSectionIndexRef](FRHICommandListImmediate&) mutable
 			{
 				FVoxelChunkGPUResources& G = *GPU.Get();
 
@@ -172,14 +173,16 @@ void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, co
 				const uint32 ICount = ICountPtr ? ICountPtr[0] : 0;
 				G.VertexCountReadback->Unlock();
 				G.IndexCountReadback->Unlock();
-
+			
 				if (VCount == 0 || ICount == 0)
 					return;
 
 				struct FFloat4 { float X, Y, Z, W; };
+				struct FFloat3 { float X, Y, Z; };
 
 				const FFloat4* VPtr = (const FFloat4*)G.VertexReadback->Lock(VCount * sizeof(FFloat4));
 				const uint32*  IPtr = (const uint32*)G.IndexReadback->Lock(ICount * sizeof(uint32));
+				const FFloat3* NPtr = nullptr;
 				if (!VPtr || !IPtr)
 				{
 					if (VPtr) G.VertexReadback->Unlock();
@@ -199,6 +202,15 @@ void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, co
 				for (uint32 i = 0; i < ICount; i++)
 				{
 					(*OutInds)[(int32)i] = (int32)IPtr[i];
+				}
+			
+				OutNorms->SetNum((int32)VCount);
+				OutNorms->Init(FVector::UpVector, (int32)VCount);
+				if (G.NormalsReadback->IsReady()) NPtr = (const FFloat3*)G.NormalsReadback->Lock(VCount * sizeof(FFloat3));
+				if (NPtr)
+				{
+					for (uint32 i = 0; i < VCount; i++) (*OutNorms)[i] = FVector(NPtr[i].X, NPtr[i].Y, NPtr[i].Z);
+					G.NormalsReadback->Unlock();
 				}
 
 				G.VertexReadback->Unlock();
@@ -243,7 +255,7 @@ void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, co
 					PMCStrong->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 					const int32 Section = (*GetSectionIndexRef)(BuiltKey);
 					PMCStrong->ClearMeshSection(Section);
-					PMCStrong->CreateMeshSection_LinearColor(Section, *OutVerts, *OutInds, Normals, UV0, Colors, Tangents, false);
+					PMCStrong->CreateMeshSection_LinearColor(Section, *OutVerts, *OutInds, *OutNorms, UV0, Colors, Tangents, false);
 
 					(*OnBuiltRef)(BuiltKey, PayloadBuildId);
 				});

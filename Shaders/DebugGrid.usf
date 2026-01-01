@@ -35,6 +35,7 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
 
 	// Store LOCAL position in vertex buffer (matches MC pipeline contract)
 	OutVertices[v] = float4(posL, d);
+	// OutNormals[v] = float3(0, 0, 1);
 
 	if (x < CellsPerAxis && y < CellsPerAxis)
 	{
@@ -52,7 +53,6 @@ void MainCS(uint3 DTid : SV_DispatchThreadID)
 		OutIndices[i+4] = v01;
 		OutIndices[i+5] = v11;
 	}
-
 	if (x == 0 && y == 0)
 	{
 		VertexCount[0] = stride * stride;

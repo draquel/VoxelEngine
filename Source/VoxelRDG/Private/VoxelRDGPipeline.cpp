@@ -1,4 +1,6 @@
 ﻿#include "VoxelRDGPipeline.h"
+
+#include "BuildDispatchArgsPass.h"
 #include "RenderGraphBuilder.h"
 #include "RenderGraphUtils.h"
 #include "RHICommandList.h"
@@ -10,6 +12,7 @@
 #include "MarchingCubes/MarchingCubesDispatch.h"
 #include "MarchingCubes/MC_CountPass.h"
 #include "MarchingCubes/MC_IndexPass.h"
+#include "MarchingCubes/MC_NormalsPass.h"
 #include "MarchingCubes/MC_ScanPass.h"
 #include "MarchingCubes/MC_ScatterPass.h"
 
@@ -35,6 +38,7 @@ class FDebugGridCS : public FGlobalShader
 		SHADER_PARAMETER_STRUCT_REF(FDebugGridUniforms, Uniforms)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<float4>, OutVertices)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>,   OutIndices)
+		// SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<float3>, OutNormals)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>,   VertexCount)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>,   IndexCount)
 	END_SHADER_PARAMETER_STRUCT()
@@ -65,7 +69,7 @@ FVoxelRDGPipeline::FVoxelRDGPipeline() {}
 
 static void AllocateChunkBuffers(
 	FRDGBuilder& GraphBuilder,
-	const FVoxelChunkBuildInputs& Inputs,
+	const FVoxelChunkBuildPayload& Inputs,
 	EVoxelMeshMode Mode,
 	FVoxelChunkGPUResources& Res)
 {
@@ -97,12 +101,13 @@ static void AllocateChunkBuffers(
 		Res.VertexBufferRDG = nullptr;
 		Res.IndexBufferRDG  = nullptr;
 	}
+	
+	Res.NormalsBufferRDG = nullptr;
 }
-
 
 void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	FRHICommandListImmediate& RHICmdList,
-	const FVoxelChunkBuildInputs& Inputs,
+	const FVoxelChunkBuildPayload& Inputs,
 	EVoxelMeshMode Mode,
 	TSharedPtr<FVoxelChunkGPUResources>& InOutResources)
 {
@@ -115,7 +120,6 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 
 	// 1) Allocate buffers
 	AllocateChunkBuffers(GraphBuilder, Inputs, Mode, *InOutResources);
-
 
 	// 2) Clear counters
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(InOutResources->VertexCountRDG), 0);
@@ -141,6 +145,7 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 
 		Params->OutVertices = GraphBuilder.CreateUAV(InOutResources->VertexBufferRDG);
 		Params->OutIndices  = GraphBuilder.CreateUAV(InOutResources->IndexBufferRDG);
+		// Params->OutNormals  = GraphBuilder.CreateUAV(InOutResources->NormalsBufferRDG);
 		Params->VertexCount = GraphBuilder.CreateUAV(InOutResources->VertexCountRDG);
 		Params->IndexCount  = GraphBuilder.CreateUAV(InOutResources->IndexCountRDG);
 
@@ -196,7 +201,7 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 				Count.VertCountPerCell,
 				Count.CaseIndexPerCell,
 				MaxVerts,
-				/*bUseCaseIndexPerCell*/ true);
+				true);
 
 		FRDGBufferRef Indices =
 			FMC_IndexPass::AddMC_IndexScatterPass(
@@ -206,10 +211,24 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 				Scan.VertOffsets,
 				NumCells,
 				MaxIndices);
+		
+		FDispatchArgsOutputs Args =
+				BuildDispatchArgsPass::Add(GraphBuilder, Scan.TotalTris);
+		FMCNormalsOutputs Normals =
+			FMC_NormalsPass::AddMC_NormalsPass_Indirect(
+				GraphBuilder,
+				Scatter.Vertices,
+				Indices,
+				Scan.TotalTris,
+				Scan.TotalVerts,
+				Args.DispatchArgs,
+				MaxVerts);
+		
 
 		// Bind outputs to the common contract
 		InOutResources->VertexBufferRDG = Scatter.Vertices;
 		InOutResources->IndexBufferRDG  = Indices;
+		InOutResources->NormalsBufferRDG = Normals.Normals;
 
 		// Copy totals -> contract counts (IndexCount = TotalTris*3)
 		{
@@ -232,6 +251,8 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	// After buffers are created:
 	GraphBuilder.QueueBufferExtraction(InOutResources->VertexBufferRDG, &InOutResources->VertexPooled);
 	GraphBuilder.QueueBufferExtraction(InOutResources->IndexBufferRDG,  &InOutResources->IndexPooled);
+	if (InOutResources->NormalsBufferRDG)
+		GraphBuilder.QueueBufferExtraction(InOutResources->NormalsBufferRDG, &InOutResources->NormalsPooled);
 	GraphBuilder.QueueBufferExtraction(InOutResources->VertexCountRDG,  &InOutResources->VertexCountPooled);
 	GraphBuilder.QueueBufferExtraction(InOutResources->IndexCountRDG,   &InOutResources->IndexCountPooled);
 
@@ -239,9 +260,10 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	
 	InOutResources->VertexReadback.Reset(new FRHIGPUBufferReadback(TEXT("Voxel.Vertices")));
 	InOutResources->IndexReadback.Reset(new FRHIGPUBufferReadback(TEXT("Voxel.Indices")));
+	if (InOutResources->NormalsBufferRDG)
+		InOutResources->NormalsReadback.Reset(new FRHIGPUBufferReadback(TEXT("Voxel.Normals")));
 	InOutResources->VertexCountReadback.Reset(new FRHIGPUBufferReadback(TEXT("Voxel.VertexCount")));
 	InOutResources->IndexCountReadback.Reset(new FRHIGPUBufferReadback(TEXT("Voxel.IndexCount")));
-
 	
 	check(InOutResources->VertexPooled.IsValid());
 	check(InOutResources->VertexCountPooled.IsValid());
@@ -257,12 +279,15 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 
 	if (!InOutResources->VertexReadback)      InOutResources->VertexReadback      = MakeUnique<FRHIGPUBufferReadback>(TEXT("Voxel.Vertices"));
 	if (!InOutResources->IndexReadback)       InOutResources->IndexReadback       = MakeUnique<FRHIGPUBufferReadback>(TEXT("Voxel.Indices"));
+	if (!InOutResources->NormalsReadback)       InOutResources->NormalsReadback       = MakeUnique<FRHIGPUBufferReadback>(TEXT("Voxel.Normals"));
 	if (!InOutResources->VertexCountReadback) InOutResources->VertexCountReadback = MakeUnique<FRHIGPUBufferReadback>(TEXT("Voxel.VertexCount"));
 	if (!InOutResources->IndexCountReadback)  InOutResources->IndexCountReadback  = MakeUnique<FRHIGPUBufferReadback>(TEXT("Voxel.IndexCount"));
 
 	// Enqueue copies
 	InOutResources->VertexReadback->EnqueueCopy(RHICmdList, InOutResources->VertexPooled->GetRHI());
 	InOutResources->IndexReadback->EnqueueCopy(RHICmdList,  InOutResources->IndexPooled->GetRHI());
+	if (InOutResources->NormalsPooled && InOutResources->NormalsBufferRDG)
+		InOutResources->NormalsReadback->EnqueueCopy(RHICmdList,  InOutResources->NormalsPooled->GetRHI());
 	InOutResources->VertexCountReadback->EnqueueCopy(RHICmdList, InOutResources->VertexCountPooled->GetRHI());
 	InOutResources->IndexCountReadback->EnqueueCopy(RHICmdList,  InOutResources->IndexCountPooled->GetRHI());
 	
