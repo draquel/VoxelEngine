@@ -363,9 +363,8 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 
 		Rec->State = EVoxelChunkState::Generating;
 
-		FVoxelChunkBuildInputs Inputs;
+		FVoxelChunkBuildPayload Inputs;
 		Inputs.Key = Rec->Key;
-		Inputs.Settings = Settings;
 		Inputs.Seed = Settings.Seed;
 		Inputs.EditLayer = EditLayer;
 		Inputs.CellsPerAxis = FMath::Max<uint32>(Settings.CellsPerAxis, 8);
@@ -396,7 +395,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		Req.Key    = Rec->Key;
 		Req.BuildId= ThisBuildId;
 		Req.Mode   = EVoxelMeshMode::MarchingCubes; // or MarchingCubes later
-		Req.Inputs = Inputs;
+		Req.Payload = Inputs;
 		Req.GPU    = Rec->GPU;
 
 		if (BuildService)
@@ -465,6 +464,9 @@ void UVoxelChunkSubsystem::AttachReadyToRender()
             P.BuildId      = R.BuildId;
             P.GPU          = R.GPU;
             P.VertexSpace  = EVoxelVertexSpace::ChunkLocal;
+        	// P.DegenerateTrianglePolicy = EVoxelDegenerateTrianglePolicy::Allow;
+        	// P.WindingOrder = EVoxelWindingOrder::CCW;
+        	// P.UniqueVertexStrategy = EVoxelUniqueVertexStrategy::ChunkShared;
             P.ChunkOriginWS= ComputeChunkOriginWS(R.Key);
             P.ChunkSize    = ChunkSizeWS(Settings, R.Key.LOD);
             P.StepSizeWS   = Settings.BaseStepSize * float(1 << R.Key.LOD);

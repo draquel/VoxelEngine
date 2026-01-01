@@ -17,7 +17,7 @@ namespace VoxelRender
 	void FVoxelRDGChunkBuildService::EnqueueBuild(const FVoxelChunkBuildRequest& Req)
 	{
 		// Copy the things we need onto the RT lambda safely.
-		FVoxelChunkBuildInputs Inputs = Req.Inputs;
+		FVoxelChunkBuildPayload Inputs = Req.Payload;
 		EVoxelMeshMode Mode = Req.Mode;
 		TSharedPtr<FVoxelChunkGPUResources> GPU = Req.GPU;
 

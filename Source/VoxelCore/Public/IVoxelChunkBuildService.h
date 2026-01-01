@@ -2,7 +2,7 @@
 #pragma once
 
 #include "VoxelChunkKey.h"
-#include "VoxelChunkBuildInputs.h"
+#include "VoxelChunkBuildPayload.h"
 #include "Templates/SharedPointer.h"
 
 class FRHICommandListImmediate;

@@ -2,7 +2,6 @@
 
 #include "VoxelChunkKey.h"
 #include "VoxelNoiseParams.h"
-#include "VoxelWorldSettings.h"
 
 class UVoxelEditLayer;
 struct FVoxelChunkGPUResources;
@@ -14,13 +13,12 @@ enum class EVoxelMeshMode : uint8
 	Blocky
 };
 
-struct FVoxelChunkBuildInputs
+struct FVoxelChunkBuildPayload
 {
-	FVoxelChunkBuildInputs() = default;
-	~FVoxelChunkBuildInputs() = default;
+	FVoxelChunkBuildPayload() = default;
+	~FVoxelChunkBuildPayload() = default;
 	
 	FVoxelChunkKey Key;
-	FVoxelWorldSettings Settings;
 	int32 Seed = 0;
 	UVoxelEditLayer* EditLayer = nullptr;
 
@@ -43,7 +41,7 @@ struct FVoxelChunkBuildRequest
 	uint64 BuildId = 0;
 	EVoxelMeshMode Mode = EVoxelMeshMode::DebugGrid;
 
-	FVoxelChunkBuildInputs Inputs;
+	FVoxelChunkBuildPayload Payload;
 
 	// The service writes into / updates these resources (buffers + readbacks)
 	TSharedPtr<FVoxelChunkGPUResources> GPU;
