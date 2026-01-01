@@ -27,12 +27,6 @@ namespace VoxelRender
 		if (Slot.BuildId > Payload.BuildId)
 			return; // already queued something newer
 
-		if (Slot.VertexSpace != EVoxelVertexSpace::ChunkLocal)
-		{
-				UE_LOG(LogTemp, Verbose, TEXT("PMCDebugChunkRenderConsumer: Enqueued build for chunk %s with vertex space WorldSpace. Automatically set to ChunkLocal"), *Payload.Key.Coord.ToString());
-				Slot.VertexSpace = EVoxelVertexSpace::ChunkLocal;
-		}
-		
 		Slot = Payload;
 	}
 
@@ -56,9 +50,7 @@ namespace VoxelRender
 	{
 		UProceduralMeshComponent* PMC = PMCWeak.Get();
 		if (!PMC) return;
-
-		if (PendingBuilds.Num() == 0)
-			return;
+		if (PendingBuilds.Num() == 0) return;
 
 		// Build a small list for this tick (time slicing)
 		TArray<FVoxelChunkRenderPayload> Payloads;
@@ -76,17 +68,11 @@ namespace VoxelRender
 		FVoxelDebugPMCBuilder::TryConsumeAndBuild(
 			PMC,
 			Payloads,
-			[this](const FVoxelChunkKey& Key)
-			{
-				return GetOrCreateSection(Key);
-			},
+			[this](const FVoxelChunkKey& Key){ return GetOrCreateSection(Key); },
 			[this](const FVoxelChunkKey& Key, uint64 BuildId)
 			{
-				if (OnBuilt)
-				{
-					LastBuiltBuildId.Add(Key, BuildId);
-					OnBuilt(Key, BuildId);
-				}
+				LastBuiltBuildId.Add(Key, BuildId);
+				if (OnBuilt) OnBuilt(Key, BuildId);
 			});
 	}
 

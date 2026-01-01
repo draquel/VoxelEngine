@@ -1,9 +1,10 @@
 ﻿#pragma once
+
+#include "CoreMinimal.h"
 #include "Components/PrimitiveComponent.h"
-#include "VoxelChunkKey.h"
 #include "VoxelChunkMeshComponent.generated.h"
 
-struct FVoxelChunkGPUResources;
+namespace VoxelRender { struct FChunkMeshRenderData; }
 
 UCLASS(ClassGroup=(Voxel), meta=(BlueprintSpawnableComponent))
 class VOXELRENDER_API UVoxelChunkMeshComponent : public UPrimitiveComponent
@@ -11,26 +12,19 @@ class VOXELRENDER_API UVoxelChunkMeshComponent : public UPrimitiveComponent
 	GENERATED_BODY()
 
 public:
-	UVoxelChunkMeshComponent(){}
+	UVoxelChunkMeshComponent();
 
-	// GameThread: apply latest GPU buffers for this chunk
-	void SetChunkMesh(const FVoxelChunkKey& Key, uint64 BuildId, TSharedPtr<FVoxelChunkGPUResources> GPU, FVector ChunkOriginWS);
+	// GameThread: submit/replace render data for a chunk "slot"
+	void SetChunkRenderData_GameThread(int32 Slot, TSharedPtr<VoxelRender::FChunkMeshRenderData> InData);
 
-	// GameThread: remove chunk
-	void RemoveChunkMesh(const FVoxelChunkKey& Key);
+	// GameThread: remove a slot
+	void ClearChunk_GameThread(int32 Slot);
 
 	// UPrimitiveComponent
-	// virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
-	virtual int32 GetNumMaterials() const override { return 1; }
-	// virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
+	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
+	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
 
 private:
-	struct FChunkSlot
-	{
-		uint64 BuildId = 0;
-		TSharedPtr<FVoxelChunkGPUResources> GPU;
-		FVector ChunkOriginWS = FVector::ZeroVector;
-	};
-
-	TMap<FVoxelChunkKey, FChunkSlot> Slots;
+	// GameThread-owned; SceneProxy copies what it needs safely.
+	TArray<TSharedPtr<VoxelRender::FChunkMeshRenderData>> SlotDataGT;
 };

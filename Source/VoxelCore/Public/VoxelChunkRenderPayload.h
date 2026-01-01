@@ -37,9 +37,9 @@ struct FVoxelChunkRenderPayload
 
 	// Transform / interpretation
 	EVoxelVertexSpace VertexSpace = EVoxelVertexSpace::ChunkLocal;
-	EVoxelWindingOrder WindingOrder = EVoxelWindingOrder::CCW;
-	EVoxelUniqueVertexStrategy UniqueVertexStrategy = EVoxelUniqueVertexStrategy::ChunkShared;
-	EVoxelDegenerateTrianglePolicy DegenerateTrianglePolicy = EVoxelDegenerateTrianglePolicy::Allow;
+	// EVoxelWindingOrder WindingOrder = EVoxelWindingOrder::CCW;
+	// EVoxelUniqueVertexStrategy UniqueVertexStrategy = EVoxelUniqueVertexStrategy::ChunkShared;
+	// EVoxelDegenerateTrianglePolicy DegenerateTrianglePolicy = EVoxelDegenerateTrianglePolicy::Allow;
 	FVector ChunkOriginWS = FVector::ZeroVector;
 	float ChunkSize = 0.f;
 

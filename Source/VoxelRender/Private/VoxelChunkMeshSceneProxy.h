@@ -1,31 +1,29 @@
 ﻿#pragma once
+
+#include "CoreMinimal.h"
 #include "PrimitiveSceneProxy.h"
-#include "VoxelChunkKey.h"
 
-struct FVoxelChunkGPUResources;
-
-class VOXELRENDER_API FVoxelChunkMeshSceneProxy : public FPrimitiveSceneProxy
+namespace VoxelRender
 {
-public:
-	FVoxelChunkMeshSceneProxy(const class UVoxelChunkMeshComponent* InComp)	{ }
+	struct FChunkVFStreams;
+	class FChunkVertexFactory; // forward ok
 
-	virtual void GetDynamicMeshElements(
-		const TArray<const FSceneView*>& Views,
-		const FSceneViewFamily& ViewFamily,
-		uint32 VisibilityMap,
-		FMeshElementCollector& Collector) const override;
-
-	virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) const override;
-	virtual uint32 GetMemoryFootprint() const override { return sizeof(*this) + GetAllocatedSize(); }
-	// uint32 GetAllocatedSize() const { return 0; }
-
-private:
-	struct FChunkDraw
+	class FChunkMeshSceneProxy : public FPrimitiveSceneProxy
 	{
-		FVoxelChunkKey Key;
-		uint64 BuildId = 0;
-		TSharedPtr<FVoxelChunkGPUResources> GPU;
-		FVector ChunkOriginWS = FVector::ZeroVector;
+	public:
+		FChunkMeshSceneProxy(const UPrimitiveComponent* InComponent);
+		virtual ~FChunkMeshSceneProxy() override; // out-of-line
+		// virtual void GetViewRelevance(FSceneViewRelevance& OutRelevance) const override;
+		virtual uint32 GetMemoryFootprint() const override { return sizeof(*this) + GetAllocatedSize(); }
+		virtual SIZE_T GetTypeHash() const override;
+
+	private:
+		struct FSlotRT
+		{
+			TUniquePtr<FChunkVertexFactory> VF;
+			TUniquePtr<FChunkVFStreams> Data;
+		};
+
+		TArray<FSlotRT> SlotsRT;
 	};
-	TArray<FChunkDraw> Draws;
-};
+}
