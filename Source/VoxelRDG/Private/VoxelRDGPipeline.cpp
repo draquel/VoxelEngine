@@ -80,7 +80,7 @@ static void AllocateChunkBuffers(
 	Res.IndexCountRDG = GraphBuilder.CreateBuffer(
 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 1),
 		TEXT("Voxel.IndexCount"));
-
+	
 	// Do NOT allocate MC output buffers here if MC pass creates its own (recommended).
 	// For DebugGrid, allocate explicit buffers:
 	if (Req.Mode == EVoxelMeshMode::DebugGrid)
@@ -88,10 +88,10 @@ static void AllocateChunkBuffers(
 		const uint32 N = (uint32)Req.Payload.CellsPerAxis;
 		const uint32 MaxVerts   = (N + 1) * (N + 1);
 		const uint32 MaxIndices = (N * N) * 6;
-
-		Res.VertexBufferRDG = GraphBuilder.CreateBuffer(
-			FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector4f), MaxVerts),
-			TEXT("Voxel.DebugGrid.Vertices"));
+		
+		FRDGBufferDesc VBDesc = FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector4f), MaxVerts);
+		VBDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
+		Res.VertexBufferRDG = GraphBuilder.CreateBuffer(VBDesc, TEXT("Voxel.MC.Vertices"));
 
 		Res.IndexBufferRDG = GraphBuilder.CreateBuffer(
 			FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), MaxIndices),

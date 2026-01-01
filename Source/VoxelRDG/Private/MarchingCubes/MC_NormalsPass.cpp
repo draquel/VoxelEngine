@@ -42,9 +42,13 @@ FMCNormalsOutputs FMC_NormalsPass::AddMC_NormalsPass_Indirect(
 {
     FMCNormalsOutputs Out;
 
-    Out.Normals = GraphBuilder.CreateBuffer(
-        FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector3f), MaxVerts),
-        TEXT("MC.Normals"));
+    // Out.Normals = GraphBuilder.CreateBuffer(
+    //     FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector3f), MaxVerts),
+    //     TEXT("MC.Normals"));
+    
+    FRDGBufferDesc NBDesc = FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector3f), MaxVerts);
+    NBDesc.Usage |= BUF_VertexBuffer | BUF_UnorderedAccess | BUF_ShaderResource;
+    Out.Normals = GraphBuilder.CreateBuffer(NBDesc, TEXT("Voxel.MC.Normals"));
 
     auto* Params = GraphBuilder.AllocParameters<FMCNormalsCS::FParameters>();
     Params->InPositions  = GraphBuilder.CreateSRV(Positions);
