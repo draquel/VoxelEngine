@@ -69,11 +69,10 @@ FVoxelRDGPipeline::FVoxelRDGPipeline() {}
 
 static void AllocateChunkBuffers(
 	FRDGBuilder& GraphBuilder,
-	const FVoxelChunkBuildPayload& Inputs,
-	EVoxelMeshMode Mode,
+	const FVoxelChunkBuildRequest& Req,
 	FVoxelChunkGPUResources& Res)
 {
-	// Always allocate the contract count buffers (1 uint each).
+	// Always allocate counts
 	Res.VertexCountRDG = GraphBuilder.CreateBuffer(
 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 1),
 		TEXT("Voxel.VertexCount"));
@@ -82,9 +81,11 @@ static void AllocateChunkBuffers(
 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 1),
 		TEXT("Voxel.IndexCount"));
 
-	if (Mode == EVoxelMeshMode::DebugGrid)
+	// Do NOT allocate MC output buffers here if MC pass creates its own (recommended).
+	// For DebugGrid, allocate explicit buffers:
+	if (Req.Mode == EVoxelMeshMode::DebugGrid)
 	{
-		const uint32 N = Inputs.CellsPerAxis;
+		const uint32 N = (uint32)Req.Payload.CellsPerAxis;
 		const uint32 MaxVerts   = (N + 1) * (N + 1);
 		const uint32 MaxIndices = (N * N) * 6;
 
@@ -95,20 +96,15 @@ static void AllocateChunkBuffers(
 		Res.IndexBufferRDG = GraphBuilder.CreateBuffer(
 			FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), MaxIndices),
 			TEXT("Voxel.DebugGrid.Indices"));
+
+		// optional for debug mode; can be null if builder generates normals
+		Res.NormalsBufferRDG = nullptr;
 	}
-	else if (Mode == EVoxelMeshMode::MarchingCubes)
-	{
-		Res.VertexBufferRDG = nullptr;
-		Res.IndexBufferRDG  = nullptr;
-	}
-	
-	Res.NormalsBufferRDG = nullptr;
 }
 
 void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	FRHICommandListImmediate& RHICmdList,
-	const FVoxelChunkBuildPayload& Inputs,
-	EVoxelMeshMode Mode,
+	const FVoxelChunkBuildRequest& Req,
 	TSharedPtr<FVoxelChunkGPUResources>& InOutResources)
 {
 	if (!InOutResources.IsValid())
@@ -118,65 +114,25 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 
 	FRDGBuilder GraphBuilder(RHICmdList);
 
-	// 1) Allocate buffers
-	AllocateChunkBuffers(GraphBuilder, Inputs, Mode, *InOutResources);
+	AllocateChunkBuffers(GraphBuilder, Req, *InOutResources);
 
-	// 2) Clear counters
+	// Clear only the count buffers here.
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(InOutResources->VertexCountRDG), 0);
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(InOutResources->IndexCountRDG), 0);
 
-	if (Mode == EVoxelMeshMode::DebugGrid)
-	{
-		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(InOutResources->VertexBufferRDG), 0);
-		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(InOutResources->IndexBufferRDG), 0);
-	}
-
-	
-	// 3) Dispatch
-	if (Mode == EVoxelMeshMode::DebugGrid)
-	{
-		FDebugGridCS::FParameters* Params = GraphBuilder.AllocParameters<FDebugGridCS::FParameters>();
-		FDebugGridUniforms U{};
-		U.CellsPerAxis   = Inputs.CellsPerAxis;
-		U.StepSizeWS     = Inputs.StepSizeWS;
-		U.ChunkOriginWS  = FVector4f(Inputs.ChunkOriginWS.X,Inputs.ChunkOriginWS.Y,Inputs.ChunkOriginWS.Z, 0.0f);
-
-		Params->Uniforms = TUniformBufferRef<FDebugGridUniforms>::CreateUniformBufferImmediate(U, UniformBuffer_SingleDraw);
-
-		Params->OutVertices = GraphBuilder.CreateUAV(InOutResources->VertexBufferRDG);
-		Params->OutIndices  = GraphBuilder.CreateUAV(InOutResources->IndexBufferRDG);
-		// Params->OutNormals  = GraphBuilder.CreateUAV(InOutResources->NormalsBufferRDG);
-		Params->VertexCount = GraphBuilder.CreateUAV(InOutResources->VertexCountRDG);
-		Params->IndexCount  = GraphBuilder.CreateUAV(InOutResources->IndexCountRDG);
-
-		TShaderMapRef<FDebugGridCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
-		const uint32 ThreadsX = Inputs.CellsPerAxis; // one thread per cell in X for example (you decide)
-		const uint32 ThreadsY = Inputs.CellsPerAxis;
-		
-		const uint32 GroupSize = 8;
-		const uint32 Stride = (uint32)Inputs.CellsPerAxis + 1;
-		const uint32 GroupsX = FMath::DivideAndRoundUp<uint32>(Stride,GroupSize);
-		const uint32 GroupsY = FMath::DivideAndRoundUp<uint32>(Stride,GroupSize);
-		
-		FComputeShaderUtils::AddPass(
-			GraphBuilder,
-			RDG_EVENT_NAME("Voxel.DebugGridCS LOD=%d Coord=(%d,%d,%d)", Inputs.Key.LOD, Inputs.Key.Coord.X, Inputs.Key.Coord.Y, Inputs.Key.Coord.Z),
-			CS,
-			Params,
-			FIntVector(GroupsX, GroupsY, 1));
-	}
-	if (Mode == EVoxelMeshMode::MarchingCubes)
+	// ---- Dispatch by mode (your real calls go here) ----
+	if (Req.Mode == EVoxelMeshMode::MarchingCubes)
 	{
 		// Build chunk params for MC
 		FMCChunkParamsCPU ChunkParams;
-		ChunkParams.CellsPerAxis   = Inputs.CellsPerAxis;
-		ChunkParams.StepSizeWS     = Inputs.StepSizeWS;
-		ChunkParams.IsoLevel       = Inputs.IsoLevel;      // ensure FVoxelChunkBuildInputs has this
-		ChunkParams.ChunkOriginWS  = Inputs.ChunkOriginWS;
-		ChunkParams.ChunkSeed      = (uint32)Inputs.Seed;
+		ChunkParams.CellsPerAxis   = Req.Payload.CellsPerAxis;
+		ChunkParams.StepSizeWS     = Req.Payload.StepSizeWS;
+		ChunkParams.IsoLevel       = Req.Payload.IsoLevel;      // ensure FVoxelChunkBuildReq.Payload has this
+		ChunkParams.ChunkOriginWS  = Req.Payload.ChunkOriginWS;
+		ChunkParams.ChunkSeed      = (uint32)Req.Payload.Seed;
 
 		const FMCCountPassOutputs Count =
-			FMC_CountPass::AddMC_CountPass(GraphBuilder, ChunkParams, Inputs.NoiseParameters);
+			FMC_CountPass::AddMC_CountPass(GraphBuilder, ChunkParams, Req.Payload.NoiseParameters);
 
 		const uint32 NumCells = Count.CellsPerAxis * Count.CellsPerAxis * Count.CellsPerAxis;
 
@@ -196,7 +152,7 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 			FMC_ScatterPass::AddMC_ScatterPass(
 				GraphBuilder,
 				ChunkParams,
-				Inputs.NoiseParameters,
+				Req.Payload.NoiseParameters,
 				Scan.VertOffsets,
 				Count.VertCountPerCell,
 				Count.CaseIndexPerCell,
@@ -247,49 +203,31 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 				FIntVector(1,1,1));
 		}
 	}
-	
-	// After buffers are created:
-	GraphBuilder.QueueBufferExtraction(InOutResources->VertexBufferRDG, &InOutResources->VertexPooled);
-	GraphBuilder.QueueBufferExtraction(InOutResources->IndexBufferRDG,  &InOutResources->IndexPooled);
-	if (InOutResources->NormalsBufferRDG)
-		GraphBuilder.QueueBufferExtraction(InOutResources->NormalsBufferRDG, &InOutResources->NormalsPooled);
-	GraphBuilder.QueueBufferExtraction(InOutResources->VertexCountRDG,  &InOutResources->VertexCountPooled);
-	GraphBuilder.QueueBufferExtraction(InOutResources->IndexCountRDG,   &InOutResources->IndexCountPooled);
+
+	// ---- Extract only buffers that are NON-NULL ----
+	if (InOutResources->VertexBufferRDG)  GraphBuilder.QueueBufferExtraction(InOutResources->VertexBufferRDG,  &InOutResources->VertexPooled);
+	if (InOutResources->IndexBufferRDG)   GraphBuilder.QueueBufferExtraction(InOutResources->IndexBufferRDG,   &InOutResources->IndexPooled);
+	if (InOutResources->NormalsBufferRDG) GraphBuilder.QueueBufferExtraction(InOutResources->NormalsBufferRDG, &InOutResources->NormalsPooled);
+
+	GraphBuilder.QueueBufferExtraction(InOutResources->VertexCountRDG, &InOutResources->VertexCountPooled);
+	GraphBuilder.QueueBufferExtraction(InOutResources->IndexCountRDG,  &InOutResources->IndexCountPooled);
 
 	GraphBuilder.Execute();
-	
-	InOutResources->VertexReadback.Reset(new FRHIGPUBufferReadback(TEXT("Voxel.Vertices")));
-	InOutResources->IndexReadback.Reset(new FRHIGPUBufferReadback(TEXT("Voxel.Indices")));
-	if (InOutResources->NormalsBufferRDG)
-		InOutResources->NormalsReadback.Reset(new FRHIGPUBufferReadback(TEXT("Voxel.Normals")));
-	InOutResources->VertexCountReadback.Reset(new FRHIGPUBufferReadback(TEXT("Voxel.VertexCount")));
-	InOutResources->IndexCountReadback.Reset(new FRHIGPUBufferReadback(TEXT("Voxel.IndexCount")));
-	
-	check(InOutResources->VertexPooled.IsValid());
-	check(InOutResources->VertexCountPooled.IsValid());
-	
-	// UE_LOG(LogTemp, Warning, TEXT("Voxel: executed RDG for chunk"));
 
-	InOutResources->bReadbackEnqueued = true;
-	
-	check(InOutResources->VertexPooled.IsValid());
-	check(InOutResources->IndexPooled.IsValid());
-	check(InOutResources->VertexCountPooled.IsValid());
-	check(InOutResources->IndexCountPooled.IsValid());
-
+	// Create readbacks once
 	if (!InOutResources->VertexReadback)      InOutResources->VertexReadback      = MakeUnique<FRHIGPUBufferReadback>(TEXT("Voxel.Vertices"));
 	if (!InOutResources->IndexReadback)       InOutResources->IndexReadback       = MakeUnique<FRHIGPUBufferReadback>(TEXT("Voxel.Indices"));
-	if (!InOutResources->NormalsReadback)       InOutResources->NormalsReadback       = MakeUnique<FRHIGPUBufferReadback>(TEXT("Voxel.Normals"));
+	if (!InOutResources->NormalsReadback)     InOutResources->NormalsReadback     = MakeUnique<FRHIGPUBufferReadback>(TEXT("Voxel.Normals"));
 	if (!InOutResources->VertexCountReadback) InOutResources->VertexCountReadback = MakeUnique<FRHIGPUBufferReadback>(TEXT("Voxel.VertexCount"));
 	if (!InOutResources->IndexCountReadback)  InOutResources->IndexCountReadback  = MakeUnique<FRHIGPUBufferReadback>(TEXT("Voxel.IndexCount"));
 
-	// Enqueue copies
-	InOutResources->VertexReadback->EnqueueCopy(RHICmdList, InOutResources->VertexPooled->GetRHI());
-	InOutResources->IndexReadback->EnqueueCopy(RHICmdList,  InOutResources->IndexPooled->GetRHI());
-	if (InOutResources->NormalsPooled && InOutResources->NormalsBufferRDG)
-		InOutResources->NormalsReadback->EnqueueCopy(RHICmdList,  InOutResources->NormalsPooled->GetRHI());
+	// Enqueue copies only if pooled exists
+	if (InOutResources->VertexPooled)  InOutResources->VertexReadback->EnqueueCopy(RHICmdList, InOutResources->VertexPooled->GetRHI());
+	if (InOutResources->IndexPooled)   InOutResources->IndexReadback->EnqueueCopy(RHICmdList,  InOutResources->IndexPooled->GetRHI());
+	if (InOutResources->NormalsPooled) InOutResources->NormalsReadback->EnqueueCopy(RHICmdList, InOutResources->NormalsPooled->GetRHI());
+
 	InOutResources->VertexCountReadback->EnqueueCopy(RHICmdList, InOutResources->VertexCountPooled->GetRHI());
 	InOutResources->IndexCountReadback->EnqueueCopy(RHICmdList,  InOutResources->IndexCountPooled->GetRHI());
-	
-	// UE_LOG(LogTemp, Warning, TEXT("Voxel: executed Buffer Readback"));
+
+	InOutResources->bReadbackEnqueued = true;
 }

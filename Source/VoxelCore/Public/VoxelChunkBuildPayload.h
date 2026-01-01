@@ -15,9 +15,6 @@ enum class EVoxelMeshMode : uint8
 
 struct FVoxelChunkBuildPayload
 {
-	FVoxelChunkBuildPayload() = default;
-	~FVoxelChunkBuildPayload() = default;
-	
 	FVoxelChunkKey Key;
 	int32 Seed = 0;
 	UVoxelEditLayer* EditLayer = nullptr;
@@ -34,9 +31,6 @@ struct FVoxelChunkBuildPayload
 
 struct FVoxelChunkBuildRequest
 {
-	FVoxelChunkBuildRequest() = default;
-	~FVoxelChunkBuildRequest() = default;
-	
 	FVoxelChunkKey Key;
 	uint64 BuildId = 0;
 	EVoxelMeshMode Mode = EVoxelMeshMode::DebugGrid;

@@ -2,8 +2,8 @@
 #pragma once
 
 #include "IVoxelChunkBuildService.h"
+#include "VoxelRDGPipeline.h"
 
-class FVoxelRDGPipeline;
 
 namespace VoxelRender
 {
@@ -11,10 +11,11 @@ namespace VoxelRender
 	{
 	public:
 		FVoxelRDGChunkBuildService();
-		virtual ~FVoxelRDGChunkBuildService() override;
+		virtual ~FVoxelRDGChunkBuildService() override = default; 
 
 		virtual void EnqueueBuild(const FVoxelChunkBuildRequest& Req) override;
-		virtual void CancelBuild(const FVoxelChunkKey& Key, uint64 BuildId) override {}
+		virtual void CancelBuild(const FVoxelChunkKey& Key, uint64 BuildId) override;
+		virtual void Tick(float DeltaSeconds) override;
 
 	private:
 		TUniquePtr<FVoxelRDGPipeline> Pipeline;

@@ -13,6 +13,7 @@ namespace Voxel
 	class IVoxelChunkBuildService
 	{
 	public:
+		IVoxelChunkBuildService() = default;	
 		virtual ~IVoxelChunkBuildService() = default;
 
 		// GameThread: submit a GPU build. Implementations enqueue RT work.

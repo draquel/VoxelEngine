@@ -12,23 +12,30 @@ namespace VoxelRender
 		Pipeline = MakeUnique<FVoxelRDGPipeline>();
 	}
 
-	FVoxelRDGChunkBuildService::~FVoxelRDGChunkBuildService() = default;
-
 	void FVoxelRDGChunkBuildService::EnqueueBuild(const FVoxelChunkBuildRequest& Req)
 	{
-		// Copy the things we need onto the RT lambda safely.
-		FVoxelChunkBuildPayload Inputs = Req.Payload;
-		EVoxelMeshMode Mode = Req.Mode;
-		TSharedPtr<FVoxelChunkGPUResources> GPU = Req.GPU;
+		// Copy request for render thread safety
+		const FVoxelChunkBuildRequest ReqCopy = Req;
 
-		FVoxelRDGPipeline* PipelinePtr = Pipeline.Get();
-		if (!PipelinePtr || !GPU.IsValid())
-			return;
-
-		ENQUEUE_RENDER_COMMAND(VoxelBuildChunk)(
-			[PipelinePtr, Inputs, Mode, GPU](FRHICommandListImmediate& RHICmdList) mutable
+		ENQUEUE_RENDER_COMMAND(VoxelRDG_BuildChunk)(
+			[this, ReqCopy](FRHICommandListImmediate& RHICmdList) mutable
 			{
-				PipelinePtr->BuildChunk_RenderThread(RHICmdList, Inputs, Mode, GPU);
+				TSharedPtr<FVoxelChunkGPUResources> GPU = ReqCopy.GPU;
+				Pipeline->BuildChunk_RenderThread(RHICmdList, ReqCopy, GPU);
+
+				// write back shared ptr (ReqCopy.GPU is a copy; but GPU points to same underlying shared)
+				// If you want, you can also ensure ReqCopy.GPU = GPU; (not necessary)
 			});
-	}	
+	}
+
+	void FVoxelRDGChunkBuildService::CancelBuild(const FVoxelChunkKey& Key, uint64 BuildId)
+	{
+		// Best-effort: you can track inflight keys/buildIds and ignore stale results on completion.
+		// Actual GPU cancel is non-trivial; the subsystem should gate by BuildId anyway.
+	}
+
+	void FVoxelRDGChunkBuildService::Tick(float DeltaSeconds)
+	{
+		IVoxelChunkBuildService::Tick(DeltaSeconds);
+	}
 }

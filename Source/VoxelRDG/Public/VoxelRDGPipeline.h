@@ -13,8 +13,7 @@ public:
 	// Called from render thread / ENQUEUE_RENDER_COMMAND context
 	void BuildChunk_RenderThread(
 		FRHICommandListImmediate& RHICmdList,
-		const FVoxelChunkBuildPayload& Inputs,
-		EVoxelMeshMode Mode,
-		TSharedPtr<struct FVoxelChunkGPUResources>& InOutResources);
+		const FVoxelChunkBuildRequest& Req,	
+		TSharedPtr<FVoxelChunkGPUResources>& InOutResources);
 
 };

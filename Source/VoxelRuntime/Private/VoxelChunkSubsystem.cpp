@@ -422,11 +422,8 @@ void UVoxelChunkSubsystem::AttachReadyToRender()
     {
         FVoxelChunkRecord& R = KVP.Value;
 
-        if (R.State != EVoxelChunkState::Generating)
-            continue;
-
-        if (!R.GPU.IsValid())
-            continue;
+        if (R.State != EVoxelChunkState::Generating) continue;
+        if (!R.GPU.IsValid()) continue;
 
         if (R.bCancelRequested)
         {
@@ -464,9 +461,6 @@ void UVoxelChunkSubsystem::AttachReadyToRender()
             P.BuildId      = R.BuildId;
             P.GPU          = R.GPU;
             P.VertexSpace  = EVoxelVertexSpace::ChunkLocal;
-        	// P.DegenerateTrianglePolicy = EVoxelDegenerateTrianglePolicy::Allow;
-        	// P.WindingOrder = EVoxelWindingOrder::CCW;
-        	// P.UniqueVertexStrategy = EVoxelUniqueVertexStrategy::ChunkShared;
             P.ChunkOriginWS= ComputeChunkOriginWS(R.Key);
             P.ChunkSize    = ChunkSizeWS(Settings, R.Key.LOD);
             P.StepSizeWS   = Settings.BaseStepSize * float(1 << R.Key.LOD);
