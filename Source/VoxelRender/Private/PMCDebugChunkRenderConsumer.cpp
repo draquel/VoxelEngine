@@ -27,6 +27,12 @@ namespace VoxelRender
 		if (Slot.BuildId > Payload.BuildId)
 			return; // already queued something newer
 
+		if (Slot.VertexSpace != EVoxelVertexSpace::ChunkLocal)
+		{
+				UE_LOG(LogTemp, Verbose, TEXT("PMCDebugChunkRenderConsumer: Enqueued build for chunk %s with vertex space WorldSpace. Automatically set to ChunkLocal"), *Payload.Key.Coord.ToString());
+				Slot.VertexSpace = EVoxelVertexSpace::ChunkLocal;
+		}
+		
 		Slot = Payload;
 	}
 

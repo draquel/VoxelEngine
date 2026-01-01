@@ -121,7 +121,6 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 		if (outV + 3 > vc)
 			break;
 		
-		
 		// Convert to LOCAL space for PMC: subtract ChunkOriginWS
 		const float3 p0L = epos[e0] - ChunkOriginWS;
 		const float3 p1L = epos[e1] - ChunkOriginWS;

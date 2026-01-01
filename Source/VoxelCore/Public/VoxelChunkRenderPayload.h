@@ -6,8 +6,25 @@ struct FVoxelChunkGPUResources;
 
 enum class EVoxelVertexSpace : uint8
 {
-	ChunkLocal,   // verts are in [0..ChunkSize] in XY, Z local
-	WorldSpace    // verts already include ChunkOriginWS
+	ChunkLocal = 0,   // verts are in [0..ChunkSize] in XY, Z local
+	WorldSpace = 1 // verts already include ChunkOriginWS
+};
+
+enum class EVoxelWindingOrder : uint8
+{
+	CCW = 0,
+	CW  = 1,
+};
+
+enum class EVoxelUniqueVertexStrategy : uint8
+{
+	NoSharing = 0,
+	ChunkShared = 1
+};
+enum class EVoxelDegenerateTrianglePolicy : uint8
+{
+	Allow = 0,
+	Disallow = 1,
 };
 
 struct FVoxelChunkRenderPayload
@@ -20,6 +37,9 @@ struct FVoxelChunkRenderPayload
 
 	// Transform / interpretation
 	EVoxelVertexSpace VertexSpace = EVoxelVertexSpace::ChunkLocal;
+	EVoxelWindingOrder WindingOrder = EVoxelWindingOrder::CCW;
+	EVoxelUniqueVertexStrategy UniqueVertexStrategy = EVoxelUniqueVertexStrategy::ChunkShared;
+	EVoxelDegenerateTrianglePolicy DegenerateTrianglePolicy = EVoxelDegenerateTrianglePolicy::Allow;
 	FVector ChunkOriginWS = FVector::ZeroVector;
 	float ChunkSize = 0.f;
 

@@ -193,9 +193,7 @@ void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, co
 				OutVerts->SetNum((int32)VCount);
 				for (uint32 i = 0; i < VCount; i++)
 				{
-					const FVector ChunkOffset = ChunkOriginWS; // payload field you add
-					(*OutVerts)[i] = FVector(VPtr[i].X, VPtr[i].Y, VPtr[i].Z) + ChunkOffset;
-
+					(*OutVerts)[i] = FVector(VPtr[i].X, VPtr[i].Y, VPtr[i].Z);
 				}
 
 				OutInds->SetNum((int32)ICount);
@@ -216,27 +214,29 @@ void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, co
 				G.VertexReadback->Unlock();
 				G.IndexReadback->Unlock();
 			
-				AsyncTask(ENamedThreads::GameThread, [PMCWeak, OutVerts, OutInds, BuiltKey, ChunkSize, SkirtDepth, SkirtEdgeMask, PayloadBuildId, OnBuiltRef, GetSectionIndexRef]() mutable
+				AsyncTask(ENamedThreads::GameThread, [PMCWeak, OutVerts, OutInds, OutNorms, BuiltKey, ChunkSize, ChunkOriginWS, VertSpace, SkirtDepth, SkirtEdgeMask, PayloadBuildId, OnBuiltRef, GetSectionIndexRef]() mutable
 				{
 					UProceduralMeshComponent* PMCStrong = PMCWeak.Get();
 					if (!PMCStrong) return;
 
 					// 1) Append skirts FIRST (may add vertices/indices)
-					AppendBoundarySkirts_ChunkLocalMasked(*OutVerts, *OutInds, ChunkSize, SkirtDepth, SkirtEdgeMask);
+					// AppendBoundarySkirts_ChunkLocalMasked(*OutVerts, *OutInds, ChunkSize, SkirtDepth, SkirtEdgeMask);
 
 					// 2) Build per-vertex arrays AFTER skirts
-					TArray<FVector> Normals;
 					TArray<FVector2D> UV0;
 					TArray<FProcMeshTangent> Tangents;
 					TArray<FLinearColor> Colors;
 
-					Normals.Init(FVector::UpVector, OutVerts->Num());
-
 					// UVs based on bounds in chunk-local space
 					FVector2D MinUV(FLT_MAX, FLT_MAX);
 					FVector2D MaxUV(-FLT_MAX, -FLT_MAX);
-					for (const FVector& P : *OutVerts)
+					for (FVector& P : *OutVerts)
 					{
+						if (VertSpace == EVoxelVertexSpace::ChunkLocal)
+						{
+							P = P + ChunkOriginWS;
+						}
+						
 						MinUV.X = FMath::Min(MinUV.X, (float)P.X);
 						MinUV.Y = FMath::Min(MinUV.Y, (float)P.Y);
 						MaxUV.X = FMath::Max(MaxUV.X, (float)P.X);
