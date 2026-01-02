@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "CoreMinimal.h"
+#include "VoxelChunkMeshComponent.h"
 #include "GameFramework/Actor.h"
 #include "VoxelWorldSettings.h"
 #include "VoxelWorldActor.generated.h"
@@ -37,6 +38,7 @@ private:
 	FTimerHandle DebugPollTimer;
 	int32 DebugPollTicksRemaining = 0;
 
+	UPROPERTY(VisibleAnywhere) TObjectPtr<UVoxelChunkMeshComponent> VoxelMesh;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> DebugPMC;
 	
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UVoxelDensityDebugComponent> DensityDebugComponent;

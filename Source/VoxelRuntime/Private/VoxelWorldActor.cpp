@@ -18,6 +18,8 @@ AVoxelWorldActor::AVoxelWorldActor()
 	DebugPMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	DebugPMC->bUseAsyncCooking = true;
 	
+	VoxelMesh = CreateDefaultSubobject<UVoxelChunkMeshComponent>(TEXT("Mesh"));
+	
 #if WITH_EDITOR	
 	DensityDebugComponent = CreateDefaultSubobject<UVoxelDensityDebugComponent>(TEXT("DensityDebugComponent"));
 	DensityDebugComponent->SetComponentTickEnabled(false);
