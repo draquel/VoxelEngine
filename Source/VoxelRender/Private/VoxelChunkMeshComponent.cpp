@@ -31,7 +31,7 @@ void UVoxelChunkMeshComponent::ClearChunk_GameThread(int32 Slot)
 
 FPrimitiveSceneProxy* UVoxelChunkMeshComponent::CreateSceneProxy()
 {
-	return new VoxelRender::FChunkMeshSceneProxy(this);
+	return new VoxelRender::FChunkMeshSceneProxy(this, SlotDataGT);
 }
 
 FBoxSphereBounds UVoxelChunkMeshComponent::CalcBounds(const FTransform& LocalToWorld) const

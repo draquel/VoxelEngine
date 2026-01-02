@@ -1,28 +1,29 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "FExternalVertexBuffer.h"
 #include "LocalVertexFactory.h"
 
 namespace VoxelRender
 {
 	// Wrap an externally-owned vertex buffer RHI so it can be used with FVertexStreamComponent.
-	class FExternalVertexBuffer final : public FVertexBuffer
-	{
-	public:
-		FBufferRHIRef Source;
-
-		virtual void InitRHI(FRHICommandListBase& RHICmdList) override
-		{
-			// Just alias the external buffer
-			VertexBufferRHI = Source;
-		}
-
-		virtual void ReleaseRHI() override
-		{
-			VertexBufferRHI.SafeRelease();
-			Source.SafeRelease();
-		}
-	};
+	// class FExternalVertexBuffer final : public FVertexBuffer
+	// {
+	// public:
+	// 	FBufferRHIRef Source;
+	//
+	// 	virtual void InitRHI(FRHICommandListBase& RHICmdList) override
+	// 	{
+	// 		// Just alias the external buffer
+	// 		VertexBufferRHI = Source;
+	// 	}
+	//
+	// 	virtual void ReleaseRHI() override
+	// 	{
+	// 		VertexBufferRHI.SafeRelease();
+	// 		Source.SafeRelease();
+	// 	}
+	// };
 
 	struct FChunkVFStreams
 	{
@@ -37,8 +38,8 @@ namespace VoxelRender
 			FLocalVertexFactory& VF)
 		{
 			// Adopt RHI buffers into FVertexBuffer objects
-			PositionVB.SetRHI(PositionBufferRHI);
-			NormalVB.SetRHI(NormalBufferRHI);
+			PositionVB.SetSource(PositionBufferRHI);
+			NormalVB.SetSource(NormalBufferRHI);
 
 			BeginInitResource(&PositionVB);
 			BeginInitResource(&NormalVB);
@@ -78,14 +79,18 @@ namespace VoxelRender
 	public:
 		FChunkVertexFactory(ERHIFeatureLevel::Type InFeatureLevel)
 			: FLocalVertexFactory(InFeatureLevel, "VoxelRender::FChunkVertexFactory")
-		{
-		}
+		{}
 
-		// Render-thread init of streams
-		void InitStreams_RenderThread(FRHICommandListBase& RHICmdList, const FChunkVFStreams& InStreams);
+		// RenderThread only
+		void InitStreams_RenderThread(
+			FRHICommandListBase& RHICmdList,
+			const FBufferRHIRef& PositionBufferRHI,   // float4
+			const FBufferRHIRef& NormalBufferRHI      // float3 (optional)
+		);
 
 	private:
 		FExternalVertexBuffer PositionVB;
-		FExternalVertexBuffer NormalVB; // optional (can be unset)
+		FExternalVertexBuffer NormalVB;
 	};
+
 }

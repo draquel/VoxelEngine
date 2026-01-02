@@ -3,54 +3,52 @@
 
 namespace VoxelRender
 {
-	void FChunkVertexFactory::InitStreams_RenderThread(FRHICommandListBase& RHICmdList, const FChunkVFStreams& InStreams)
+	void FChunkVertexFactory::InitStreams_RenderThread(
+	FRHICommandListBase& RHICmdList,
+	const FBufferRHIRef& PositionBufferRHI,
+	const FBufferRHIRef& NormalBufferRHI)
 	{
 		check(IsInRenderingThread());
-		
-		// InStreams.InitFromChunkBuffers_RenderThread();
 
-		// // Alias external buffers into VertexBuffer resources
-		// PositionVB.Source = InStreams.PositionBufferRHI;
-		// NormalVB.Source   = InStreams.NormalBufferRHI;
-		//
-		// // Make sure RHI is initialized for these wrappers
-		// PositionVB.InitResource(RHICmdList);
-		//
-		// const bool bHasNormals = NormalVB.Source.IsValid() && InStreams.NormalStride != 0;
-		// if (bHasNormals)
-		// {
-		// 	NormalVB.InitResource(RHICmdList);
-		// }
-		//
-		// FDataType VFData;
-		//
-		// // Position
-		// // If your vertex element is float4 in the buffer: use VET_Float4, else VET_Float3.
-		// VFData.PositionComponent = FVertexStreamComponent(
-		// 	&PositionVB,
-		// 	0,
-		// 	InStreams.PositionStride,
-		// 	VET_Float4,
-		// 	EVertexStreamUsage::Default
-		// );
-		//
-		// // Tangent basis (optional). If you only have normals, you can bind just TangentZ.
-		// if (bHasNormals)
-		// {
-		// 	// TangentBasisComponents[1] is TangentZ in LocalVertexFactory convention.
-		// 	VFData.TangentBasisComponents[1] = FVertexStreamComponent(
-		// 		&NormalVB,
-		// 		0,
-		// 		InStreams.NormalStride,
-		// 		VET_Float3,
-		// 		EVertexStreamUsage::Default
-		// 	);
-		// }
-		//
-		// // UE 5.7: SetData requires a command list
-		// SetData(RHICmdList, VFData);
-		//
-		// // UE 5.7: UpdateRHI requires a command list
-		// UpdateRHI(RHICmdList);
+		// Alias the external buffers into FVertexBuffer objects
+		PositionVB.SetRHI(PositionBufferRHI);
+		NormalVB.SetRHI(NormalBufferRHI);
+
+		// Initialize / update the wrapped vertex buffers
+		if (!PositionVB.IsInitialized()) PositionVB.InitResource(RHICmdList);
+		else                             PositionVB.UpdateRHI(RHICmdList);
+
+		if (NormalBufferRHI.IsValid())
+		{
+			if (!NormalVB.IsInitialized()) NormalVB.InitResource(RHICmdList);
+			else                           NormalVB.UpdateRHI(RHICmdList);
+		}
+
+		FLocalVertexFactory::FDataType InData;
+
+		// Position: float4
+		InData.PositionComponent = FVertexStreamComponent(
+			&PositionVB,
+			/*Offset=*/0,
+			/*Stride=*/sizeof(FVector4f),
+			VET_Float4);
+
+		// Normals: float3 (stuff into tangent basis slots for now)
+		if (NormalBufferRHI.IsValid())
+		{
+			InData.TangentBasisComponents[0] = FVertexStreamComponent(
+				&NormalVB, 0, sizeof(FVector3f), VET_Float3);
+
+			InData.TangentBasisComponents[1] = FVertexStreamComponent(
+				&NormalVB, 0, sizeof(FVector3f), VET_Float3);
+		}
+
+		// UE 5.7: requires command list
+		SetData(RHICmdList, InData);
+
+		// Initialize or update the vertex factory itself
+		if (!IsInitialized()) InitResource(RHICmdList);
+		else                  UpdateRHI(RHICmdList);
 	}
+
 }
