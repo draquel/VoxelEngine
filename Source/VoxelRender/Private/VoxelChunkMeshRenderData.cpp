@@ -13,8 +13,8 @@ namespace VoxelRender
 	{
 		ResetRHI();
 
-		NumVerts   = InNumVerts;
-		NumIndices = InNumIndices;
+		VertexCount   = InNumVerts;
+		IndexCount = InNumIndices;
 
 		// FRDGPooledBuffer::GetRHI() returns FBufferRHIRef
 		if (Pos) PositionBufferRHI = Pos->GetRHI();
@@ -48,7 +48,7 @@ namespace VoxelRender
 		NormalBufferRHI.SafeRelease();
 		IndexBufferRHI.SafeRelease();
 
-		NumVerts = 0;
-		NumIndices = 0;
+		VertexCount = 0;
+		IndexCount = 0;
 	}
 }
