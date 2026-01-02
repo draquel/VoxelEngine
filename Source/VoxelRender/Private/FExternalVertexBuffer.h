@@ -3,25 +3,44 @@
 #include "RHI.h"
 
 // VoxelRender module
-class FExternalVertexBuffer final : public FVertexBuffer
+namespace VoxelRender
 {
-public:
-	void SetRHI(const FBufferRHIRef& In)
+	class FExternalVertexBuffer final : public FVertexBuffer
 	{
-		External = In;
-	}
+	public:
+		FBufferRHIRef Source;
 
-	virtual void InitRHI(FRHICommandListBase& RHICmdList) override
+		void SetSource(const FBufferRHIRef& In) { Source = In; }
+
+		virtual void InitRHI(FRHICommandListBase& RHICmdList) override
+		{
+			VertexBufferRHI = Source;
+		}
+
+		virtual void ReleaseRHI() override
+		{
+			VertexBufferRHI.SafeRelease();
+			Source.SafeRelease();
+		}
+	};
+
+	class FExternalIndexBuffer final : public FIndexBuffer
 	{
-		VertexBufferRHI = External;
-	}
+	public:
+		FBufferRHIRef Source;
 
-	virtual void ReleaseRHI() override
-	{
-		VertexBufferRHI.SafeRelease();
-		External.SafeRelease();
-	}
+		void SetSource(const FBufferRHIRef& In) { Source = In; }
 
-private:
-	FBufferRHIRef External;
-};
+		virtual void InitRHI(FRHICommandListBase& RHICmdList) override
+		{
+			IndexBufferRHI = Source;
+		}
+
+		virtual void ReleaseRHI() override
+		{
+			IndexBufferRHI.SafeRelease();
+			Source.SafeRelease();
+		}
+	};
+}
+
