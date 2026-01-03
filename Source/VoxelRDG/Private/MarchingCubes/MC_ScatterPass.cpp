@@ -80,10 +80,6 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 
 	Out.MaxVerts = MaxVerts;
 
-	// Out.Vertices = GraphBuilder.CreateBuffer(
-	// 	FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector4f), Out.MaxVerts),
-	// 	TEXT("MC.Scatter.Vertices"));
-	
 	FRDGBufferDesc VBDesc = FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector4f), MaxVerts);
 	VBDesc.Usage |= BUF_VertexBuffer | BUF_UnorderedAccess | BUF_ShaderResource;
 	Out.Vertices = GraphBuilder.CreateBuffer(VBDesc, TEXT("Voxel.MC.Vertices"));

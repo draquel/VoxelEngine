@@ -17,10 +17,10 @@ public:
         SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<float4>, InPositions)
         SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>,   InIndices)
 
-        SHADER_PARAMETER_RDG_BUFFER_SRV(RWBuffer<uint>, InTotalTris)
-        SHADER_PARAMETER_RDG_BUFFER_SRV(RWBuffer<uint>, InTotalVerts)
+        SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, InTotalTris)
+        SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, InTotalVerts)
 
-        SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<float3>, OutNormals)
+        SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<float4>, OutNormals)
     END_SHADER_PARAMETER_STRUCT()
 };
 
@@ -42,19 +42,15 @@ FMCNormalsOutputs FMC_NormalsPass::AddMC_NormalsPass_Indirect(
 {
     FMCNormalsOutputs Out;
 
-    // Out.Normals = GraphBuilder.CreateBuffer(
-    //     FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector3f), MaxVerts),
-    //     TEXT("MC.Normals"));
-    
-    FRDGBufferDesc NBDesc = FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector3f), MaxVerts);
+    FRDGBufferDesc NBDesc = FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector4f), MaxVerts);
     NBDesc.Usage |= BUF_VertexBuffer | BUF_UnorderedAccess | BUF_ShaderResource;
     Out.Normals = GraphBuilder.CreateBuffer(NBDesc, TEXT("Voxel.MC.Normals"));
 
     auto* Params = GraphBuilder.AllocParameters<FMCNormalsCS::FParameters>();
     Params->InPositions  = GraphBuilder.CreateSRV(Positions);
     Params->InIndices    = GraphBuilder.CreateSRV(Indices);
-    Params->InTotalTris  = GraphBuilder.CreateSRV(TotalTris, PF_R32_UINT);
-    Params->InTotalVerts = GraphBuilder.CreateSRV(TotalVerts, PF_R32_UINT);
+    Params->InTotalTris  = GraphBuilder.CreateSRV(TotalTris);
+    Params->InTotalVerts = GraphBuilder.CreateSRV(TotalVerts);
     Params->OutNormals   = GraphBuilder.CreateUAV(Out.Normals);
     
     auto* PassParams = GraphBuilder.AllocParameters<FMCNormalsIndirectPassParameters>();

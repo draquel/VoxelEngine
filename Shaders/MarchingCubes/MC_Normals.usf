@@ -5,10 +5,10 @@
 StructuredBuffer<float4> InPositions;
 StructuredBuffer<uint>   InIndices;
 
-RWBuffer<uint> InTotalTris;
-RWBuffer<uint> InTotalVerts;
+StructuredBuffer<uint> InTotalTris;
+StructuredBuffer<uint> InTotalVerts;
 
-RWStructuredBuffer<float3> OutNormals;
+RWStructuredBuffer<float4> OutNormals;
 
 [numthreads(64, 1, 1)]
 void Main(uint3 DTid : SV_DispatchThreadID)
@@ -35,8 +35,8 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 	n = (len2 > 1e-20f) ? n * rsqrt(len2) : float3(0, 0, 1);
 
 	// Unique verts per tri => no races.
-	OutNormals[i0] = n;
-	OutNormals[i1] = n;
-	OutNormals[i2] = n;
+	OutNormals[i0] = float4(n.x,n.y,n.z,0);
+	OutNormals[i1] = float4(n.x,n.y,n.z,0);
+	OutNormals[i2] = float4(n.x,n.y,n.z,0);
 }
 

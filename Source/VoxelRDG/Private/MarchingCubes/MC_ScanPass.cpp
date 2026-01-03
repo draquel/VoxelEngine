@@ -270,8 +270,6 @@ FMCScanOutputs FMC_ScanPass::AddMC_ScanPass(
 	Out.NumBlocks = CeilDivU32(NumElements, kScanBlockSize);
 
 	// Buffers
-	
-
 	FRDGBufferRef OffsetsPartial = GraphBuilder.CreateBuffer(
 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumElements),
 		TEXT("MC.VertOffsetsPartial"));

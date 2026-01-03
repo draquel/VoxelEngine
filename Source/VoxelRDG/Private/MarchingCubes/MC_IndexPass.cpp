@@ -32,9 +32,9 @@ FRDGBufferRef FMC_IndexPass::AddMC_IndexScatterPass(
 	uint32 MaxIndices)
 {
 
-	FRDGBufferRef OutIndices = GraphBuilder.CreateBuffer(
-		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), MaxIndices),
-		TEXT("MC.Indices"));
+	FRDGBufferDesc IDesc = FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), MaxIndices);
+	IDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_IndexBuffer;
+	FRDGBufferRef OutIndices = GraphBuilder.CreateBuffer(IDesc, TEXT("Voxel.MC.Indices"));
 
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(OutIndices), 0);
 
