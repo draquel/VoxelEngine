@@ -24,6 +24,8 @@ public:
 	virtual FPrimitiveSceneProxy* CreateSceneProxy() override;
 	virtual FBoxSphereBounds CalcBounds(const FTransform& LocalToWorld) const override;
 
+	UPROPERTY(Transient)
+	TArray<FBoxSphereBounds> SlotBoundsGT; // same indexing as SlotDataGT
 private:
 	// GameThread-owned; SceneProxy copies what it needs safely.
 	TArray<TSharedPtr<VoxelRender::FChunkMeshRenderData>> SlotDataGT;

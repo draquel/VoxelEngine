@@ -12,15 +12,23 @@ UVoxelChunkMeshComponent::UVoxelChunkMeshComponent()
 void UVoxelChunkMeshComponent::SetChunkRenderData_GameThread(int32 Slot, TSharedPtr<VoxelRender::FChunkMeshRenderData> InData)
 {
 	check(IsInGameThread());
-	if (Slot < 0) return;
+	if (Slot < 0 || !InData.IsValid()) return;
 
 	if (SlotDataGT.Num() <= Slot)
 	{
 		SlotDataGT.SetNum(Slot + 1);
 	}
+	const FVector Origin = InData->ChunkOriginWS;
+	const float   Size   = InData->ChunkSizeWS;
+
 	SlotDataGT[Slot] = MoveTemp(InData);
 
-	MarkRenderStateDirty(); // rebuild proxy or update draw commands (simple approach)
+	const FBox SlotBox(Origin, Origin + FVector(Size));
+	if (SlotBoundsGT.Num() <= Slot) SlotBoundsGT.SetNum(Slot + 1);
+	SlotBoundsGT[Slot] = FBoxSphereBounds(SlotBox);
+
+	UpdateBounds();
+	MarkRenderStateDirty();
 }
 
 void UVoxelChunkMeshComponent::ClearChunk_GameThread(int32 Slot)
@@ -54,9 +62,20 @@ FPrimitiveSceneProxy* UVoxelChunkMeshComponent::CreateSceneProxy()
 }
 
 
+// UVoxelChunkMeshComponent.cpp
 FBoxSphereBounds UVoxelChunkMeshComponent::CalcBounds(const FTransform& LocalToWorld) const
 {
-	// Placeholder: you can compute a conservative bound based on your ring size or chunk extents.
-	const FBox Box(FVector(-100000), FVector(100000));
+	FBox Box(ForceInit);
+
+	for (const FBoxSphereBounds& B : SlotBoundsGT)
+	{
+		if (B.SphereRadius > 0.f)
+			Box += B.GetBox();
+	}
+
+	if (!Box.IsValid)
+		Box = FBox(FVector(-100), FVector(100)); // small fallback so it draws while debugging
+
 	return FBoxSphereBounds(Box).TransformBy(LocalToWorld);
 }
+
