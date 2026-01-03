@@ -1,6 +1,7 @@
 ﻿#include "VoxelChunkMeshSceneProxy.h"
 #include "VoxelChunkMeshRenderData.h"
 #include "VoxelChunkVertexFactory.h"
+#include "VoxelExternalVertexBuffer.h"
 #include "Materials/Material.h"
 #include "MeshBatch.h"
 
@@ -13,26 +14,61 @@ namespace VoxelRender
 	{
 		DefaultMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
 
-		SlotsRT.SetNum(InSlotDataGT.Num());
+		SlotsRT.Empty(InSlotDataGT.Num());
+		SlotsRT.AddDefaulted(InSlotDataGT.Num());
+
 		for (int32 i = 0; i < InSlotDataGT.Num(); ++i)
 		{
 			FSlotRT& Slot = SlotsRT[i];
 			Slot.Data = InSlotDataGT[i];
+
+			Slot.bValid = false;
 			if (!Slot.Data.IsValid())
+				continue;
+
+			// You MUST have position + index to render
+			Slot.bValid =
+			Slot.Data.IsValid() &&
+			Slot.Data->PositionBufferRHI.IsValid() &&
+			Slot.Data->IndexBufferRHI.IsValid() &&
+			Slot.Data->VertexCount > 0 &&
+			Slot.Data->IndexCount  > 0;
+
+			if (!Slot.bValid)
 				continue;
 
 			Slot.Material = Slot.Data->Material ? Slot.Data->Material : DefaultMaterial;
 
-			// Allocate objects now, but do NOT InitResource / BeginInitResource here.
 			Slot.PositionVB = MakeUnique<FExternalVertexBuffer>();
-			Slot.NormalVB   = MakeUnique<FExternalVertexBuffer>();
 			Slot.IndexIB    = MakeUnique<FExternalIndexBuffer>();
 			Slot.VF         = MakeUnique<FChunkVertexFactory>(GetScene().GetFeatureLevel());
 
-			// Just stash the RHI refs into wrappers (safe on GT)
-			Slot.PositionVB->SetRHI(Slot.Data->PositionBufferRHI);
-			Slot.NormalVB->SetRHI(Slot.Data->NormalBufferRHI);
+			Slot.PositionVB->SetSource(Slot.Data->PositionBufferRHI, sizeof(FVector4f), Slot.Data->VertexCount, PF_A32B32G32R32F);
+
+			if (Slot.Data->NormalBufferRHI.IsValid())
+			{
+				Slot.NormalVB = MakeUnique<FExternalVertexBuffer>();
+				Slot.NormalVB->SetSource(Slot.Data->NormalBufferRHI, sizeof(FVector4f), Slot.Data->VertexCount, PF_A32B32G32R32F);
+			}
+
 			Slot.IndexIB->SetRHI(Slot.Data->IndexBufferRHI);
+		}
+		
+		ENQUEUE_RENDER_COMMAND(Voxel_CreateChunkRTResources)(
+	[this](FRHICommandListImmediate& RHICmdList)
+		{
+			CreateRenderThreadResources(RHICmdList);
+		});
+	}
+
+	FChunkMeshSceneProxy::~FChunkMeshSceneProxy()
+	{
+		for (FSlotRT& Slot : SlotsRT)
+		{
+			if (Slot.PositionVB) Slot.PositionVB->ReleaseResource();
+			if (Slot.NormalVB)   Slot.NormalVB->ReleaseResource();
+			if (Slot.IndexIB)    Slot.IndexIB->ReleaseResource();
+			if (Slot.VF)         Slot.VF->ReleaseResource();
 		}
 	}
 
@@ -42,39 +78,19 @@ namespace VoxelRender
 
 		for (FSlotRT& Slot : SlotsRT)
 		{
-			if (!Slot.Data.IsValid())
+			if (!Slot.bValid || !Slot.Data.IsValid())
 				continue;
 
-			// Validate required buffers
-			if (!Slot.Data->PositionBufferRHI.IsValid() || !Slot.Data->IndexBufferRHI.IsValid())
-				continue;
+			// Init buffers NOW (this calls FExternalVertexBuffer::InitRHI)
+			Slot.PositionVB->InitResource(RHICmdList);
+			if (!Slot.PositionVB->VertexBufferRHI.IsValid())
+				continue; // (optional)
 
-			// Init wrapped buffers on RT (no BeginInitResource needed)
-			if (Slot.PositionVB) Slot.PositionVB->InitResource(RHICmdList);
-			if (Slot.Data->NormalBufferRHI.IsValid() && Slot.NormalVB) Slot.NormalVB->InitResource(RHICmdList);
-			if (Slot.IndexIB) Slot.IndexIB->InitResource(RHICmdList);
+			if (Slot.NormalVB) Slot.NormalVB->InitResource(RHICmdList);
+			Slot.IndexIB->InitResource(RHICmdList);
 
-			// Bind LocalVF streams and init VF safely on RT
-			if (Slot.VF)
-			{
-				FExternalVertexBuffer* NormPtr =
-					(Slot.Data->NormalBufferRHI.IsValid() ? Slot.NormalVB.Get() : nullptr);
-
-				Slot.VF->InitStreams_RenderThread(RHICmdList, *Slot.PositionVB.Get(), NormPtr);
-			}
-		}
-	}
-
-	void FChunkMeshSceneProxy::DestroyRenderThreadResources()
-	{
-		check(IsInRenderingThread());
-
-		for (FSlotRT& Slot : SlotsRT)
-		{
-			if (Slot.VF)         Slot.VF->ReleaseResource();
-			if (Slot.PositionVB) Slot.PositionVB->ReleaseResource();
-			if (Slot.NormalVB)   Slot.NormalVB->ReleaseResource();
-			if (Slot.IndexIB)    Slot.IndexIB->ReleaseResource();
+			// Now safe
+			Slot.VF->InitStreams_RenderThread(RHICmdList, *Slot.PositionVB, Slot.NormalVB.Get());
 		}
 	}
 
@@ -87,30 +103,29 @@ namespace VoxelRender
 	{
 		for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
 		{
-			if (!(VisibilityMap & (1 << ViewIndex)))
+			if ((VisibilityMap & (1 << ViewIndex)) == 0)
 				continue;
 
 			for (const FSlotRT& Slot : SlotsRT)
 			{
-				if (!Slot.VF || !Slot.Data) continue;
-				if (!Slot.Data->IndexBufferRHI.IsValid()) continue;
+				if (!Slot.bValid || !Slot.VF || !Slot.Data.IsValid())
+					continue;
+
+				if (!Slot.IndexIB || !Slot.Data->IndexBufferRHI.IsValid())
+					continue;
 
 				FMeshBatch& Mesh = Collector.AllocateMesh();
 				Mesh.VertexFactory = Slot.VF.Get();
 				Mesh.Type = PT_TriangleList;
 				Mesh.DepthPriorityGroup = SDPG_World;
-
-				// Material
-				Mesh.MaterialRenderProxy = UMaterial::GetDefaultMaterial(MD_Surface)->GetRenderProxy();
+				Mesh.MaterialRenderProxy = DefaultMaterial->GetRenderProxy();
 
 				FMeshBatchElement& Element = Mesh.Elements[0];
-				Element.IndexBuffer = Slot.IndexIB.Get();          // your FExternalIndexBuffer
+				Element.IndexBuffer = Slot.IndexIB.Get();      // ✅ must be FIndexBuffer*, not FBufferRHIRef*
 				Element.FirstIndex = 0;
 				Element.NumPrimitives = Slot.Data->IndexCount / 3;
 				Element.MinVertexIndex = 0;
 				Element.MaxVertexIndex = Slot.Data->VertexCount - 1;
-
-				// Required
 				Element.PrimitiveUniformBuffer = GetUniformBuffer();
 
 				Collector.AddMesh(ViewIndex, Mesh);
@@ -127,17 +142,14 @@ namespace VoxelRender
 		R.bRenderInMainPass = true;
 		return R;
 	}
-
+	SIZE_T FChunkMeshSceneProxy::GetTypeHash() const
+	{
+		static size_t UniquePointer;
+		return reinterpret_cast<size_t>(&UniquePointer);
+	}
+	
 	uint32 FChunkMeshSceneProxy::GetMemoryFootprint() const
 	{
 		return sizeof(*this) + GetAllocatedSize();
 	}
-	
-	SIZE_T FChunkMeshSceneProxy::GetTypeHash() const
-	{
-		static uint8 Unique;
-		return PointerHash(&Unique);
-	}
-	
 }
-
