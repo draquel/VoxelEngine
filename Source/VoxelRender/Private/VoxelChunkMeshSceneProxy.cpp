@@ -51,7 +51,7 @@ namespace VoxelRender
 				Slot.NormalVB->SetSource(Slot.Data->NormalBufferRHI, sizeof(FVector4f), Slot.Data->VertexCount, PF_A32B32G32R32F);
 			}
 
-			Slot.IndexIB->SetRHI(Slot.Data->IndexBufferRHI);
+			Slot.IndexIB->SetSource(Slot.Data->IndexBufferRHI);
 		}
 		
 		ENQUEUE_RENDER_COMMAND(Voxel_CreateChunkRTResources)(
@@ -113,12 +113,16 @@ namespace VoxelRender
 
 				if (!Slot.IndexIB || !Slot.Data->IndexBufferRHI.IsValid())
 					continue;
-
+				
+				if (!Slot.Data.IsValid()) continue;
+				if (Slot.Data->IndexCount < 3) continue;
+				if (Slot.Data->VertexCount < 3) continue;
+				
 				FMeshBatch& Mesh = Collector.AllocateMesh();
 				Mesh.VertexFactory = Slot.VF.Get();
 				Mesh.Type = PT_TriangleList;
 				Mesh.DepthPriorityGroup = SDPG_World;
-				Mesh.MaterialRenderProxy = DefaultMaterial->GetRenderProxy();
+				Mesh.MaterialRenderProxy = Slot.Material->GetRenderProxy();
 
 				FMeshBatchElement& Element = Mesh.Elements[0];
 				Element.IndexBuffer = Slot.IndexIB.Get();      // ✅ must be FIndexBuffer*, not FBufferRHIRef*
@@ -140,8 +144,10 @@ namespace VoxelRender
 		R.bDynamicRelevance = true;
 		R.bShadowRelevance = IsShadowCast(View);
 		R.bRenderInMainPass = true;
+		R.bUsesLightingChannels = true;
 		return R;
 	}
+
 	SIZE_T FChunkMeshSceneProxy::GetTypeHash() const
 	{
 		static size_t UniquePointer;
