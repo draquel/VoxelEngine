@@ -8,28 +8,42 @@
  * Minimal wrapper that lets a raw GPU buffer be used as a VertexBuffer
  * so FVertexStreamComponent can reference it (UE5.7 requirement).
  */
-class FVoxelExternalVertexBuffer final : public FVertexBuffer
+class FExternalVertexBuffer final : public FVertexBuffer
 {
 public:
-	FVoxelExternalVertexBuffer() = default;
-
-	void SetBuffer(FBufferRHIRef InBuffer)
+	void SetRHI(const FBufferRHIRef& InRHI)
 	{
-		ExternalBuffer = InBuffer;
+		VertexBufferRHI = InRHI;
 	}
 
-	virtual void InitRHI(FRHICommandListBase& /*RHICmdList*/) override
+	virtual void InitRHI(FRHICommandListBase&) override
 	{
-		// NOTE: VertexBufferRHI is a protected member of FVertexBuffer.
-		VertexBufferRHI = ExternalBuffer;
+		// NO-OP: RHI already assigned
+	}
+};
+
+
+// Same idea for indices
+class FExternalIndexBuffer final : public FIndexBuffer
+{
+public:
+	void SetRHI(const FBufferRHIRef& InBuffer)
+	{
+		Source = InBuffer;
+	}
+
+	virtual void InitRHI(FRHICommandListBase& RHICmdList) override
+	{
+		IndexBufferRHI = Source;
 	}
 
 	virtual void ReleaseRHI() override
 	{
-		VertexBufferRHI.SafeRelease();
-		ExternalBuffer.SafeRelease();
+		IndexBufferRHI.SafeRelease();
+		Source.SafeRelease();
 	}
 
 private:
-	FBufferRHIRef ExternalBuffer;
+	FBufferRHIRef Source;
 };
+

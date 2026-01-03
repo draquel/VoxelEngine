@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "PrimitiveSceneProxy.h"
+#include "VoxelExternalVertexBuffer.h"
 #include "VoxelChunkVertexFactory.h"
 
 namespace VoxelRender

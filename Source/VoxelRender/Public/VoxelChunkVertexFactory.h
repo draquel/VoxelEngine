@@ -1,30 +1,11 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "FExternalVertexBuffer.h"
+#include "VoxelExternalVertexBuffer.h"
 #include "LocalVertexFactory.h"
 
 namespace VoxelRender
 {
-	// Wrap an externally-owned vertex buffer RHI so it can be used with FVertexStreamComponent.
-	// class FExternalVertexBuffer final : public FVertexBuffer
-	// {
-	// public:
-	// 	FBufferRHIRef Source;
-	//
-	// 	virtual void InitRHI(FRHICommandListBase& RHICmdList) override
-	// 	{
-	// 		// Just alias the external buffer
-	// 		VertexBufferRHI = Source;
-	// 	}
-	//
-	// 	virtual void ReleaseRHI() override
-	// 	{
-	// 		VertexBufferRHI.SafeRelease();
-	// 		Source.SafeRelease();
-	// 	}
-	// };
-
 	struct FChunkVFStreams
 	{
 		FExternalVertexBuffer PositionVB;
