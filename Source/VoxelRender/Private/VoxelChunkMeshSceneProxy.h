@@ -10,14 +10,46 @@ namespace VoxelRender
 	struct FChunkMeshRenderData;
 	class FChunkVertexFactory;
 
-	class FChunkMeshSceneProxy final : public FPrimitiveSceneProxy
+	struct FSlotRT
+	{
+		FSlotRT() = default;
+		~FSlotRT() = default;
+		
+		// Add Move Constructor and Move Assignment
+		FSlotRT(FSlotRT&&) = default;
+		FSlotRT& operator=(FSlotRT&&) = default;
+
+		// Explicitly delete Copy operations to be safe
+		FSlotRT(const FSlotRT&) = delete;
+		FSlotRT& operator=(const FSlotRT&) = delete;
+
+		TSharedPtr<FChunkMeshRenderData> Data;
+
+		TUniquePtr<FExternalVertexBuffer> PositionVB;
+		TUniquePtr<FExternalVertexBuffer> NormalVB;
+		TUniquePtr<FExternalIndexBuffer>  IndexIB;
+
+		TUniquePtr<FChunkVertexFactory>   VF;
+		UMaterialInterface*               Material = nullptr;
+	};
+	
+	class VOXELRENDER_API FChunkMeshSceneProxy final : public FPrimitiveSceneProxy
 	{
 	public:
 		FChunkMeshSceneProxy(const UPrimitiveComponent* InComponent,
-					 const TArray<TSharedPtr<FChunkMeshRenderData>>& InSlotDataGT);
+			const TArray<TSharedPtr<FChunkMeshRenderData>>& InSlotDataGT);
 
+		virtual ~FChunkMeshSceneProxy() override = default;
+		
+		FChunkMeshSceneProxy(const FChunkMeshSceneProxy&) = delete;
+		FChunkMeshSceneProxy& operator=(const FChunkMeshSceneProxy&) = delete;
+		
+		FChunkMeshSceneProxy(FChunkMeshSceneProxy&&) = delete;
+		FChunkMeshSceneProxy& operator=(FChunkMeshSceneProxy&&) = delete;
 
-		virtual ~FChunkMeshSceneProxy();
+		// Render-thread resource lifetime hooks (these are what you want)
+		virtual void CreateRenderThreadResources(FRHICommandListBase& RHICmdList) override;
+		virtual void DestroyRenderThreadResources() override;
 
 		virtual void GetDynamicMeshElements(
 			const TArray<const FSceneView*>& Views,
@@ -29,21 +61,33 @@ namespace VoxelRender
 		virtual uint32 GetMemoryFootprint() const override;
 		virtual SIZE_T GetTypeHash() const override;
 
-
 	private:
 		struct FSlotRT
 		{
+			FSlotRT() = default;
+			~FSlotRT() = default;
+		
+			// Add Move Constructor and Move Assignment
+			FSlotRT(FSlotRT&&) = default;
+			FSlotRT& operator=(FSlotRT&&) = default;
+
+			// Explicitly delete Copy operations to be safe
+			FSlotRT(const FSlotRT&) = delete;
+			FSlotRT& operator=(const FSlotRT&) = delete;
+			
+			// Render resources (owned by proxy)
 			TUniquePtr<FChunkVertexFactory> VF;
-			// TUniquePtr<FChunkVFStreams>     Streams;
-			TSharedPtr<FChunkMeshRenderData> Data; // or const TSharedPtr<...>
 			TUniquePtr<FExternalVertexBuffer> PositionVB;
 			TUniquePtr<FExternalVertexBuffer> NormalVB;
 			TUniquePtr<FExternalIndexBuffer>  IndexIB;
-			
+
+			TSharedPtr<FChunkMeshRenderData> Data;
 			UMaterialInterface* Material = nullptr;
 		};
 
 		TArray<FSlotRT> SlotsRT;
-		UMaterialInterface* Material = nullptr;
+		UMaterialInterface* DefaultMaterial = nullptr;
 	};
+
+
 }

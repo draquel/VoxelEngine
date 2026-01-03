@@ -1,4 +1,6 @@
 ﻿#include "VoxelChunkMeshComponent.h"
+
+#include "VoxelChunkMeshRenderData.h"
 #include "VoxelChunkMeshSceneProxy.h"
 
 UVoxelChunkMeshComponent::UVoxelChunkMeshComponent()
@@ -31,8 +33,26 @@ void UVoxelChunkMeshComponent::ClearChunk_GameThread(int32 Slot)
 
 FPrimitiveSceneProxy* UVoxelChunkMeshComponent::CreateSceneProxy()
 {
+	// If no renderable data yet, don't create a proxy.
+	// This is extremely common in UE components.
+	bool bHasAny = false;
+	for (const TSharedPtr<VoxelRender::FChunkMeshRenderData>& D : SlotDataGT)
+	{
+		if (D.IsValid() && D->PositionBufferRHI.IsValid() && D->IndexBufferRHI.IsValid() && D->IndexCount > 0)
+		{
+			bHasAny = true;
+			break;
+		}
+	}
+
+	if (!bHasAny)
+	{
+		return nullptr;
+	}
+
 	return new VoxelRender::FChunkMeshSceneProxy(this, SlotDataGT);
 }
+
 
 FBoxSphereBounds UVoxelChunkMeshComponent::CalcBounds(const FTransform& LocalToWorld) const
 {
