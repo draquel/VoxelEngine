@@ -4,6 +4,7 @@
 #include "VoxelRDG/Public/VoxelRDGChunkBuildService.h"
 #include "VoxelChunkSubsystem.h"
 #include "ProceduralMeshComponent.h"
+#include "VFChunkRenderConsumer.h"
 #include "VoxelDensityDebugComponent.h"
 #include "VoxelEditLayer.h"
 #include "VoxelMCDebugComponent.h"
@@ -88,18 +89,32 @@ void AVoxelWorldActor::BeginPlay()
 
     ChunkSubsystem->InitializeVoxel(Settings, EditLayer);
 
-    TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer =
-        MakeShared<VoxelRender::FPMCDebugChunkRenderConsumer>(
-            DebugPMC,
-            [this](const FVoxelChunkKey& Key, uint64 BuiltBuildId)
-            {
-                if (ChunkSubsystem) ChunkSubsystem->OnConsumerBuilt(Key, BuiltBuildId);
-            },
-            [this](const FVoxelChunkKey& Key)
-            {
-                if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key);
-            }
-        );
+	
+	//PMC DEBUG CONSUMER
+    // TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer =
+    //     MakeShared<VoxelRender::FPMCDebugChunkRenderConsumer>(
+    //         DebugPMC,
+    //         [this](const FVoxelChunkKey& Key, uint64 BuiltBuildId)
+    //         {
+    //             if (ChunkSubsystem) ChunkSubsystem->OnConsumerBuilt(Key, BuiltBuildId);
+    //         },
+    //         [this](const FVoxelChunkKey& Key)
+    //         {
+    //             if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key);
+    //         }
+    //     );
+	TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer =
+		MakeShared<VoxelRender::FVFChunkRenderConsumer>(
+			VoxelMesh,
+			[this](const FVoxelChunkKey& Key, uint64 BuiltBuildId)
+			{
+				if (ChunkSubsystem) ChunkSubsystem->OnConsumerBuilt(Key, BuiltBuildId);
+			},
+			[this](const FVoxelChunkKey& Key)
+			{
+				if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key);
+			}
+		);
 
     ChunkSubsystem->SetRenderConsumer(Consumer);
 	
