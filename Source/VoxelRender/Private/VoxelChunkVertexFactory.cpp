@@ -5,50 +5,38 @@ namespace VoxelRender
 {
 	void FChunkVertexFactory::InitStreams_RenderThread(
 	FRHICommandListBase& RHICmdList,
-	const FBufferRHIRef& PositionBufferRHI,
-	const FBufferRHIRef& NormalBufferRHI)
+	FExternalVertexBuffer& PosVB,
+	FExternalVertexBuffer* NormVBOrNull)
 	{
 		check(IsInRenderingThread());
 
-		// Alias the external buffers into FVertexBuffer objects
-		PositionVB.SetRHI(PositionBufferRHI);
-		NormalVB.SetRHI(NormalBufferRHI);
-
-		// Initialize / update the wrapped vertex buffers
-		if (!PositionVB.IsInitialized()) PositionVB.InitResource(RHICmdList);
-		else                             PositionVB.UpdateRHI(RHICmdList);
-
-		if (NormalBufferRHI.IsValid())
-		{
-			if (!NormalVB.IsInitialized()) NormalVB.InitResource(RHICmdList);
-			else                           NormalVB.UpdateRHI(RHICmdList);
-		}
-
 		FLocalVertexFactory::FDataType InData;
+		InData.PositionComponent = FVertexStreamComponent(&PosVB, 0, sizeof(FVector4f), VET_Float4);
 
-		// Position: float4
-		InData.PositionComponent = FVertexStreamComponent(
-			&PositionVB,
-			/*Offset=*/0,
-			/*Stride=*/sizeof(FVector4f),
-			VET_Float4);
-
-		// Normals: float3 (stuff into tangent basis slots for now)
-		if (NormalBufferRHI.IsValid())
+		// LocalVF uniform buffer requires valid tangent streams
+		if (NormVBOrNull)
 		{
-			InData.TangentBasisComponents[0] = FVertexStreamComponent(
-				&NormalVB, 0, sizeof(FVector3f), VET_Float3);
-
-			InData.TangentBasisComponents[1] = FVertexStreamComponent(
-				&NormalVB, 0, sizeof(FVector3f), VET_Float3);
+			InData.TangentBasisComponents[0] = FVertexStreamComponent(NormVBOrNull, 0, sizeof(FVector4f), VET_Float4);
+			InData.TangentBasisComponents[1] = FVertexStreamComponent(NormVBOrNull, 0, sizeof(FVector4f), VET_Float4);
+		}
+		else
+		{
+			InData.TangentBasisComponents[0] = FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_Float3);
+			InData.TangentBasisComponents[1] = FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_Float3);
 		}
 
-		// UE 5.7: requires command list
+		// Safe defaults for LocalVF paths
+		InData.NumTexCoords = 1;
+		InData.TextureCoordinates.Empty();
+		InData.TextureCoordinates.Add(FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_Float2));
+		InData.ColorComponent = FVertexStreamComponent(&GNullColorVertexBuffer, 0, 0, VET_Color);
+
 		SetData(RHICmdList, InData);
 
-		// Initialize or update the vertex factory itself
+		// IMPORTANT: Init after SetData
 		if (!IsInitialized()) InitResource(RHICmdList);
 		else                  UpdateRHI(RHICmdList);
 	}
+
 
 }

@@ -38,8 +38,8 @@ namespace VoxelRender
 			FLocalVertexFactory& VF)
 		{
 			// Adopt RHI buffers into FVertexBuffer objects
-			PositionVB.SetSource(PositionBufferRHI);
-			NormalVB.SetSource(NormalBufferRHI);
+			PositionVB.SetRHI(PositionBufferRHI);
+			NormalVB.SetRHI(NormalBufferRHI);
 
 			BeginInitResource(&PositionVB);
 			BeginInitResource(&NormalVB);
@@ -74,6 +74,7 @@ namespace VoxelRender
 		}
 	};
 
+	// VoxelChunkVertexFactory.h
 	class FChunkVertexFactory final : public FLocalVertexFactory
 	{
 	public:
@@ -81,16 +82,13 @@ namespace VoxelRender
 			: FLocalVertexFactory(InFeatureLevel, "VoxelRender::FChunkVertexFactory")
 		{}
 
-		// RenderThread only
 		void InitStreams_RenderThread(
-			FRHICommandListBase& RHICmdList,
-			const FBufferRHIRef& PositionBufferRHI,   // float4
-			const FBufferRHIRef& NormalBufferRHI      // float3 (optional)
-		);
+			FRHICommandListBase& RHICmdList, FExternalVertexBuffer& PositionVB, FExternalVertexBuffer* NormalVBOrNull);
 
 	private:
 		FExternalVertexBuffer PositionVB;
 		FExternalVertexBuffer NormalVB;
 	};
+
 
 }
