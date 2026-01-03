@@ -23,7 +23,7 @@ StructuredBuffer<uint> VertOffsets;      // N cells, exclusive prefix sum of Ver
 StructuredBuffer<uint> CaseIndexPerCell;
 
 // Output
-RWStructuredBuffer<float4> OutVertices;  // sized to NumCells*15 on CPU; only [0..TotalVerts) is valid
+RWBuffer<float4> OutVertices;  // sized to NumCells*15 on CPU; only [0..TotalVerts) is valid
 
 float3 VertexInterp(float iso, float3 p0, float3 p1, float d0, float d1)
 {

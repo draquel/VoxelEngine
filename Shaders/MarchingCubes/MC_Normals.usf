@@ -2,13 +2,13 @@
 
 // /Plugin/Voxel/MarchingCubes/MC_Normals.usf
 
-StructuredBuffer<float4> InPositions;
-StructuredBuffer<uint>   InIndices;
+Buffer<float4> InPositions;
+Buffer<uint>   InIndices;
 
 StructuredBuffer<uint> InTotalTris;
 StructuredBuffer<uint> InTotalVerts;
 
-RWStructuredBuffer<float4> OutNormals;
+RWBuffer<float4> OutNormals;
 
 [numthreads(64, 1, 1)]
 void Main(uint3 DTid : SV_DispatchThreadID)

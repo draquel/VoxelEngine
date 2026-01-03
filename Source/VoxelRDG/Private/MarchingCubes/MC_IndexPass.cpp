@@ -15,7 +15,7 @@ public:
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, TriCountPerCell)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, TriOffsetPerCell)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, VertOffsetPerCell)
-		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutIndices)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutIndices)
 	END_SHADER_PARAMETER_STRUCT()
 
 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters&) { return true; }
@@ -32,18 +32,18 @@ FRDGBufferRef FMC_IndexPass::AddMC_IndexScatterPass(
 	uint32 MaxIndices)
 {
 
-	FRDGBufferDesc IDesc = FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), MaxIndices);
+	FRDGBufferDesc IDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), MaxIndices);
 	IDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_IndexBuffer;
 	FRDGBufferRef OutIndices = GraphBuilder.CreateBuffer(IDesc, TEXT("Voxel.MC.Indices"));
 
-	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(OutIndices), 0);
+	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(OutIndices, PF_R32_UINT), 0);
 
 	auto* Params = GraphBuilder.AllocParameters<FMC_IndexScatterCS::FParameters>();
 	Params->NumCells      = NumCells;
 	Params->TriCountPerCell = GraphBuilder.CreateSRV(TriCountPerCell);
 	Params->TriOffsetPerCell = GraphBuilder.CreateSRV(TriOffsetPerCell);
 	Params->VertOffsetPerCell = GraphBuilder.CreateSRV(VertOffsetPerCell);
-	Params->OutIndices    = GraphBuilder.CreateUAV(OutIndices);
+	Params->OutIndices    = GraphBuilder.CreateUAV(OutIndices, PF_R32_UINT);
 
 	TShaderMapRef<FMC_IndexScatterCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 

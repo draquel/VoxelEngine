@@ -14,13 +14,13 @@ public:
     SHADER_USE_PARAMETER_STRUCT(FMCNormalsCS, FGlobalShader);
 
     BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-        SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<float4>, InPositions)
-        SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>,   InIndices)
+        SHADER_PARAMETER_RDG_BUFFER_SRV(Buffer<float4>, InPositions)
+        SHADER_PARAMETER_RDG_BUFFER_SRV(Buffer<uint>,   InIndices)
 
         SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, InTotalTris)
         SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, InTotalVerts)
 
-        SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<float4>, OutNormals)
+        SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<float4>, OutNormals)
     END_SHADER_PARAMETER_STRUCT()
 };
 
@@ -42,16 +42,18 @@ FMCNormalsOutputs FMC_NormalsPass::AddMC_NormalsPass_Indirect(
 {
     FMCNormalsOutputs Out;
 
-    FRDGBufferDesc NBDesc = FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector4f), MaxVerts);
+    FRDGBufferDesc NBDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(FVector4f), MaxVerts);
     NBDesc.Usage |= BUF_VertexBuffer | BUF_UnorderedAccess | BUF_ShaderResource;
     Out.Normals = GraphBuilder.CreateBuffer(NBDesc, TEXT("Voxel.MC.Normals"));
 
+    AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.Normals, PF_A32B32G32R32F), 0);
+    
     auto* Params = GraphBuilder.AllocParameters<FMCNormalsCS::FParameters>();
-    Params->InPositions  = GraphBuilder.CreateSRV(Positions);
-    Params->InIndices    = GraphBuilder.CreateSRV(Indices);
+    Params->InPositions  = GraphBuilder.CreateSRV(Positions, PF_A32B32G32R32F);
+    Params->InIndices    = GraphBuilder.CreateSRV(Indices, PF_R32_UINT);
     Params->InTotalTris  = GraphBuilder.CreateSRV(TotalTris);
     Params->InTotalVerts = GraphBuilder.CreateSRV(TotalVerts);
-    Params->OutNormals   = GraphBuilder.CreateUAV(Out.Normals);
+    Params->OutNormals   = GraphBuilder.CreateUAV(Out.Normals, PF_A32B32G32R32F);
     
     auto* PassParams = GraphBuilder.AllocParameters<FMCNormalsIndirectPassParameters>();
     PassParams->ShaderParams = *Params;          // copy your existing shader params

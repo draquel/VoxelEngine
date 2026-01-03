@@ -133,7 +133,7 @@ static void AddPass_DebugTap(
 	Params->BlockSums     = GraphBuilder.CreateSRV(BlockSums);
 	Params->BlockOffsets  = GraphBuilder.CreateSRV(BlockOffsets);
 	Params->VertOffsets   = GraphBuilder.CreateSRV(VertOffsets);
-	Params->TotalVerts    = GraphBuilder.CreateSRV(TotalVerts, PF_R32_UINT);
+	Params->TotalVerts    = GraphBuilder.CreateSRV(TotalVerts);
 	Params->OutDebug      = GraphBuilder.CreateUAV(OutDebugTap);
 	
 	// UE_LOG(LogTemp, Log, TEXT("MC_Scan_Pass - AddPass_DebugTap: N=%u NumBlocks=%u"), Params->NumElements, Params->NumBlocks);
