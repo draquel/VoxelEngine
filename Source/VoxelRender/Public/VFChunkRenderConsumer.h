@@ -19,12 +19,15 @@ namespace VoxelRender
 		virtual void EnqueueBuild(const FVoxelChunkRenderPayload& Payload) override;
 		virtual void RemoveChunk(const FVoxelChunkKey& Key) override;
 		virtual void Tick(float DeltaSeconds) override;
+		void DrainPending_RenderThread(FRHICommandListImmediate& RHICmdList, TArray<FVoxelChunkRenderPayload>& Batch);
 
 	private:
 		int32 GetOrCreateSlot(const FVoxelChunkKey& Key);
 		void  ClearSlotForKey(const FVoxelChunkKey& Key);
 
 		TWeakObjectPtr<UVoxelChunkMeshComponent> CompWeak;
+		
+		FCriticalSection Mutex;
 
 		TMap<FVoxelChunkKey, FVoxelChunkRenderPayload> PendingBuilds;
 		TMap<FVoxelChunkKey, uint64> LastBuiltBuildId;
