@@ -12,6 +12,8 @@ namespace VoxelRender
 	// Lives on RenderThread; owned via shared ptr from GameThread.
 	struct FChunkMeshRenderData : public FRenderResource
 	{
+		FVoxelChunkKey ChunkKey;
+
 		// Underlying RHI buffers (from extracted RDG pooled buffers)
 		FBufferRHIRef PositionBufferRHI;
 		FBufferRHIRef NormalBufferRHI;
@@ -35,6 +37,7 @@ namespace VoxelRender
 
 		// Optional: declare what "normals" mean for this payload
 		EChunkNormalFormat NormalFormat = EChunkNormalFormat::None;
+		FBoxSphereBounds BoundsWS;
 
 		// ---- Validation ----
 		bool IsValidForDraw(bool bRequireSRVs) const;
@@ -45,7 +48,7 @@ namespace VoxelRender
 			const TRefCountPtr<FRDGPooledBuffer>& Nor,
 			const TRefCountPtr<FRDGPooledBuffer>& Ind,
 			uint32 InNumVerts,
-			uint32 InNumIndices);
+			uint32 InNumIndices, const FVector& InChunkOriginWS, float InChunkSizeWS);
 
 		virtual void InitRHI(FRHICommandListBase& RHICmdList) override {}
 		virtual void ReleaseRHI() override;

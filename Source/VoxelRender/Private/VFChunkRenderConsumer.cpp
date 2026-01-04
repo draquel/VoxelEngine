@@ -130,15 +130,23 @@ namespace VoxelRender
 	        G.VertexCountReadback->Unlock();
 	        G.IndexCountReadback->Unlock();
 
-	        if (VCount == 0 || ICount == 0)
-	            continue;
-
 	        // Build render data (RT safe — but install on GT)
 	        TSharedPtr<FChunkMeshRenderData> RD = MakeShared<FChunkMeshRenderData>();
-	        RD->ChunkOriginWS = P.ChunkOriginWS;
+			RD->ChunkKey      = P.Key;
+	    	RD->ChunkOriginWS = P.ChunkOriginWS;
 	        RD->ChunkSizeWS   = P.ChunkSize;
 	        RD->Material      = nullptr; // or something real
-	        RD->InitFromPooled(G.VertexPooled, G.NormalsPooled, G.IndexPooled, VCount, ICount);
+	    	RD->NormalFormat = G.NormalsPooled.IsValid() ? EChunkNormalFormat::Float4NormalsDebug : EChunkNormalFormat::None;
+
+	    	// If empty, pass null pooled buffers; InitFromPooled will normalize and return early.
+	    	if (VCount == 0 || ICount == 0)
+	    	{
+	    		RD->InitFromPooled(nullptr, nullptr, nullptr, 0, 0, P.ChunkOriginWS, P.ChunkSize);
+	    	}
+	    	else
+	    	{
+	    		RD->InitFromPooled(G.VertexPooled, G.NormalsPooled, G.IndexPooled, VCount, ICount, P.ChunkOriginWS, P.ChunkSize);
+	    	}
 
 	        const FVoxelChunkKey Key   = P.Key;
 	        const uint64 BuildId       = P.BuildId;
@@ -179,6 +187,5 @@ namespace VoxelRender
 	        });
 	    }
 	}
-
 
 }

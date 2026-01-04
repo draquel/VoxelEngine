@@ -9,7 +9,9 @@ namespace VoxelRender
 	const TRefCountPtr<FRDGPooledBuffer>& Nor,
 	const TRefCountPtr<FRDGPooledBuffer>& Ind,
 	uint32 InNumVerts,
-	uint32 InNumIndices)
+	uint32 InNumIndices,
+	const FVector& InChunkOriginWS,
+	float InChunkSizeWS)
 	{
 		ResetRHI();
 
@@ -20,6 +22,20 @@ namespace VoxelRender
 		VertexCount = InNumVerts;
 		IndexCount  = InNumIndices;
 
+		ChunkOriginWS = InChunkOriginWS;
+		ChunkSizeWS   = InChunkSizeWS;
+
+		if (ChunkSizeWS > 0.f)
+		{
+			const FVector MinWS = ChunkOriginWS;
+			const FVector MaxWS = ChunkOriginWS + FVector(ChunkSizeWS);
+			BoundsWS = FBoxSphereBounds(FBox(MinWS, MaxWS));
+		}
+		else
+		{
+			BoundsWS = FBoxSphereBounds(ForceInit);
+		}
+		
 		// ---- Normalize "empty mesh" contract ----
 		if (VertexCount == 0 || IndexCount == 0)
 		{
@@ -93,6 +109,9 @@ namespace VoxelRender
 		if ((IndexCount % 3) != 0)
 			return false;
 
+		if (BoundsWS.SphereRadius <= 0.f)
+			return false;
+		
 		// Lifetime contract: pooled buffers keep extracted RDG results alive
 		if (!VertexPooled.IsValid() || !IndexPooled.IsValid())
 			return false;
@@ -136,6 +155,15 @@ namespace VoxelRender
 		NormalBufferRHI.SafeRelease();
 		IndexBufferRHI.SafeRelease();
 
+		VertexPooled.SafeRelease();
+		IndexPooled.SafeRelease();
+		NormalsPooled.SafeRelease();
+
+		BoundsWS = FBoxSphereBounds(ForceInit);
+		ChunkOriginWS = FVector::ZeroVector;
+		ChunkSizeWS = 0.f;
+		NormalFormat = EChunkNormalFormat::None;
+		
 		VertexCount = 0;
 		IndexCount = 0;
 	}
