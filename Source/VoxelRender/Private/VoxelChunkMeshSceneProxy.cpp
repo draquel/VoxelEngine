@@ -55,24 +55,44 @@ namespace VoxelRender
 		return H;
 	}
 	
+#if !UE_BUILD_SHIPPING	
 	static uint64 MakeLogOnceKey(const FVoxelChunkKey& Key, uint32 SlotIndex, uint8 Reason)
 	{
-		// 32-bit hash of the chunk key + slot + reason, then widen to 64
-		const uint32 K = GetTypeHash(Key);
-
-		// Mix into 64-bit; simple and stable
-		uint64 H = 1469598103934665603ull;
-		auto Mix = [&H](uint64 V)
-		{
-			H ^= V;
-			H *= 1099511628211ull;
-		};
-
-		Mix((uint64)K);
-		Mix((uint64)SlotIndex);
-		Mix((uint64)Reason);
-		return H;
+		const uint32 KH = GetTypeHash(Key);
+		return (uint64)KH ^ (uint64(SlotIndex) << 32) ^ (uint64(Reason) * 0x9E3779B97F4A7C15ull);
 	}
+
+	void FChunkMeshSceneProxy::LogDrawFailureOnce(
+		const FSlotRT& Slot, uint32 SlotIndex, EChunkDrawFailReason Reason) const
+	{
+		// Don’t log empty meshes or invalid slots; they are expected during eviction/loading.
+		if (Reason == EChunkDrawFailReason::EmptyMesh || 
+			Reason == EChunkDrawFailReason::SlotInvalid || 
+			Reason == EChunkDrawFailReason::MissingData)
+		{
+			return;
+		}
+
+		if (!Slot.Data.IsValid())
+		{
+			return;
+		}
+
+		const uint64 H = MakeLogOnceKey(Slot.Data->ChunkKey, SlotIndex, (uint8)Reason);
+		if (LoggedDrawFailures.Contains(H))
+			return;
+
+		LoggedDrawFailures.Add(H);
+
+		const auto& D = *Slot.Data;
+		UE_LOG(LogTemp, Warning,
+			TEXT("VoxelRender: Skip draw. Reason=%s Key=(LOD=%d Coord=%d,%d,%d) V=%u I=%u BoundsR=%.1f"),
+			ToString(Reason),
+			D.ChunkKey.LOD, D.ChunkKey.Coord.X, D.ChunkKey.Coord.Y, D.ChunkKey.Coord.Z,
+			D.VertexCount, D.IndexCount,
+			D.BoundsWS.SphereRadius);
+	}
+#endif
 	
 	FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 	const UPrimitiveComponent* InComponent,
@@ -95,27 +115,24 @@ namespace VoxelRender
 			if (!Slot.Data.IsValid())
 				continue;
 
-			// Single source of truth: contract validation
-			// Use true if you want to guarantee SRVs exist before VF init.
-			if (!Slot.Data->IsValidForDraw(/*bRequireSRVs=*/false))
-				continue;
-
 			Slot.Material = Slot.Data->Material ? Slot.Data->Material : DefaultMaterial;
 
-			// Create render resources
+			// Always create these if we have data; init later on RT resources step.
 			Slot.PositionVB = MakeUnique<FExternalVertexBuffer>();
 			Slot.IndexIB    = MakeUnique<FExternalIndexBuffer>();
 			Slot.VF         = MakeUnique<FChunkVertexFactory>(FeatureLevel);
 
-			// Position: float4 typed buffer
-			Slot.PositionVB->SetSource(
-				Slot.Data->PositionBufferRHI,
-				sizeof(FVector4f),
-				Slot.Data->VertexCount,
-				PF_A32B32G32R32F);
+			// Only set sources if we actually have buffers (non-empty / ready payload)
+			if (Slot.Data->PositionBufferRHI.IsValid() && Slot.Data->VertexCount > 0)
+			{
+				Slot.PositionVB->SetSource(
+					Slot.Data->PositionBufferRHI,
+					sizeof(FVector4f),
+					Slot.Data->VertexCount,
+					PF_A32B32G32R32F);
+			}
 
-			// Normals: float4 typed buffer (debug/unlit usage)
-			Slot.bHasFloat4Normals = Slot.Data->NormalBufferRHI.IsValid();
+			Slot.bHasFloat4Normals = Slot.Data->NormalBufferRHI.IsValid() && Slot.Data->VertexCount > 0;
 			if (Slot.bHasFloat4Normals)
 			{
 				Slot.NormalVB = MakeUnique<FExternalVertexBuffer>();
@@ -126,47 +143,21 @@ namespace VoxelRender
 					PF_A32B32G32R32F);
 			}
 
-			// Index buffer: raw RHI
-			Slot.IndexIB->SetSource(Slot.Data->IndexBufferRHI);
+			if (Slot.Data->IndexBufferRHI.IsValid() && Slot.Data->IndexCount > 0)
+			{
+				Slot.IndexIB->SetSource(Slot.Data->IndexBufferRHI);
+			}
 
-			// Mark valid now; actual RHI init happens in CreateRenderThreadResources below
-			Slot.bValid = true;
+			Slot.bValid = true; // means "slot exists", not "drawable"
 		}
 	}
+
 
 
 	FChunkMeshSceneProxy::~FChunkMeshSceneProxy()
 	{
 	}
 	
-#if !UE_BUILD_SHIPPING
-	void FChunkMeshSceneProxy::LogDrawFailureOnce(
-		const FSlotRT& Slot,
-		uint32 SlotIndex,
-		EChunkDrawFailReason Reason) const
-	{
-		if (!Slot.Data.IsValid())
-			return;
-
-		const uint64 H = MakeLogOnceKey(Slot.Data->ChunkKey, SlotIndex, (uint8)Reason);
-		if (LoggedDrawFailures.Contains(H))
-			return;
-
-		LoggedDrawFailures.Add(H);
-
-		const auto& D = *Slot.Data;
-		UE_LOG(LogTemp, Warning,
-			TEXT("VoxelRender: Skip draw. Reason=%s Key=%s OriginWS=(%.1f,%.1f,%.1f) SizeWS=%.1f V=%u I=%u BoundsR=%.1f"),
-			ToString(Reason),
-			*VoxelChunkKeyToString(D.ChunkKey),
-			D.ChunkOriginWS.X, D.ChunkOriginWS.Y, D.ChunkOriginWS.Z,
-			D.ChunkSizeWS,
-			D.VertexCount, D.IndexCount,
-			D.BoundsWS.SphereRadius);
-	}
-#endif
-
-
 	void FChunkMeshSceneProxy::CreateRenderThreadResources(FRHICommandListBase& RHICmdList)
 	{
 		check(IsInRenderingThread());
@@ -174,39 +165,78 @@ namespace VoxelRender
 		for (int32 SlotIndex = 0; SlotIndex < SlotsRT.Num(); ++SlotIndex)
 		{
 			FSlotRT& Slot = SlotsRT[SlotIndex];
-			
+
 			if (!Slot.bValid || !Slot.Data.IsValid())
 				continue;
 
-			// Optional: contract gate (recommended)
-			if (!Slot.Data->IsValidForDraw(/*bRequireSRVs=*/false))
+			// Empty mesh is a valid state: do not init buffers, do not log.
+			const bool bEmptyMesh = (Slot.Data->VertexCount == 0 || Slot.Data->IndexCount == 0);
+			if (bEmptyMesh)
 			{
-				Slot.bValid = false;
+				// You can still create a UB for consistent bounds/culling if you want, but it isn't required.
+				// If you do create it, prefer using BoundsWS rather than Origin/Size local math.
+				if (!Slot.PrimitiveUB.IsValid())
+					Slot.PrimitiveUB = MakeUnique<TUniformBuffer<FPrimitiveUniformShaderParameters>>();
+
+				const FVector OriginWS = Slot.Data->ChunkOriginWS;
+				const float   SizeWS   = Slot.Data->ChunkSizeWS;
+
+				FPrimitiveUniformShaderParametersBuilder Builder;
+				Builder.Defaults()
+					.LocalToWorld(FTranslationMatrix(OriginWS))
+					.PreviousLocalToWorld(FTranslationMatrix(OriginWS))
+					.ActorWorldPosition(OriginWS)
+					.WorldBounds(Slot.Data->BoundsWS)
+					.LocalBounds(FBoxSphereBounds(FBox(FVector::ZeroVector, FVector(SizeWS))))
+					.PreSkinnedLocalBounds(FBoxSphereBounds(FBox(FVector::ZeroVector, FVector(SizeWS))));
+
+				Slot.PrimitiveUB->SetContents(RHICmdList, Builder.Build());
+				if (!Slot.PrimitiveUB->IsInitialized())
+					Slot.PrimitiveUB->InitResource(RHICmdList);
+
+				continue;
+			}
+
+			// Payload coherence check (non-empty)
+			if (!Slot.Data->IsValidForDraw(/*bRequireSRVs=*/true))
+			{
+	#if !UE_BUILD_SHIPPING
+				LogDrawFailureOnce(Slot, SlotIndex, EChunkDrawFailReason::DataNotValidForDraw);
+	#endif
 				continue;
 			}
 
 			// --- Init buffers ---
-			check(Slot.PositionVB);
-			check(Slot.IndexIB);
-			check(Slot.VF);
+			if (!Slot.PositionVB || !Slot.IndexIB || !Slot.VF)
+			{
+	#if !UE_BUILD_SHIPPING
+				LogDrawFailureOnce(Slot, SlotIndex, EChunkDrawFailReason::SlotInvalid);
+	#endif
+				continue;
+			}
 
+			// Important: PositionVB must have had SetSource called in ctor only if RHI+counts were valid.
 			Slot.PositionVB->InitResource(RHICmdList);
 			if (!Slot.PositionVB->VertexBufferRHI.IsValid() || !Slot.PositionVB->ShaderResourceViewRHI.IsValid())
 			{
-				Slot.bValid = false;
+	#if !UE_BUILD_SHIPPING
+				LogDrawFailureOnce(Slot, SlotIndex, EChunkDrawFailReason::PositionVBNotInitialized);
+	#endif
 				continue;
 			}
 
 			if (Slot.NormalVB)
 			{
 				Slot.NormalVB->InitResource(RHICmdList);
-				// Don't fail the slot if normals are missing; they’re optional
+				// Don't fail the slot if normals init fails — optional path.
 			}
 
 			Slot.IndexIB->InitResource(RHICmdList);
 			if (!Slot.IndexIB->IndexBufferRHI.IsValid())
 			{
-				Slot.bValid = false;
+	#if !UE_BUILD_SHIPPING
+				LogDrawFailureOnce(Slot, SlotIndex, EChunkDrawFailReason::IndexIBNotInitialized);
+	#endif
 				continue;
 			}
 
@@ -222,41 +252,31 @@ namespace VoxelRender
 			const FVector OriginWS = Slot.Data->ChunkOriginWS;
 			const float   SizeWS   = Slot.Data->ChunkSizeWS;
 
-			// For now: box bounds from origin+size. Later: replace with Mesh BoundsWS from build metadata.
-			// Slot.Data->BoundsWS = FBox(OriginWS, OriginWS + FVector(SizeWS));
-			const FBox ChunkBoxWS(OriginWS, OriginWS + FVector(SizeWS));
-
 			FPrimitiveUniformShaderParametersBuilder Builder;
 			Builder.Defaults()
 				.LocalToWorld(FTranslationMatrix(OriginWS))
 				.PreviousLocalToWorld(FTranslationMatrix(OriginWS))
 				.ActorWorldPosition(OriginWS)
-				.WorldBounds(FBoxSphereBounds(Slot.Data->BoundsWS))
+				.WorldBounds(Slot.Data->BoundsWS)
 				.LocalBounds(FBoxSphereBounds(FBox(FVector::ZeroVector, FVector(SizeWS))))
 				.PreSkinnedLocalBounds(FBoxSphereBounds(FBox(FVector::ZeroVector, FVector(SizeWS))));
 
 			if (!Slot.PrimitiveUB.IsValid())
-			{
 				Slot.PrimitiveUB = MakeUnique<TUniformBuffer<FPrimitiveUniformShaderParameters>>();
-			}
 
 			Slot.PrimitiveUB->SetContents(RHICmdList, Builder.Build());
 			if (!Slot.PrimitiveUB->IsInitialized())
-			{
 				Slot.PrimitiveUB->InitResource(RHICmdList);
-			}
-			
-#if !UE_BUILD_SHIPPING
+
+	#if !UE_BUILD_SHIPPING
 			EChunkDrawFailReason FailReason;
 			if (!Slot.IsReadyToDraw(FailReason))
 			{
 				LogDrawFailureOnce(Slot, SlotIndex, FailReason);
-				// Optional: Slot.bValid = false; (depends if you expect it to become valid later)
 			}
-#endif
+	#endif
 		}
 	}
-
 
 	void FChunkMeshSceneProxy::DestroyRenderThreadResources()
 	{
