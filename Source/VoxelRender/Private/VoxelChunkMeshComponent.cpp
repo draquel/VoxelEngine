@@ -83,6 +83,43 @@ FPrimitiveSceneProxy* UVoxelChunkMeshComponent::CreateSceneProxy()
 	return new VoxelRender::FChunkMeshSceneProxy(this, SlotDataGT);
 }
 
+int32 UVoxelChunkMeshComponent::GetNumMaterials() const
+{
+	return 2;
+}
+
+UMaterialInterface* UVoxelChunkMeshComponent::GetMaterial(int32 ElementIndex) const
+{
+	if (ElementIndex == 0) return ChunkMaterial;
+	if (ElementIndex == 1) return DebugUnlitMaterial;
+	return nullptr;
+}
+
+void UVoxelChunkMeshComponent::SetMaterial(int32 ElementIndex, UMaterialInterface* InMaterial)
+{
+	if (ElementIndex == 0) ChunkMaterial = InMaterial;
+	else if (ElementIndex == 1) DebugUnlitMaterial = InMaterial;
+	
+	MarkRenderStateDirty();
+}
+
+#if WITH_EDITOR
+void UVoxelChunkMeshComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	if (PropertyChangedEvent.Property)
+	{
+		const FName PropertyName = PropertyChangedEvent.Property->GetFName();
+		if (PropertyName == GET_MEMBER_NAME_CHECKED(UVoxelChunkMeshComponent, ChunkMaterial) ||
+			PropertyName == GET_MEMBER_NAME_CHECKED(UVoxelChunkMeshComponent, DebugUnlitMaterial))
+		{
+			MarkRenderStateDirty();
+		}
+	}
+}
+#endif
+
 // UVoxelChunkMeshComponent.cpp
 FBoxSphereBounds UVoxelChunkMeshComponent::CalcBounds(const FTransform& LocalToWorld) const
 {

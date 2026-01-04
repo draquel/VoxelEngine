@@ -1,10 +1,12 @@
 ﻿#include "VoxelChunkMeshSceneProxy.h"
+#include "VoxelChunkMeshComponent.h"
 #include "VoxelChunkMeshRenderData.h"
 #include "VoxelChunkVertexFactory.h"
 #include "VoxelExternalVertexBuffer.h"
 #include "Materials/Material.h"
 #include "MeshBatch.h"
 #include "SceneManagement.h"
+#include "Materials/MaterialRenderProxy.h"
 #include "PrimitiveUniformShaderParameters.h"
 #include "PrimitiveUniformShaderParametersBuilder.h"
 
@@ -62,10 +64,10 @@ namespace VoxelRender
 			H *= 1099511628211ull;
 		};
 
-		Mix((uint64)(uint32)Key.LOD);
-		Mix((uint64)(uint32)Key.Coord.X);
-		Mix((uint64)(uint32)Key.Coord.Y);
-		Mix((uint64)(uint32)Key.Coord.Z);
+		Mix((uint64)Key.LOD);
+		Mix((uint64)Key.Coord.X);
+		Mix((uint64)Key.Coord.Y);
+		Mix((uint64)Key.Coord.Z);
 		Mix((uint64)SlotIndex);
 		Mix((uint64)Reason);
 
@@ -120,9 +122,16 @@ namespace VoxelRender
 	const TArray<TSharedPtr<FChunkMeshRenderData>>& InSlotDataGT)
 	: FPrimitiveSceneProxy(InComponent)
 	{
-		DefaultMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
+		const UVoxelChunkMeshComponent* VoxelComponent = Cast<UVoxelChunkMeshComponent>(InComponent);
+
+		DefaultMaterial = (VoxelComponent && VoxelComponent->ChunkMaterial) 
+			? VoxelComponent->ChunkMaterial 
+			: UMaterial::GetDefaultMaterial(MD_Surface);
+
 #if !UE_BUILD_SHIPPING
-		DefaultUnlitOrDebugMaterial = DefaultMaterial; // Fallback to default if not specialized
+		DefaultUnlitOrDebugMaterial = (VoxelComponent && VoxelComponent->DebugUnlitMaterial)
+			? VoxelComponent->DebugUnlitMaterial
+			: nullptr;
 #endif
 
 		SlotsRT.Empty(InSlotDataGT.Num());
@@ -144,7 +153,6 @@ namespace VoxelRender
 			Slot.IndexIB    = MakeUnique<FExternalIndexBuffer>();
 			Slot.VF         = MakeUnique<FChunkVertexFactory>(FeatureLevel);
 
-			const bool bCanLight = (Slot.Data->NormalFormat == EChunkNormalFormat::PackedTangentBasis);
 			
 			UMaterialInterface* TargetMaterial = Slot.Data->Material ? Slot.Data->Material : DefaultMaterial;
 #if !UE_BUILD_SHIPPING
