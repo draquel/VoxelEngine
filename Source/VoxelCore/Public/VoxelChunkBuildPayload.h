@@ -15,9 +15,9 @@ enum class EVoxelMeshMode : uint8
 
 enum class EChunkNormalFormat : uint8
 {
-	None,
-	Float4NormalsDebug,          // debug/unlit only
-	Packed_TangentX_NormalZ     // lit-ready (future)
+	None = 0,
+	Float4NormalsDebug,      // your current float4 normals
+	PackedTangentBasis       // NEW: 2x FPackedNormal per vertex, interleaved
 };
 
 struct FVoxelChunkBuildPayload

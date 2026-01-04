@@ -14,6 +14,12 @@ class VOXELRENDER_API UVoxelChunkMeshComponent : public UPrimitiveComponent
 public:
 	UVoxelChunkMeshComponent();
 
+	UPROPERTY(EditAnywhere, Category="Voxel|Render")
+	UMaterialInterface* ChunkMaterial = nullptr;
+	
+	UPROPERTY(EditAnywhere, Category="Voxel|Render")
+	UMaterialInterface* DebugUnlitMaterial = nullptr;
+
 	// GameThread: submit/replace render data for a chunk "slot"
 	void SetChunkRenderData_GameThread(int32 Slot, TSharedPtr<VoxelRender::FChunkMeshRenderData> InData);
 

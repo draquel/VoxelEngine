@@ -1,0 +1,45 @@
+﻿#include "/Engine/Private/Common.ush"
+
+uint MaxVerts;
+Buffer<float4> InNormals;      // float4 normals
+RWBuffer<uint> OutPacked;      // length = MaxVerts * 2 (two packed normals per vert)
+
+uint PackToVET_PackedNormal(float4 v)
+{
+	v = clamp(v, -1.0, 1.0);
+	v = v * 0.5 + 0.5;
+	return (uint(round(v.x * 255.0))) | (uint(round(v.y * 255.0)) << 8) | (uint(round(v.z * 255.0)) << 16) | (uint(round(v.w * 255.0)) << 24);
+}
+
+void BuildBasis(float3 n, out float3 t, out float signW)
+{
+	float3 up = (abs(n.z) < 0.999f) ? float3(0,0,1) : float3(0,1,0);
+	t = normalize(cross(up, n));
+	signW = 1.0f; // right-handed
+}
+
+[numthreads(128,1,1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	uint i = DTid.x;
+	if (i >= MaxVerts) return;
+
+	float4 rawN = InNormals[i];
+	if (length(rawN.xyz) < 0.01f)
+	{
+		// Write valid default (up) if no normal present
+		OutPacked[i * 2 + 0] = PackToVET_PackedNormal(float4(1, 0, 0, 0));
+		OutPacked[i * 2 + 1] = PackToVET_PackedNormal(float4(0, 0, 1, 1));
+		return;
+	}
+
+	float3 n = normalize(rawN.xyz);
+
+	float3 t;
+	float signW;
+	BuildBasis(n, t, signW);
+
+	// UE convention: TangentX in stream 0, TangentZ in stream 1. signW in TangentZ.w
+	OutPacked[i * 2 + 0] = PackToVET_PackedNormal(float4(t, 0.0f));
+	OutPacked[i * 2 + 1] = PackToVET_PackedNormal(float4(n, signW));
+}

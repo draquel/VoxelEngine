@@ -72,3 +72,36 @@
 	private:
 		FBufferRHIRef Source;
 	};
+
+class FExternalTangentBasisBuffer final : public FVertexBufferWithSRV
+{
+public:
+	void SetSource(const FBufferRHIRef& InBuffer, uint32 InNumVerts)
+	{
+		SourceBufferRHI = InBuffer;
+		NumVerts = InNumVerts;
+	}
+
+	virtual void InitRHI(FRHICommandListBase& RHICmdList) override
+	{
+		check(SourceBufferRHI.IsValid());
+
+		VertexBufferRHI = SourceBufferRHI;
+
+		// SRV sees this as an array of FPackedNormal (4 bytes each)
+		ShaderResourceViewRHI = RHICmdList.CreateShaderResourceView(VertexBufferRHI, /*Stride=*/4, PF_R8G8B8A8);
+		check(ShaderResourceViewRHI.IsValid());
+	}
+
+	virtual void ReleaseRHI() override
+	{
+		FVertexBufferWithSRV::ReleaseRHI();
+		SourceBufferRHI.SafeRelease();
+	}
+
+	uint32 GetVertexStride() const { return 8; } // 2x FPackedNormal per vertex
+
+private:
+	FBufferRHIRef SourceBufferRHI;
+	uint32 NumVerts = 0;
+};

@@ -8,6 +8,8 @@ namespace VoxelRender
 	const TRefCountPtr<FRDGPooledBuffer>& Pos,
 	const TRefCountPtr<FRDGPooledBuffer>& Nor,
 	const TRefCountPtr<FRDGPooledBuffer>& Ind,
+	const TRefCountPtr<FRDGPooledBuffer>& Tan,
+	EChunkNormalFormat InFormat,
 	uint32 InNumVerts,
 	uint32 InNumIndices,
 	const FVector& InChunkOriginWS,
@@ -18,6 +20,8 @@ namespace VoxelRender
 		VertexPooled  = Pos;
 		NormalsPooled = Nor;
 		IndexPooled   = Ind;
+		TangentBasisPooled = Tan;
+		NormalFormat = InFormat;
 
 		VertexCount = InNumVerts;
 		IndexCount  = InNumIndices;
@@ -91,6 +95,17 @@ namespace VoxelRender
 			NormalSRV = RHICmdList.CreateShaderResourceView(NormalBufferRHI, Float4Stride, Float4Format);
 			check(NormalSRV.IsValid());
 		}
+		
+		if (NormalFormat == EChunkNormalFormat::PackedTangentBasis)
+		{
+			check(TangentBasisPooled.IsValid());
+			TangentBasisBufferRHI = TangentBasisPooled->GetRHI();
+			check(TangentBasisBufferRHI.IsValid());
+
+			// Typed SRV element stride is 4 bytes; format is UNORM8x4 (standard FPackedNormal)
+			TangentBasisSRV = RHICmdList.CreateShaderResourceView(TangentBasisBufferRHI, /*Stride=*/4, PF_R8G8B8A8);
+			check(TangentBasisSRV.IsValid());
+		}
 	}
 	
 	bool FChunkMeshRenderData::IsValidForDraw(bool bRequireSRVs) const
@@ -119,7 +134,16 @@ namespace VoxelRender
 		// RHI resources must exist
 		if (!PositionBufferRHI.IsValid() || !IndexBufferRHI.IsValid())
 			return false;
+		
+		if (NormalFormat == EChunkNormalFormat::PackedTangentBasis)
+		{
+			if (!TangentBasisPooled.IsValid() || !TangentBasisBufferRHI.IsValid())
+				return false;
 
+			if (bRequireSRVs && !TangentBasisSRV.IsValid())
+				return false;
+		}
+		
 		// Normals are optional; but if present, validate
 		const bool bHasNormals = NormalBufferRHI.IsValid() || NormalsPooled.IsValid();
 		if (bHasNormals)
@@ -150,14 +174,17 @@ namespace VoxelRender
 	{
 		PositionSRV.SafeRelease();
 		NormalSRV.SafeRelease();
+		TangentBasisSRV.SafeRelease();
 
 		PositionBufferRHI.SafeRelease();
 		NormalBufferRHI.SafeRelease();
 		IndexBufferRHI.SafeRelease();
+		TangentBasisBufferRHI.SafeRelease();
 
 		VertexPooled.SafeRelease();
 		IndexPooled.SafeRelease();
 		NormalsPooled.SafeRelease();
+		TangentBasisPooled.SafeRelease();
 
 		BoundsWS = FBoxSphereBounds(ForceInit);
 		ChunkOriginWS = FVector::ZeroVector;

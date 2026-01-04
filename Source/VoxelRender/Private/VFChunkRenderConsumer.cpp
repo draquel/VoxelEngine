@@ -136,16 +136,18 @@ namespace VoxelRender
 	    	RD->ChunkOriginWS = P.ChunkOriginWS;
 	        RD->ChunkSizeWS   = P.ChunkSize;
 	        RD->Material      = nullptr; // or something real
-	    	RD->NormalFormat = G.NormalsPooled.IsValid() ? EChunkNormalFormat::Float4NormalsDebug : EChunkNormalFormat::None;
+	    	
+	    	const EChunkNormalFormat Format = G.TangentBasisPooled.IsValid() ? EChunkNormalFormat::PackedTangentBasis	:
+	    		(G.NormalsPooled.IsValid() ? EChunkNormalFormat::Float4NormalsDebug : EChunkNormalFormat::None);
 
 	    	// If empty, pass null pooled buffers; InitFromPooled will normalize and return early.
 	    	if (VCount == 0 || ICount == 0)
 	    	{
-	    		RD->InitFromPooled(nullptr, nullptr, nullptr, 0, 0, P.ChunkOriginWS, P.ChunkSize);
+	    		RD->InitFromPooled(nullptr, nullptr, nullptr, nullptr, EChunkNormalFormat::None, 0, 0, P.ChunkOriginWS, P.ChunkSize);
 	    	}
 	    	else
 	    	{
-	    		RD->InitFromPooled(G.VertexPooled, G.NormalsPooled, G.IndexPooled, VCount, ICount, P.ChunkOriginWS, P.ChunkSize);
+	    		RD->InitFromPooled(G.VertexPooled, G.NormalsPooled, G.IndexPooled, G.TangentBasisPooled, Format, VCount, ICount, P.ChunkOriginWS, P.ChunkSize);
 	    	}
 
 	        const FVoxelChunkKey Key   = P.Key;

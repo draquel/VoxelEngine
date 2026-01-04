@@ -121,6 +121,9 @@ namespace VoxelRender
 	: FPrimitiveSceneProxy(InComponent)
 	{
 		DefaultMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
+#if !UE_BUILD_SHIPPING
+		DefaultUnlitOrDebugMaterial = DefaultMaterial; // Fallback to default if not specialized
+#endif
 
 		SlotsRT.Empty(InSlotDataGT.Num());
 		SlotsRT.AddDefaulted(InSlotDataGT.Num());
@@ -136,13 +139,22 @@ namespace VoxelRender
 			if (!Slot.Data.IsValid())
 				continue;
 
-			Slot.Material = Slot.Data->Material ? Slot.Data->Material : DefaultMaterial;
-
 			// Always create these if we have data; init later on RT resources step.
 			Slot.PositionVB = MakeUnique<FExternalVertexBuffer>();
 			Slot.IndexIB    = MakeUnique<FExternalIndexBuffer>();
 			Slot.VF         = MakeUnique<FChunkVertexFactory>(FeatureLevel);
 
+			const bool bCanLight = (Slot.Data->NormalFormat == EChunkNormalFormat::PackedTangentBasis);
+			
+			UMaterialInterface* TargetMaterial = Slot.Data->Material ? Slot.Data->Material : DefaultMaterial;
+#if !UE_BUILD_SHIPPING
+			if (!bCanLight && DefaultUnlitOrDebugMaterial)
+			{
+				TargetMaterial = DefaultUnlitOrDebugMaterial;
+			}
+#endif
+			Slot.Material = TargetMaterial;
+			
 			// Only set sources if we actually have buffers (non-empty / ready payload)
 			if (Slot.Data->PositionBufferRHI.IsValid() && Slot.Data->VertexCount > 0)
 			{
@@ -167,6 +179,15 @@ namespace VoxelRender
 			if (Slot.Data->IndexBufferRHI.IsValid() && Slot.Data->IndexCount > 0)
 			{
 				Slot.IndexIB->SetSource(Slot.Data->IndexBufferRHI);
+			}
+			
+			Slot.bHasPackedTangents = (Slot.Data->NormalFormat == EChunkNormalFormat::PackedTangentBasis) &&
+				Slot.Data->TangentBasisBufferRHI.IsValid() && Slot.Data->VertexCount > 0;
+
+			if (Slot.bHasPackedTangents)
+			{
+				Slot.TangentBasisVB = MakeUnique<FExternalTangentBasisBuffer>();
+				Slot.TangentBasisVB->SetSource(Slot.Data->TangentBasisBufferRHI, Slot.Data->VertexCount);
 			}
 
 			Slot.bValid = true; // means "slot exists", not "drawable"
@@ -251,6 +272,16 @@ namespace VoxelRender
 				Slot.NormalVB->InitResource(RHICmdList);
 				// Don't fail the slot if normals init fails — optional path.
 			}
+			
+			if (Slot.TangentBasisVB)
+			{
+				Slot.TangentBasisVB->InitResource(RHICmdList);
+				if (!Slot.TangentBasisVB->VertexBufferRHI.IsValid() || !Slot.TangentBasisVB->ShaderResourceViewRHI.IsValid())
+				{
+					// Don’t kill slot; fall back to no tangents (unlit / debug)
+					Slot.bHasPackedTangents = false;
+				}
+			}
 
 			Slot.IndexIB->InitResource(RHICmdList);
 			if (!Slot.IndexIB->IndexBufferRHI.IsValid())
@@ -262,12 +293,13 @@ namespace VoxelRender
 			}
 
 			// VF resource init happens inside InitStreams_RenderThread (your current behavior).
-			const EChunkVFNormalBinding Binding =
-				(Slot.bHasFloat4Normals && Slot.NormalVB && Slot.NormalVB->ShaderResourceViewRHI.IsValid())
-				? EChunkVFNormalBinding::Float4NormalsDebug
-				: EChunkVFNormalBinding::None;
+			const EChunkVFNormalBinding Binding = (Slot.bHasPackedTangents && Slot.TangentBasisVB && Slot.TangentBasisVB->ShaderResourceViewRHI.IsValid())
+				? EChunkVFNormalBinding::PackedTangentBasis
+				: ((Slot.bHasFloat4Normals && Slot.NormalVB && Slot.NormalVB->ShaderResourceViewRHI.IsValid())
+					? EChunkVFNormalBinding::Float4NormalsDebug
+					: EChunkVFNormalBinding::None);
 
-			Slot.VF->InitStreams_RenderThread(RHICmdList, *Slot.PositionVB, Slot.NormalVB.Get(), Binding);
+			Slot.VF->InitStreams_RenderThread(RHICmdList, *Slot.PositionVB, Slot.NormalVB.Get(), Slot.TangentBasisVB.Get(), Binding);
 
 			// --- Primitive uniform buffer ---
 			const FVector OriginWS = Slot.Data->ChunkOriginWS;
@@ -309,12 +341,14 @@ namespace VoxelRender
 			if (Slot.VF)          Slot.VF->ReleaseResource();
 			if (Slot.IndexIB)     Slot.IndexIB->ReleaseResource();
 			if (Slot.NormalVB)    Slot.NormalVB->ReleaseResource();
+			if (Slot.TangentBasisVB) Slot.TangentBasisVB->ReleaseResource();
 			if (Slot.PositionVB)  Slot.PositionVB->ReleaseResource();
 
 			Slot.PrimitiveUB.Reset();
 			Slot.VF.Reset();
 			Slot.IndexIB.Reset();
 			Slot.NormalVB.Reset();
+			Slot.TangentBasisVB.Reset();
 			Slot.PositionVB.Reset();
 		}
 

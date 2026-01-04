@@ -7,27 +7,28 @@
 
 struct VOXELRDG_API FVoxelChunkGPUResources
 {
-    // existing RDG refs...
     FRDGBufferRef VertexBufferRDG = nullptr;
     FRDGBufferRef IndexBufferRDG  = nullptr;
     FRDGBufferRef NormalsBufferRDG  = nullptr;
+    FRDGBufferRef TangentBasisBufferRDG = nullptr; // ✅ NEW
     FRDGBufferRef VertexCountRDG  = nullptr;
     FRDGBufferRef IndexCountRDG   = nullptr;
 
-    // extracted pooled buffers (persist after GraphBuilder.Execute)
     TRefCountPtr<FRDGPooledBuffer> VertexPooled;
     TRefCountPtr<FRDGPooledBuffer> IndexPooled;
     TRefCountPtr<FRDGPooledBuffer> NormalsPooled;
+    TRefCountPtr<FRDGPooledBuffer> TangentBasisPooled; // ✅ NEW
     TRefCountPtr<FRDGPooledBuffer> VertexCountPooled;
     TRefCountPtr<FRDGPooledBuffer> IndexCountPooled;
 
-    // GPU->CPU readbacks
     TUniquePtr<FRHIGPUBufferReadback> VertexReadback;
     TUniquePtr<FRHIGPUBufferReadback> IndexReadback;
     TUniquePtr<FRHIGPUBufferReadback> NormalsReadback;
+    TUniquePtr<FRHIGPUBufferReadback> TangentBasisReadback; // optional
     TUniquePtr<FRHIGPUBufferReadback> VertexCountReadback;
     TUniquePtr<FRHIGPUBufferReadback> IndexCountReadback;
 
     bool bReadbackEnqueued = false;
 };
+
 

@@ -68,11 +68,13 @@ namespace VoxelRender
 			bool bHasFloat4Normals = false;
 			
 			TSharedPtr<FChunkMeshRenderData> Data;
+			TUniquePtr<FChunkVertexFactory> VF;
 
 			TUniquePtr<FExternalVertexBuffer> PositionVB;
 			TUniquePtr<FExternalVertexBuffer> NormalVB;
 			TUniquePtr<FExternalIndexBuffer>  IndexIB;
-			TUniquePtr<FChunkVertexFactory> VF;
+			TUniquePtr<FExternalTangentBasisBuffer> TangentBasisVB;
+			bool bHasPackedTangents = false;
 			
 			UMaterialInterface* Material = nullptr;
 			
@@ -149,6 +151,7 @@ namespace VoxelRender
 		
 #if !UE_BUILD_SHIPPING
 		mutable TSet<uint64> LoggedDrawFailures;
+		UMaterialInterface* DefaultUnlitOrDebugMaterial = nullptr;
 #endif
 	};
 }

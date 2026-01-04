@@ -10,7 +10,7 @@ namespace VoxelRender
 	{
 		None,               // bind null tangents (safe for base pass)
 		Float4NormalsDebug, // SRV only; still bind null tangents to avoid incorrect lit shading
-		// PackedTangentBasis  // future
+		PackedTangentBasis  // future
 	};
 	
 	struct FChunkVFStreams
@@ -26,7 +26,8 @@ namespace VoxelRender
 			: FLocalVertexFactory(InFeatureLevel, "VoxelRender::FChunkVertexFactory")
 		{}
 
-		void InitStreams_RenderThread(FRHICommandListBase& RHICmdList, FExternalVertexBuffer& PosVB, FExternalVertexBuffer* Float4NormalVBOrNull, EChunkVFNormalBinding
+		void InitStreams_RenderThread(FRHICommandListBase& RHICmdList, FExternalVertexBuffer& PosVB, FExternalVertexBuffer* NormVBOrNull, FExternalTangentBasisBuffer
+		                              * TangentBasisOrNull, EChunkVFNormalBinding
 		                              Binding);
 	};
 }

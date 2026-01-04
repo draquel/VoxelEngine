@@ -15,6 +15,9 @@
 #include "MarchingCubes/MC_NormalsPass.h"
 #include "MarchingCubes/MC_ScanPass.h"
 #include "MarchingCubes/MC_ScatterPass.h"
+#include "MarchingCubes/MC_TangentPass.h"
+
+
 // Voxel MC Pipeline Contract:
 // - Positions: float4, WORLD SPACE
 // - Normals: float4, WORLD SPACE
@@ -104,6 +107,7 @@ static void AllocateChunkBuffers(
 
 		// optional for debug mode; can be null if builder generates normals
 		Res.NormalsBufferRDG = nullptr;
+		Res.TangentBasisBufferRDG = nullptr;
 	}
 }
 
@@ -185,11 +189,17 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 				Args.DispatchArgs,
 				MaxVerts);
 		
+		FRDGBufferRef Tangents =
+			FMC_TangentPass::AddMC_TangentPass(
+				GraphBuilder,
+				Normals.Normals,
+				MaxVerts);
 
 		// Bind outputs to the common contract
 		InOutResources->VertexBufferRDG = Scatter.Vertices;
 		InOutResources->IndexBufferRDG  = Indices;
 		InOutResources->NormalsBufferRDG = Normals.Normals;
+		InOutResources->TangentBasisBufferRDG = Tangents;
 
 		// Copy totals -> contract counts (IndexCount = TotalTris*3)
 		{
@@ -213,6 +223,7 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	if (InOutResources->VertexBufferRDG)  GraphBuilder.QueueBufferExtraction(InOutResources->VertexBufferRDG,  &InOutResources->VertexPooled);
 	if (InOutResources->IndexBufferRDG)   GraphBuilder.QueueBufferExtraction(InOutResources->IndexBufferRDG,   &InOutResources->IndexPooled);
 	if (InOutResources->NormalsBufferRDG) GraphBuilder.QueueBufferExtraction(InOutResources->NormalsBufferRDG, &InOutResources->NormalsPooled);
+	if (InOutResources->TangentBasisBufferRDG) GraphBuilder.QueueBufferExtraction(InOutResources->TangentBasisBufferRDG, &InOutResources->TangentBasisPooled);
 
 	GraphBuilder.QueueBufferExtraction(InOutResources->VertexCountRDG, &InOutResources->VertexCountPooled);
 	GraphBuilder.QueueBufferExtraction(InOutResources->IndexCountRDG,  &InOutResources->IndexCountPooled);
