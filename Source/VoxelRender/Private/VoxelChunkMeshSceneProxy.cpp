@@ -10,6 +10,24 @@
 
 namespace VoxelRender
 {
+	static TAutoConsoleVariable<int32> CVarVoxelRender_ForceReverseCulling(
+		TEXT("Voxel.Render.ForceReverseCulling"),
+		0,
+		TEXT("For debugging: 1 forces ReverseCulling on voxel chunk meshes."),
+		ECVF_Default);
+
+	static TAutoConsoleVariable<int32> CVarVoxelRender_ForceTwoSided(
+		TEXT("Voxel.Render.ForceTwoSided"),
+		0,
+		TEXT("For debugging: 1 forces two-sided rendering on voxel chunk meshes (disables backface culling)."),
+		ECVF_Default);
+
+	static TAutoConsoleVariable<int32> CVarVoxelRender_ForceWireframe(
+		TEXT("Voxel.Render.ForceWireframe"),
+		0,
+		TEXT("For debugging: 1 forces wireframe rendering on voxel chunk meshes (viewmode override)."),
+		ECVF_Default);
+	
 	static const TCHAR* ToString(EChunkDrawFailReason R)
 	{
 		switch (R)
@@ -308,53 +326,81 @@ namespace VoxelRender
 	const FSceneViewFamily& ViewFamily,
 	uint32 VisibilityMap,
 	FMeshElementCollector& Collector) const
+{
+#if !UE_BUILD_SHIPPING
+	// Log cvar changes once (per RT) to avoid "why is it flipped?" confusion.
+	static int32 LastReverse = 0, LastTwoSided = 0, LastWire = 0;
+	const int32 CurReverse  = CVarVoxelRender_ForceReverseCulling.GetValueOnRenderThread();
+	const int32 CurTwoSided = CVarVoxelRender_ForceTwoSided.GetValueOnRenderThread();
+	const int32 CurWire     = CVarVoxelRender_ForceWireframe.GetValueOnRenderThread();
+
+	if (CurReverse != LastReverse)   { UE_LOG(LogTemp, Warning, TEXT("voxel.Render.ForceReverseCulling=%d"), CurReverse); LastReverse = CurReverse; }
+	if (CurTwoSided != LastTwoSided) { UE_LOG(LogTemp, Warning, TEXT("voxel.Render.ForceTwoSided=%d"), CurTwoSided);     LastTwoSided = CurTwoSided; }
+	if (CurWire != LastWire)         { UE_LOG(LogTemp, Warning, TEXT("voxel.Render.ForceWireframe=%d"), CurWire);         LastWire = CurWire; }
+#endif
+
+	const bool bForceReverse  = (CVarVoxelRender_ForceReverseCulling.GetValueOnRenderThread() != 0);
+	const bool bForceTwoSided = (CVarVoxelRender_ForceTwoSided.GetValueOnRenderThread() != 0);
+	const bool bForceWire     = (CVarVoxelRender_ForceWireframe.GetValueOnRenderThread() != 0);
+
+	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
 	{
-		for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+		if ((VisibilityMap & (1 << ViewIndex)) == 0)
+			continue;
+
+		for (int32 SlotIndex = 0; SlotIndex < SlotsRT.Num(); ++SlotIndex)
 		{
-			if ((VisibilityMap & (1 << ViewIndex)) == 0)
-				continue;
+			const FSlotRT& Slot = SlotsRT[SlotIndex];
 
-			for (int32 SlotIndex = 0; SlotIndex < SlotsRT.Num(); ++SlotIndex)
+			EChunkDrawFailReason FailReason;
+			if (!Slot.IsReadyToDraw(FailReason))
 			{
-				const FSlotRT& Slot = SlotsRT[SlotIndex];
-				EChunkDrawFailReason FailReason;
-				if (!Slot.IsReadyToDraw(FailReason))
-				{
-				#if !UE_BUILD_SHIPPING
-					LogDrawFailureOnce(Slot, SlotIndex, FailReason);
-				#endif
-					continue;
-				}
-				
-				const uint32 IndexCount  = Slot.Data->IndexCount;
-				const uint32 VertexCount = Slot.Data->VertexCount;
-
-				FMeshBatch& Mesh = Collector.AllocateMesh();
-				Mesh.VertexFactory = Slot.VF.Get();
-				Mesh.Type = PT_TriangleList;
-				Mesh.DepthPriorityGroup = SDPG_World;
-				Mesh.MaterialRenderProxy = (Slot.Material ? Slot.Material : DefaultMaterial)->GetRenderProxy();
-				Mesh.bCanApplyViewModeOverrides = true;
-				Mesh.ReverseCulling = IsLocalToWorldDeterminantNegative();
-
-				if (Mesh.Elements.Num() == 0)
-					Mesh.Elements.AddDefaulted();
-
-				FMeshBatchElement& Element = Mesh.Elements[0];
-				Element.IndexBuffer   = Slot.IndexIB.Get();
-				Element.FirstIndex    = 0;
-				Element.NumPrimitives = IndexCount / 3;
-				Element.MinVertexIndex = 0;
-				Element.MaxVertexIndex = VertexCount - 1;
-
-				Element.PrimitiveUniformBuffer = nullptr;
-				Element.PrimitiveUniformBufferResource = Slot.PrimitiveUB.Get();
-				Element.PrimitiveIdMode = PrimID_DynamicPrimitiveShaderData;
-
-				Collector.AddMesh(ViewIndex, Mesh);
+#if !UE_BUILD_SHIPPING
+				LogDrawFailureOnce(Slot, SlotIndex, FailReason);
+#endif
+				continue;
 			}
+
+			const uint32 IndexCount  = Slot.Data->IndexCount;
+			const uint32 VertexCount = Slot.Data->VertexCount;
+
+			FMeshBatch& Mesh = Collector.AllocateMesh();
+			Mesh.VertexFactory = Slot.VF.Get();
+			Mesh.Type = PT_TriangleList;
+			Mesh.DepthPriorityGroup = SDPG_World;
+			Mesh.MaterialRenderProxy = (Slot.Material ? Slot.Material : DefaultMaterial)->GetRenderProxy();
+
+			// Debug/winding toggles
+			Mesh.bCanApplyViewModeOverrides = true;
+			Mesh.ReverseCulling = (IsLocalToWorldDeterminantNegative() ^ bForceReverse);
+			Mesh.bDisableBackfaceCulling = bForceTwoSided;
+
+			if (bForceWire)
+			{
+				Mesh.bWireframe = true;
+			}
+
+			if (Mesh.Elements.Num() == 0)
+			{
+				Mesh.Elements.AddDefaulted();
+			}
+
+			FMeshBatchElement& Element = Mesh.Elements[0];
+			Element.IndexBuffer    = Slot.IndexIB.Get();
+			Element.FirstIndex     = 0;
+			Element.NumPrimitives  = IndexCount / 3;
+			Element.MinVertexIndex = 0;
+			Element.MaxVertexIndex = VertexCount - 1;
+
+			Element.PrimitiveUniformBuffer = nullptr;
+			Element.PrimitiveUniformBufferResource = Slot.PrimitiveUB.Get();
+			Element.PrimitiveIdMode = PrimID_DynamicPrimitiveShaderData;
+
+			Collector.AddMesh(ViewIndex, Mesh);
 		}
 	}
+}
+
 
 	FPrimitiveViewRelevance FChunkMeshSceneProxy::GetViewRelevance(const FSceneView* View) const
 	{
