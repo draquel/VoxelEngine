@@ -4,6 +4,9 @@
 #include "VoxelExternalVertexBuffer.h"
 #include "Materials/Material.h"
 #include "MeshBatch.h"
+#include "SceneManagement.h"
+#include "PrimitiveUniformShaderParameters.h"
+#include "PrimitiveUniformShaderParametersBuilder.h"
 
 namespace VoxelRender
 {
@@ -53,12 +56,6 @@ namespace VoxelRender
 
 			Slot.IndexIB->SetSource(Slot.Data->IndexBufferRHI);
 		}
-		
-		ENQUEUE_RENDER_COMMAND(Voxel_CreateChunkRTResources)(
-	[this](FRHICommandListImmediate& RHICmdList)
-		{
-			CreateRenderThreadResources(RHICmdList);
-		});
 	}
 
 	FChunkMeshSceneProxy::~FChunkMeshSceneProxy()
@@ -69,6 +66,7 @@ namespace VoxelRender
 			if (Slot.NormalVB)   Slot.NormalVB->ReleaseResource();
 			if (Slot.IndexIB)    Slot.IndexIB->ReleaseResource();
 			if (Slot.VF)         Slot.VF->ReleaseResource();
+			if (Slot.PrimitiveUB) Slot.PrimitiveUB->ReleaseResource();
 		}
 	}
 
@@ -91,6 +89,30 @@ namespace VoxelRender
 
 			// Now safe
 			Slot.VF->InitStreams_RenderThread(RHICmdList, *Slot.PositionVB, Slot.NormalVB.Get());
+
+			// Create per-slot uniform buffer
+			const FVector OriginWS = FVector(Slot.Data->ChunkOriginWS);
+			const float   SizeWS   = Slot.Data->ChunkSizeWS;
+			const FBox    ChunkBoxWS(OriginWS, OriginWS + FVector(SizeWS));
+
+			FPrimitiveUniformShaderParametersBuilder Builder;
+			Builder.Defaults()
+				.LocalToWorld(FTranslationMatrix(OriginWS))
+				.PreviousLocalToWorld(FTranslationMatrix(OriginWS))
+				.ActorWorldPosition(OriginWS)
+				.WorldBounds(FBoxSphereBounds(ChunkBoxWS))
+				.LocalBounds(FBoxSphereBounds(FBox(FVector::ZeroVector, FVector(SizeWS))))
+				.PreSkinnedLocalBounds(FBoxSphereBounds(FBox(FVector::ZeroVector, FVector(SizeWS))));
+
+			if (!Slot.PrimitiveUB.IsValid())
+			{
+				Slot.PrimitiveUB = MakeUnique<TUniformBuffer<FPrimitiveUniformShaderParameters>>();
+			}
+			Slot.PrimitiveUB->SetContents(RHICmdList, Builder.Build());
+			if (!Slot.PrimitiveUB->IsInitialized())
+			{
+				Slot.PrimitiveUB->InitResource(RHICmdList);
+			}
 		}
 	}
 
@@ -108,7 +130,7 @@ namespace VoxelRender
 
 			for (const FSlotRT& Slot : SlotsRT)
 			{
-				if (!Slot.bValid || !Slot.VF || !Slot.Data.IsValid())
+				if (!Slot.bValid || !Slot.VF || !Slot.Data.IsValid() || !Slot.PrimitiveUB.IsValid())
 					continue;
 
 				if (!Slot.IndexIB || !Slot.Data->IndexBufferRHI.IsValid())
@@ -130,7 +152,10 @@ namespace VoxelRender
 				Element.NumPrimitives = Slot.Data->IndexCount / 3;
 				Element.MinVertexIndex = 0;
 				Element.MaxVertexIndex = Slot.Data->VertexCount - 1;
-				Element.PrimitiveUniformBuffer = GetUniformBuffer();
+				
+				Element.PrimitiveUniformBuffer = nullptr;
+				Element.PrimitiveUniformBufferResource = Slot.PrimitiveUB.Get();
+				Element.PrimitiveIdMode = PrimID_DynamicPrimitiveShaderData;
 
 				Collector.AddMesh(ViewIndex, Mesh);
 			}

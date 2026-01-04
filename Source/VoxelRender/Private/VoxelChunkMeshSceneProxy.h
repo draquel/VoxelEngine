@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "PrimitiveSceneProxy.h"
+#include "UniformBuffer.h"
 
 class FExternalVertexBuffer;
 class FExternalIndexBuffer;
@@ -47,6 +48,8 @@ namespace VoxelRender
 			TUniquePtr<FChunkVertexFactory> VF;
 			
 			UMaterialInterface* Material;
+			
+			TUniquePtr<TUniformBuffer<FPrimitiveUniformShaderParameters>> PrimitiveUB;
 		};
 
 		TArray<FSlotRT> SlotsRT;

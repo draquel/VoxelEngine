@@ -15,17 +15,31 @@ void UVoxelChunkMeshComponent::SetChunkRenderData_GameThread(int32 Slot, TShared
 	if (Slot < 0 || !InData.IsValid()) return;
 
 	if (SlotDataGT.Num() <= Slot)
-	{
 		SlotDataGT.SetNum(Slot + 1);
-	}
-	const FVector Origin = InData->ChunkOriginWS;
-	const float   Size   = InData->ChunkSizeWS;
-
+	
+	// Store render data
 	SlotDataGT[Slot] = MoveTemp(InData);
 
-	const FBox SlotBox(Origin, Origin + FVector(Size));
-	if (SlotBoundsGT.Num() <= Slot) SlotBoundsGT.SetNum(Slot + 1);
-	SlotBoundsGT[Slot] = FBoxSphereBounds(SlotBox);
+	// Convert WS -> component local space for bounds
+	const FVector OriginWS = SlotDataGT[Slot]->ChunkOriginWS;
+	const float   SizeWS   = SlotDataGT[Slot]->ChunkSizeWS;
+
+	const FTransform& Xf = GetComponentTransform();
+	const FVector OriginLS = Xf.InverseTransformPosition(OriginWS);
+
+	// Axis-aligned in local space (assuming chunk is axis-aligned)
+	const FBox SlotBoxLS(OriginLS, OriginLS + FVector(SizeWS));
+
+	if (SlotBoundsGT.Num() <= Slot)
+		SlotBoundsGT.SetNum(Slot + 1);
+
+	SlotBoundsGT[Slot] = FBoxSphereBounds(SlotBoxLS);
+	
+	DrawDebugBox(GetWorld(),
+	GetComponentTransform().TransformPosition(SlotBoundsGT[Slot].Origin),
+	SlotBoundsGT[Slot].BoxExtent,
+	FColor::Green,
+	false, 1.0f);
 
 	UpdateBounds();
 	MarkRenderStateDirty();
@@ -36,7 +50,15 @@ void UVoxelChunkMeshComponent::ClearChunk_GameThread(int32 Slot)
 	check(IsInGameThread());
 	if (!SlotDataGT.IsValidIndex(Slot)) return;
 	SlotDataGT[Slot].Reset();
+
+	if (SlotBoundsGT.IsValidIndex(Slot))
+	{
+		SlotBoundsGT[Slot] = FBoxSphereBounds(ForceInit);
+	}
+
+	UpdateBounds();
 	MarkRenderStateDirty();
+	
 }
 
 FPrimitiveSceneProxy* UVoxelChunkMeshComponent::CreateSceneProxy()
