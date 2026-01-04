@@ -103,6 +103,7 @@ void AVoxelWorldActor::BeginPlay()
     //             if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key);
     //         }
     //     );
+	// VoxelMesh->SetVisibility(false, true);
 	TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer =
 		MakeShared<VoxelRender::FVFChunkRenderConsumer>(
 			VoxelMesh,
@@ -115,6 +116,7 @@ void AVoxelWorldActor::BeginPlay()
 				if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key);
 			}
 		);
+	DebugPMC->SetVisibility(false, true);
 
     ChunkSubsystem->SetRenderConsumer(Consumer);
 	

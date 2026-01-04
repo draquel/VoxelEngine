@@ -155,6 +155,7 @@ namespace VoxelRender
 
 			
 			UMaterialInterface* TargetMaterial = Slot.Data->Material ? Slot.Data->Material : DefaultMaterial;
+			const bool bCanLight = (Slot.Data->NormalFormat == EChunkNormalFormat::PackedTangentBasis && TargetMaterial != DefaultMaterial);
 #if !UE_BUILD_SHIPPING
 			if (!bCanLight && DefaultUnlitOrDebugMaterial)
 			{
@@ -410,12 +411,21 @@ namespace VoxelRender
 			Mesh.VertexFactory = Slot.VF.Get();
 			Mesh.Type = PT_TriangleList;
 			Mesh.DepthPriorityGroup = SDPG_World;
-			Mesh.MaterialRenderProxy = (Slot.Material ? Slot.Material : DefaultMaterial)->GetRenderProxy();
+			
+			FMaterialRenderProxy* ParentProxy = (Slot.Material->IsValidLowLevel() ? Slot.Material : DefaultMaterial)->GetRenderProxy();
+			FColoredMaterialRenderProxy* ColoredProxy = new FColoredMaterialRenderProxy(ParentProxy, FLinearColor::White); // Shouldn't be needed... Why is it broken without it?
+
+			Mesh.MaterialRenderProxy = ColoredProxy;
 
 			// Debug/winding toggles
 			Mesh.bCanApplyViewModeOverrides = true;
 			Mesh.ReverseCulling = (IsLocalToWorldDeterminantNegative() ^ bForceReverse);
 			Mesh.bDisableBackfaceCulling = bForceTwoSided;
+			
+			// Mesh batch flags
+			Mesh.CastShadow = CastsDynamicShadow();
+			Mesh.bUseForMaterial = true;
+			Mesh.bUseForDepthPass = true;
 
 			if (bForceWire)
 			{
@@ -434,7 +444,7 @@ namespace VoxelRender
 			Element.MinVertexIndex = 0;
 			Element.MaxVertexIndex = VertexCount - 1;
 
-			Element.PrimitiveUniformBuffer = nullptr;
+			Element.PrimitiveUniformBuffer = Slot.PrimitiveUB->GetUniformBufferRHI();
 			Element.PrimitiveUniformBufferResource = Slot.PrimitiveUB.Get();
 			Element.PrimitiveIdMode = PrimID_DynamicPrimitiveShaderData;
 
@@ -452,6 +462,26 @@ namespace VoxelRender
 		R.bShadowRelevance = IsShadowCast(View);
 		R.bRenderInMainPass = true;
 		R.bUsesLightingChannels = true;
+		R.bRenderCustomDepth = ShouldRenderCustomDepth();
+
+		auto AddMaterialRelevance = [&](UMaterialInterface* Mat)
+		{
+			if (Mat)
+			{
+				Mat->GetRelevance_Concurrent(GetScene().GetFeatureLevel()).SetPrimitiveViewRelevance(R);
+			}
+		};
+
+		for (const FSlotRT& Slot : SlotsRT)
+		{
+			if (Slot.bValid)
+			{
+				AddMaterialRelevance(Slot.Material);
+			}
+		}
+		
+		AddMaterialRelevance(DefaultMaterial);
+
 		return R;
 	}
 
