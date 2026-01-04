@@ -1,50 +1,50 @@
 ﻿#include "VoxelChunkVertexFactory.h"
 #include "RenderResource.h"
-#include "VoxelChunkMeshSceneProxy.h"
+#include "VoxelChunkMeshRenderData.h"
 
 namespace VoxelRender
 {
 	void FChunkVertexFactory::InitStreams_RenderThread(
-		FRHICommandListBase& RHICmdList,
-		FExternalVertexBuffer& PosVB,
-		FExternalVertexBuffer* NormVBOrNull)
+	FRHICommandListBase& RHICmdList,
+	FExternalVertexBuffer& PosVB,
+	FExternalVertexBuffer* Float4NormalVBOrNull,
+	EChunkNormalFormat Binding)
 	{
 		check(IsInRenderingThread());
 
 		FLocalVertexFactory::FDataType InData;
 
+		// Positions: float4
 		InData.PositionComponent = FVertexStreamComponent(&PosVB, 0, sizeof(FVector4f), VET_Float4);
 
-		if (NormVBOrNull)
-		{
-			InData.TangentBasisComponents[0] = FVertexStreamComponent(NormVBOrNull, 0, sizeof(FVector4f), VET_Float4);
-			InData.TangentBasisComponents[1] = FVertexStreamComponent(NormVBOrNull, 0, sizeof(FVector4f), VET_Float4);
-		}
-		else
-		{
-			InData.TangentBasisComponents[0] = FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_Float3);
-			InData.TangentBasisComponents[1] = FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_Float3);
-		}
+		// ---- Tangent basis (IMPORTANT) ----
+		// For now, you do NOT have a correct tangent basis. Do not bind float4 normals as tangents.
+		// Bind null packed normals so standard material paths don't misinterpret your data.
+		InData.TangentBasisComponents[0] = FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_PackedNormal);
+		InData.TangentBasisComponents[1] = FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_PackedNormal);
 
+		// ---- UV/Color (null) ----
 		InData.NumTexCoords = 1;
 		InData.TextureCoordinates.Reset();
 		InData.TextureCoordinates.Add(FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_Float2));
 		InData.ColorComponent = FVertexStreamComponent(&GNullColorVertexBuffer, 0, 0, VET_Color);
 
-		// Map SRVs for manual vertex fetch (required for uniform buffer creation in UE5.7)
+		// ---- SRVs (UE5.7 VF uniform buffer creation expects non-null SRVs) ----
 		InData.PositionComponentSRV = PosVB.ShaderResourceViewRHI;
-		if (NormVBOrNull)
+
+		// Provide a valid SRV for TangentsSRV even though tangent components are null.
+		// If you have float4 normals and want shader access later, map TangentsSRV to it.
+		if (Binding == EChunkNormalFormat::Float4NormalsDebug && Float4NormalVBOrNull)
 		{
-			InData.TangentsSRV = NormVBOrNull->ShaderResourceViewRHI;
+			InData.TangentsSRV = Float4NormalVBOrNull->ShaderResourceViewRHI;
 		}
 		else
 		{
 			InData.TangentsSRV = GNullVertexBuffer.VertexBufferSRV;
 		}
 
-		// Ensure Null SRVs for things we don't use
 		InData.TextureCoordinatesSRV = GNullVertexBuffer.VertexBufferSRV;
-		InData.ColorComponentsSRV = GNullColorVertexBuffer.VertexBufferSRV;
+		InData.ColorComponentsSRV    = GNullColorVertexBuffer.VertexBufferSRV;
 
 		SetData(RHICmdList, InData);
 
@@ -53,6 +53,7 @@ namespace VoxelRender
 		else
 			UpdateRHI(RHICmdList);
 	}
+
 	
 	
 }
