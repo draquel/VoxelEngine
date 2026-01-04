@@ -33,6 +33,8 @@ namespace VoxelRender
 		FShaderResourceViewRHIRef PositionSRV;
 		FShaderResourceViewRHIRef NormalSRV;
 
+		// Optional: declare what "normals" mean for this payload
+		EChunkNormalFormat NormalFormat = EChunkNormalFormat::None;
 
 		// ---- Validation ----
 		bool IsValidForDraw(bool bRequireSRVs) const;

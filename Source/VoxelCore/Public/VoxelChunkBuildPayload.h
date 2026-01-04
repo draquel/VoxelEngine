@@ -13,6 +13,13 @@ enum class EVoxelMeshMode : uint8
 	Blocky
 };
 
+enum class EChunkNormalFormat : uint8
+{
+	None,
+	Float4NormalsDebug,          // debug/unlit only
+	Packed_TangentX_NormalZ     // lit-ready (future)
+};
+
 struct FVoxelChunkBuildPayload
 {
 	FVoxelChunkKey Key;

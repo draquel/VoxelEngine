@@ -7,6 +7,7 @@
 #include "PipelineContracts.h"
 #include "MarchingCubesPassContracts.h"
 #include "RHIGPUReadback.h"
+#include "VoxelChunkBuildPayload.h"
 
 class FRHIGPUBufferReadback;
 
@@ -25,6 +26,8 @@ namespace Voxel::RDG
 		TRefCountPtr<FRDGPooledBuffer>* DebugCountersBuffer = nullptr; // Optional: FVoxelPipelineDebugCounters
 	};
 
+	
+
 	struct FChunkBuildMetadata
 	{
 		FVoxelChunkKey ChunkKey;
@@ -36,6 +39,9 @@ namespace Voxel::RDG
 		FMarchingCubesMeshCounts Counts;
 		FVoxelPipelineDebugCounters DebugCountersCPU = {};
 
+		EChunkNormalFormat NormalFormat = EChunkNormalFormat::None;
+		FBoxSphereBounds BoundsWS; // required when non-empty
+		
 		bool bHasValidMesh = false;
 		bool bHasNormals   = false;
 		bool bHasDebug     = false;
@@ -43,8 +49,18 @@ namespace Voxel::RDG
 		bool ValidateBasic() const
 		{
 			if (ContractVersion != MarchingCubesContractVersion) return false;
-			if (!bHasValidMesh) return Counts.TotalTris == 0; // empty OK
-			if (Counts.TotalIndices != ComputeTotalIndicesTriangleList(Counts.TotalTris)) return false;
+
+			if (Counts.TotalTris == 0)
+			{
+				return Counts.TotalIndices == 0; // and optionally TotalVerts==0 if you track it
+			}
+
+			if (!bHasValidMesh) return false;
+
+			if (Counts.TotalIndices % 3 != 0) return false;
+			if (Counts.TotalIndices != Counts.TotalTris * 3) return false;
+			if (BoundsWS.SphereRadius <= 0.f) return false;
+
 			return true;
 		}
 	};

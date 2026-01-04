@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "LocalVertexFactory.h"
+#include "VoxelChunkBuildPayload.h"
 #include "VoxelExternalVertexBuffer.h"
 
 namespace VoxelRender
@@ -18,7 +19,8 @@ namespace VoxelRender
 			: FLocalVertexFactory(InFeatureLevel, "VoxelRender::FChunkVertexFactory")
 		{}
 
-		void InitStreams_RenderThread(FRHICommandListBase& RHICmdList, FExternalVertexBuffer& PosVB, FExternalVertexBuffer* NormVBOrNull);
+		void InitStreams_RenderThread(FRHICommandListBase& RHICmdList, FExternalVertexBuffer& PosVB, FExternalVertexBuffer* Float4NormalVBOrNull, EChunkNormalFormat
+		                              Binding);
 	};
 }
 
