@@ -28,19 +28,15 @@ namespace VoxelRender
 		case EChunkDrawFailReason::PrimitiveUBNotInitialized:return TEXT("PrimitiveUBNotInitialized");
 		case EChunkDrawFailReason::MaterialMissing:          return TEXT("MaterialMissing");
 		case EChunkDrawFailReason::CountsInvalid:            return TEXT("CountsInvalid");
+		case EChunkDrawFailReason::EmptyMesh: return TEXT("EmptyMesh");
+		case EChunkDrawFailReason::None: return TEXT("None");
 		default:                                             return TEXT("None");
 		}
 	}
 	
-	static uint64 MakeFailureKey(const VoxelRender::FChunkMeshRenderData& D)
+#if !UE_BUILD_SHIPPING	
+	static uint64 MakeLogOnceKey(const FVoxelChunkKey& Key, uint32 SlotIndex, uint8 Reason)
 	{
-		// Best: hash FVoxelChunkKey if you have it here.
-		// Fallback: hash origin (quantized) + size.
-		const int32 X = FMath::FloorToInt(D.ChunkOriginWS.X);
-		const int32 Y = FMath::FloorToInt(D.ChunkOriginWS.Y);
-		const int32 Z = FMath::FloorToInt(D.ChunkOriginWS.Z);
-		const int32 S = FMath::FloorToInt(D.ChunkSizeWS);
-
 		uint64 H = 1469598103934665603ull;
 		auto Mix = [&H](uint64 V)
 		{
@@ -48,35 +44,27 @@ namespace VoxelRender
 			H *= 1099511628211ull;
 		};
 
-		Mix((uint64)(uint32)X);
-		Mix((uint64)(uint32)Y);
-		Mix((uint64)(uint32)Z);
-		Mix((uint64)(uint32)S);
+		Mix((uint64)(uint32)Key.LOD);
+		Mix((uint64)(uint32)Key.Coord.X);
+		Mix((uint64)(uint32)Key.Coord.Y);
+		Mix((uint64)(uint32)Key.Coord.Z);
+		Mix((uint64)SlotIndex);
+		Mix((uint64)Reason);
+
 		return H;
-	}
-	
-#if !UE_BUILD_SHIPPING	
-	static uint64 MakeLogOnceKey(const FVoxelChunkKey& Key, uint32 SlotIndex, uint8 Reason)
-	{
-		const uint32 KH = GetTypeHash(Key);
-		return (uint64)KH ^ (uint64(SlotIndex) << 32) ^ (uint64(Reason) * 0x9E3779B97F4A7C15ull);
 	}
 
 	void FChunkMeshSceneProxy::LogDrawFailureOnce(
-		const FSlotRT& Slot, uint32 SlotIndex, EChunkDrawFailReason Reason) const
+	const FSlotRT& Slot, uint32 SlotIndex, EChunkDrawFailReason Reason) const
 	{
-		// Don’t log empty meshes or invalid slots; they are expected during eviction/loading.
-		if (Reason == EChunkDrawFailReason::EmptyMesh || 
-			Reason == EChunkDrawFailReason::SlotInvalid || 
-			Reason == EChunkDrawFailReason::MissingData)
+		if (Reason == EChunkDrawFailReason::EmptyMesh ||
+			Reason == EChunkDrawFailReason::SlotInvalid)
 		{
 			return;
 		}
 
 		if (!Slot.Data.IsValid())
-		{
 			return;
-		}
 
 		const uint64 H = MakeLogOnceKey(Slot.Data->ChunkKey, SlotIndex, (uint8)Reason);
 		if (LoggedDrawFailures.Contains(H))
@@ -85,12 +73,27 @@ namespace VoxelRender
 		LoggedDrawFailures.Add(H);
 
 		const auto& D = *Slot.Data;
+
+		FString Extra;
+		if (Reason == EChunkDrawFailReason::DataNotValidForDraw)
+		{
+			Extra = FString::Printf(
+				TEXT(" PosRHI=%d IdxRHI=%d VPooled=%d IPooled=%d PosSRV=%d NorSRV=%d"),
+				D.PositionBufferRHI.IsValid(),
+				D.IndexBufferRHI.IsValid(),
+				D.VertexPooled.IsValid(),
+				D.IndexPooled.IsValid(),
+				D.PositionSRV.IsValid(),
+				D.NormalSRV.IsValid());
+		}
+
 		UE_LOG(LogTemp, Warning,
-			TEXT("VoxelRender: Skip draw. Reason=%s Key=(LOD=%d Coord=%d,%d,%d) V=%u I=%u BoundsR=%.1f"),
+			TEXT("VoxelRender: Skip draw. Reason=%s Key=(LOD=%d Coord=%d,%d,%d) V=%u I=%u BoundsR=%.1f%s"),
 			ToString(Reason),
 			D.ChunkKey.LOD, D.ChunkKey.Coord.X, D.ChunkKey.Coord.Y, D.ChunkKey.Coord.Z,
 			D.VertexCount, D.IndexCount,
-			D.BoundsWS.SphereRadius);
+			D.BoundsWS.SphereRadius,
+			*Extra);
 	}
 #endif
 	

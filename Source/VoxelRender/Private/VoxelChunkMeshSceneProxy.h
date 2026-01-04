@@ -78,62 +78,65 @@ namespace VoxelRender
 			
 			TUniquePtr<TUniformBuffer<FPrimitiveUniformShaderParameters>> PrimitiveUB;
 			
-			bool IsReadyToDraw() const
-			{
-				if (!bValid || !Data.IsValid()) return false;
-				if (!Data->IsValidForDraw(false)) return false;
-
-				if (!VF || !VF->IsInitialized()) return false;
-
-				if (!PositionVB || !PositionVB->VertexBufferRHI.IsValid() || !PositionVB->ShaderResourceViewRHI.IsValid())
-					return false;
-
-				if (!IndexIB || !IndexIB->IndexBufferRHI.IsValid())
-					return false;
-
-				if (!PrimitiveUB || !PrimitiveUB->IsInitialized())
-					return false;
-
-				return true;
-			}
-			
 			bool IsReadyToDraw(EChunkDrawFailReason& OutReason) const
 			{
 				OutReason = EChunkDrawFailReason::None;
 
-				if (!bValid)                         { OutReason = EChunkDrawFailReason::SlotInvalid; return false; }
-				if (!Data.IsValid())                 { OutReason = EChunkDrawFailReason::MissingData; return false; }
+				if (!bValid)         { OutReason = EChunkDrawFailReason::SlotInvalid; return false; }
+				if (!Data.IsValid()) { OutReason = EChunkDrawFailReason::MissingData; return false; }
 
-				// Allow empty mesh: treat as "not drawable" but not an error
+				// Empty mesh is valid but not drawable (and should not log)
 				if (Data->VertexCount == 0 || Data->IndexCount == 0)
 				{
 					OutReason = EChunkDrawFailReason::EmptyMesh;
 					return false;
 				}
 
-				// Payload coherence
+				// Payload coherence (lifetime, SRVs, bounds, etc.)
 				if (!Data->IsValidForDraw(/*bRequireSRVs=*/true))
 				{
 					OutReason = EChunkDrawFailReason::DataNotValidForDraw;
 					return false;
 				}
 
+				// Redundant, but gives a clearer failure reason in logs
+				if (Data->VertexCount < 3 || Data->IndexCount < 3 || (Data->IndexCount % 3) != 0)
+				{
+					OutReason = EChunkDrawFailReason::CountsInvalid;
+					return false;
+				}
+
+				if (!Material) { OutReason = EChunkDrawFailReason::MaterialMissing; return false; }
+
 				// Render resources used by draw
-				if (!VF)                             { OutReason = EChunkDrawFailReason::MissingVF; return false; }
-				if (!VF->IsInitialized())            { OutReason = EChunkDrawFailReason::VFNotInitialized; return false; }
+				if (!VF)                  { OutReason = EChunkDrawFailReason::MissingVF; return false; }
+				if (!VF->IsInitialized()) { OutReason = EChunkDrawFailReason::VFNotInitialized; return false; }
 
-				if (!PositionVB)                     { OutReason = EChunkDrawFailReason::MissingPositionVB; return false; }
+				if (!PositionVB) { OutReason = EChunkDrawFailReason::MissingPositionVB; return false; }
 				if (!PositionVB->VertexBufferRHI.IsValid())
-				{ OutReason = EChunkDrawFailReason::PositionVBNotInitialized; return false; }
+				{
+					OutReason = EChunkDrawFailReason::PositionVBNotInitialized;
+					return false;
+				}
 				if (!PositionVB->ShaderResourceViewRHI.IsValid())
-				{ OutReason = EChunkDrawFailReason::PositionSRVMissing; return false; }
+				{
+					OutReason = EChunkDrawFailReason::PositionSRVMissing;
+					return false;
+				}
 
-				if (!IndexIB)                        { OutReason = EChunkDrawFailReason::MissingIndexIB; return false; }
+				if (!IndexIB) { OutReason = EChunkDrawFailReason::MissingIndexIB; return false; }
 				if (!IndexIB->IndexBufferRHI.IsValid())
-				{ OutReason = EChunkDrawFailReason::IndexIBNotInitialized; return false; }
+				{
+					OutReason = EChunkDrawFailReason::IndexIBNotInitialized;
+					return false;
+				}
 
-				if (!PrimitiveUB)                    { OutReason = EChunkDrawFailReason::MissingPrimitiveUB; return false; }
-				if (!PrimitiveUB->IsInitialized())   { OutReason = EChunkDrawFailReason::PrimitiveUBNotInitialized; return false; }
+				if (!PrimitiveUB) { OutReason = EChunkDrawFailReason::MissingPrimitiveUB; return false; }
+				if (!PrimitiveUB->IsInitialized())
+				{
+					OutReason = EChunkDrawFailReason::PrimitiveUBNotInitialized;
+					return false;
+				}
 
 				return true;
 			}
