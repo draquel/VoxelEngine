@@ -20,9 +20,106 @@ namespace VoxelRender
 		VertexCount = InNumVerts;
 		IndexCount  = InNumIndices;
 
-		if (Pos) PositionBufferRHI = Pos->GetRHI();
-		if (Nor) NormalBufferRHI   = Nor->GetRHI();
-		if (Ind) IndexBufferRHI    = Ind->GetRHI();
+		// ---- Normalize "empty mesh" contract ----
+		if (VertexCount == 0 || IndexCount == 0)
+		{
+			VertexCount = 0;
+			IndexCount  = 0;
+
+			// Keep pooled refs if you want (for debugging), but don't create RHI/SRVs.
+			return;
+		}
+
+		// ---- Basic draw correctness ----
+		// You can make these ensures in non-shipping if you prefer.
+		check(VertexCount >= 3);
+		check(IndexCount  >= 3);
+		check((IndexCount % 3) == 0);
+
+		// Must have valid pooled buffers for lifetime
+		check(VertexPooled.IsValid());
+		check(IndexPooled.IsValid());
+
+		// Cache RHI
+		PositionBufferRHI = VertexPooled->GetRHI();
+		IndexBufferRHI    = IndexPooled->GetRHI();
+
+		check(PositionBufferRHI.IsValid());
+		check(IndexBufferRHI.IsValid());
+
+		// Optional normals
+		if (NormalsPooled.IsValid())
+		{
+			NormalBufferRHI = NormalsPooled->GetRHI();
+			check(NormalBufferRHI.IsValid());
+		}
+		else
+		{
+			NormalBufferRHI.SafeRelease();
+			NormalSRV.SafeRelease();
+		}
+
+		// ---- Typed SRVs (float4) ----
+		// IMPORTANT: This assumes your Position + Normal buffers are PF_A32B32G32R32F typed buffers.
+		// If you ever change formats, encode them in the metadata/contract and pass them in.
+		constexpr uint32 Float4Stride = sizeof(FVector4f);
+		constexpr EPixelFormat Float4Format = PF_A32B32G32R32F;
+
+		FRHICommandListBase& RHICmdList = FRHICommandListExecutor::GetImmediateCommandList();
+
+		PositionSRV = RHICmdList.CreateShaderResourceView(PositionBufferRHI, Float4Stride, Float4Format);
+		check(PositionSRV.IsValid());
+
+		if (NormalBufferRHI.IsValid())
+		{
+			NormalSRV = RHICmdList.CreateShaderResourceView(NormalBufferRHI, Float4Stride, Float4Format);
+			check(NormalSRV.IsValid());
+		}
+	}
+	
+	bool FChunkMeshRenderData::IsValidForDraw(bool bRequireSRVs) const
+	{
+		// Allow a truly empty mesh (common for fully solid/empty chunks).
+		if (VertexCount == 0 || IndexCount == 0)
+		{
+			return VertexCount == 0 && IndexCount == 0;
+		}
+
+		// Must have at least one triangle and enough vertices.
+		if (VertexCount < 3 || IndexCount < 3)
+			return false;
+
+		// Triangle list contract
+		if ((IndexCount % 3) != 0)
+			return false;
+
+		// Lifetime contract: pooled buffers keep extracted RDG results alive
+		if (!VertexPooled.IsValid() || !IndexPooled.IsValid())
+			return false;
+
+		// RHI resources must exist
+		if (!PositionBufferRHI.IsValid() || !IndexBufferRHI.IsValid())
+			return false;
+
+		// Normals are optional; but if present, validate
+		const bool bHasNormals = NormalBufferRHI.IsValid() || NormalsPooled.IsValid();
+		if (bHasNormals)
+		{
+			if (!NormalBufferRHI.IsValid())
+				return false;
+
+			if (bRequireSRVs && !NormalSRV.IsValid())
+				return false;
+		}
+
+		if (bRequireSRVs && !PositionSRV.IsValid())
+			return false;
+
+		// ChunkSizeWS is part of your spatial/bounds contract
+		if (ChunkSizeWS <= 0.f)
+			return false;
+
+		return true;
 	}
 
 	void FChunkMeshRenderData::ReleaseRHI()
