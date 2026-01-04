@@ -11,52 +11,65 @@
 namespace VoxelRender
 {
 	FChunkMeshSceneProxy::FChunkMeshSceneProxy(
-		const UPrimitiveComponent* InComponent,
-		const TArray<TSharedPtr<FChunkMeshRenderData>>& InSlotDataGT)
-		: FPrimitiveSceneProxy(InComponent)
+	const UPrimitiveComponent* InComponent,
+	const TArray<TSharedPtr<FChunkMeshRenderData>>& InSlotDataGT)
+	: FPrimitiveSceneProxy(InComponent)
 	{
 		DefaultMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
 
 		SlotsRT.Empty(InSlotDataGT.Num());
 		SlotsRT.AddDefaulted(InSlotDataGT.Num());
 
+		const ERHIFeatureLevel::Type FeatureLevel = GetScene().GetFeatureLevel();
+
 		for (int32 i = 0; i < InSlotDataGT.Num(); ++i)
 		{
 			FSlotRT& Slot = SlotsRT[i];
 			Slot.Data = InSlotDataGT[i];
-
 			Slot.bValid = false;
+
 			if (!Slot.Data.IsValid())
 				continue;
 
-			// You MUST have position + index to render
-			Slot.bValid =
-			Slot.Data.IsValid() &&
-			Slot.Data->PositionBufferRHI.IsValid() &&
-			Slot.Data->IndexBufferRHI.IsValid() &&
-			Slot.Data->VertexCount > 0 &&
-			Slot.Data->IndexCount  > 0;
-
-			if (!Slot.bValid)
+			// Single source of truth: contract validation
+			// Use true if you want to guarantee SRVs exist before VF init.
+			if (!Slot.Data->IsValidForDraw(/*bRequireSRVs=*/false))
 				continue;
 
 			Slot.Material = Slot.Data->Material ? Slot.Data->Material : DefaultMaterial;
 
+			// Create render resources
 			Slot.PositionVB = MakeUnique<FExternalVertexBuffer>();
 			Slot.IndexIB    = MakeUnique<FExternalIndexBuffer>();
-			Slot.VF         = MakeUnique<FChunkVertexFactory>(GetScene().GetFeatureLevel());
+			Slot.VF         = MakeUnique<FChunkVertexFactory>(FeatureLevel);
 
-			Slot.PositionVB->SetSource(Slot.Data->PositionBufferRHI, sizeof(FVector4f), Slot.Data->VertexCount, PF_A32B32G32R32F);
+			// Position: float4 typed buffer
+			Slot.PositionVB->SetSource(
+				Slot.Data->PositionBufferRHI,
+				sizeof(FVector4f),
+				Slot.Data->VertexCount,
+				PF_A32B32G32R32F);
 
-			if (Slot.Data->NormalBufferRHI.IsValid())
+			// Normals: float4 typed buffer (debug/unlit usage)
+			Slot.bHasFloat4Normals = Slot.Data->NormalBufferRHI.IsValid();
+			if (Slot.bHasFloat4Normals)
 			{
 				Slot.NormalVB = MakeUnique<FExternalVertexBuffer>();
-				Slot.NormalVB->SetSource(Slot.Data->NormalBufferRHI, sizeof(FVector4f), Slot.Data->VertexCount, PF_A32B32G32R32F);
+				Slot.NormalVB->SetSource(
+					Slot.Data->NormalBufferRHI,
+					sizeof(FVector4f),
+					Slot.Data->VertexCount,
+					PF_A32B32G32R32F);
 			}
 
+			// Index buffer: raw RHI
 			Slot.IndexIB->SetSource(Slot.Data->IndexBufferRHI);
+
+			// Mark valid now; actual RHI init happens in CreateRenderThreadResources below
+			Slot.bValid = true;
 		}
 	}
+
 
 	FChunkMeshSceneProxy::~FChunkMeshSceneProxy()
 	{
@@ -88,7 +101,8 @@ namespace VoxelRender
 			Slot.IndexIB->InitResource(RHICmdList);
 
 			// Now safe
-			Slot.VF->InitStreams_RenderThread(RHICmdList, *Slot.PositionVB, Slot.NormalVB.Get());
+			const EChunkNormalFormat Binding = (Slot.bHasFloat4Normals && Slot.NormalVB)	? EChunkNormalFormat::Float4NormalsDebug	: EChunkNormalFormat::None;
+			Slot.VF->InitStreams_RenderThread(RHICmdList, *Slot.PositionVB, Slot.NormalVB.Get(), Binding);
 
 			// Create per-slot uniform buffer
 			const FVector OriginWS = FVector(Slot.Data->ChunkOriginWS);
@@ -116,6 +130,18 @@ namespace VoxelRender
 		}
 	}
 
+	void FChunkMeshSceneProxy::DestroyRenderThreadResources() 
+	{
+		for (FSlotRT& Slot : SlotsRT)
+		{
+			if (Slot.VF)         BeginReleaseResource(Slot.VF.Get());
+			if (Slot.IndexIB)    BeginReleaseResource(Slot.IndexIB.Get());
+			if (Slot.NormalVB)   BeginReleaseResource(Slot.NormalVB.Get());
+			if (Slot.PositionVB) BeginReleaseResource(Slot.PositionVB.Get());
+			if (Slot.PrimitiveUB)BeginReleaseResource(Slot.PrimitiveUB.Get());
+		}
+		FPrimitiveSceneProxy::DestroyRenderThreadResources();
+	}
 
 	void FChunkMeshSceneProxy::GetDynamicMeshElements(
 		const TArray<const FSceneView*>& Views,
@@ -136,10 +162,9 @@ namespace VoxelRender
 				if (!Slot.IndexIB || !Slot.Data->IndexBufferRHI.IsValid())
 					continue;
 				
-				if (!Slot.Data.IsValid()) continue;
-				if (Slot.Data->IndexCount < 3) continue;
-				if (Slot.Data->VertexCount < 3) continue;
-				
+				if (!Slot.Data->IsValidForDraw(/*bRequireSRVs=*/false))
+					continue;
+
 				FMeshBatch& Mesh = Collector.AllocateMesh();
 				Mesh.VertexFactory = Slot.VF.Get();
 				Mesh.Type = PT_TriangleList;

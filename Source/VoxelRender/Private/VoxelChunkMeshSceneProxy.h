@@ -23,7 +23,8 @@ namespace VoxelRender
 
 		// IMPORTANT: run init on RT with command list
 		virtual void CreateRenderThreadResources(FRHICommandListBase& RHICmdList) override;
-
+		virtual void DestroyRenderThreadResources() override;
+		
 		virtual void GetDynamicMeshElements(
 			const TArray<const FSceneView*>& Views,
 			const FSceneViewFamily& ViewFamily,
@@ -38,16 +39,17 @@ namespace VoxelRender
 		struct FSlotRT
 		{
 			bool bValid = false;
-
+			// Optional: store whether normals exist (for shading decisions)
+			bool bHasFloat4Normals = false;
+			
 			TSharedPtr<FChunkMeshRenderData> Data;
 
 			TUniquePtr<FExternalVertexBuffer> PositionVB;
 			TUniquePtr<FExternalVertexBuffer> NormalVB;
 			TUniquePtr<FExternalIndexBuffer>  IndexIB;
-
 			TUniquePtr<FChunkVertexFactory> VF;
 			
-			UMaterialInterface* Material;
+			UMaterialInterface* Material = nullptr;
 			
 			TUniquePtr<TUniformBuffer<FPrimitiveUniformShaderParameters>> PrimitiveUB;
 		};
