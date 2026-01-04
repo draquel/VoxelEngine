@@ -138,13 +138,43 @@ namespace VoxelRender
 	FChunkMeshSceneProxy::~FChunkMeshSceneProxy()
 	{
 	}
+	
+#if !UE_BUILD_SHIPPING
+	void FChunkMeshSceneProxy::LogDrawFailureOnce(
+		const FSlotRT& Slot,
+		uint32 SlotIndex,
+		EChunkDrawFailReason Reason) const
+	{
+		if (!Slot.Data.IsValid())
+			return;
+
+		const uint64 H = MakeLogOnceKey(Slot.Data->ChunkKey, SlotIndex, (uint8)Reason);
+		if (LoggedDrawFailures.Contains(H))
+			return;
+
+		LoggedDrawFailures.Add(H);
+
+		const auto& D = *Slot.Data;
+		UE_LOG(LogTemp, Warning,
+			TEXT("VoxelRender: Skip draw. Reason=%s Key=%s OriginWS=(%.1f,%.1f,%.1f) SizeWS=%.1f V=%u I=%u BoundsR=%.1f"),
+			ToString(Reason),
+			*VoxelChunkKeyToString(D.ChunkKey),
+			D.ChunkOriginWS.X, D.ChunkOriginWS.Y, D.ChunkOriginWS.Z,
+			D.ChunkSizeWS,
+			D.VertexCount, D.IndexCount,
+			D.BoundsWS.SphereRadius);
+	}
+#endif
+
 
 	void FChunkMeshSceneProxy::CreateRenderThreadResources(FRHICommandListBase& RHICmdList)
 	{
 		check(IsInRenderingThread());
 
-		for (FSlotRT& Slot : SlotsRT)
+		for (int32 SlotIndex = 0; SlotIndex < SlotsRT.Num(); ++SlotIndex)
 		{
+			FSlotRT& Slot = SlotsRT[SlotIndex];
+			
 			if (!Slot.bValid || !Slot.Data.IsValid())
 				continue;
 
@@ -193,6 +223,7 @@ namespace VoxelRender
 			const float   SizeWS   = Slot.Data->ChunkSizeWS;
 
 			// For now: box bounds from origin+size. Later: replace with Mesh BoundsWS from build metadata.
+			// Slot.Data->BoundsWS = FBox(OriginWS, OriginWS + FVector(SizeWS));
 			const FBox ChunkBoxWS(OriginWS, OriginWS + FVector(SizeWS));
 
 			FPrimitiveUniformShaderParametersBuilder Builder;
@@ -200,7 +231,7 @@ namespace VoxelRender
 				.LocalToWorld(FTranslationMatrix(OriginWS))
 				.PreviousLocalToWorld(FTranslationMatrix(OriginWS))
 				.ActorWorldPosition(OriginWS)
-				.WorldBounds(FBoxSphereBounds(ChunkBoxWS))
+				.WorldBounds(FBoxSphereBounds(Slot.Data->BoundsWS))
 				.LocalBounds(FBoxSphereBounds(FBox(FVector::ZeroVector, FVector(SizeWS))))
 				.PreSkinnedLocalBounds(FBoxSphereBounds(FBox(FVector::ZeroVector, FVector(SizeWS))));
 
@@ -214,6 +245,15 @@ namespace VoxelRender
 			{
 				Slot.PrimitiveUB->InitResource(RHICmdList);
 			}
+			
+#if !UE_BUILD_SHIPPING
+			EChunkDrawFailReason FailReason;
+			if (!Slot.IsReadyToDraw(FailReason))
+			{
+				LogDrawFailureOnce(Slot, SlotIndex, FailReason);
+				// Optional: Slot.bValid = false; (depends if you expect it to become valid later)
+			}
+#endif
 		}
 	}
 
@@ -241,40 +281,49 @@ namespace VoxelRender
 	}
 
 	void FChunkMeshSceneProxy::GetDynamicMeshElements(
-		const TArray<const FSceneView*>& Views,
-		const FSceneViewFamily& ViewFamily,
-		uint32 VisibilityMap,
-		FMeshElementCollector& Collector) const
+	const TArray<const FSceneView*>& Views,
+	const FSceneViewFamily& ViewFamily,
+	uint32 VisibilityMap,
+	FMeshElementCollector& Collector) const
 	{
 		for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
 		{
 			if ((VisibilityMap & (1 << ViewIndex)) == 0)
 				continue;
 
-			for (const FSlotRT& Slot : SlotsRT)
+			for (int32 SlotIndex = 0; SlotIndex < SlotsRT.Num(); ++SlotIndex)
 			{
-				if (!Slot.bValid || !Slot.VF || !Slot.Data.IsValid() || !Slot.PrimitiveUB.IsValid())
+				const FSlotRT& Slot = SlotsRT[SlotIndex];
+				EChunkDrawFailReason FailReason;
+				if (!Slot.IsReadyToDraw(FailReason))
+				{
+				#if !UE_BUILD_SHIPPING
+					LogDrawFailureOnce(Slot, SlotIndex, FailReason);
+				#endif
 					continue;
-
-				if (!Slot.IndexIB || !Slot.Data->IndexBufferRHI.IsValid())
-					continue;
+				}
 				
-				if (!Slot.Data->IsValidForDraw(/*bRequireSRVs=*/false))
-					continue;
+				const uint32 IndexCount  = Slot.Data->IndexCount;
+				const uint32 VertexCount = Slot.Data->VertexCount;
 
 				FMeshBatch& Mesh = Collector.AllocateMesh();
 				Mesh.VertexFactory = Slot.VF.Get();
 				Mesh.Type = PT_TriangleList;
 				Mesh.DepthPriorityGroup = SDPG_World;
-				Mesh.MaterialRenderProxy = Slot.Material->GetRenderProxy();
+				Mesh.MaterialRenderProxy = (Slot.Material ? Slot.Material : DefaultMaterial)->GetRenderProxy();
+				Mesh.bCanApplyViewModeOverrides = true;
+				Mesh.ReverseCulling = IsLocalToWorldDeterminantNegative();
+
+				if (Mesh.Elements.Num() == 0)
+					Mesh.Elements.AddDefaulted();
 
 				FMeshBatchElement& Element = Mesh.Elements[0];
-				Element.IndexBuffer = Slot.IndexIB.Get();      // ✅ must be FIndexBuffer*, not FBufferRHIRef*
-				Element.FirstIndex = 0;
-				Element.NumPrimitives = Slot.Data->IndexCount / 3;
+				Element.IndexBuffer   = Slot.IndexIB.Get();
+				Element.FirstIndex    = 0;
+				Element.NumPrimitives = IndexCount / 3;
 				Element.MinVertexIndex = 0;
-				Element.MaxVertexIndex = Slot.Data->VertexCount - 1;
-				
+				Element.MaxVertexIndex = VertexCount - 1;
+
 				Element.PrimitiveUniformBuffer = nullptr;
 				Element.PrimitiveUniformBufferResource = Slot.PrimitiveUB.Get();
 				Element.PrimitiveIdMode = PrimID_DynamicPrimitiveShaderData;
