@@ -32,26 +32,42 @@ namespace VoxelRender
         }
         else
         {
-            InData.TangentBasisComponents[0] = FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_Float3);
-            InData.TangentBasisComponents[1] = FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_Float3);
+            // Use GNullVertexBuffer for missing tangents. 
+            // VET_PackedNormal expects 4 bytes, so we use a 0 stride if we want it to just read zeros from the null buffer.
+            InData.TangentBasisComponents[0] = FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_PackedNormal);
+            InData.TangentBasisComponents[1] = FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_PackedNormal);
             InData.TangentsSRV = GNullVertexBuffer.VertexBufferSRV;
         }
 
+        // Standard materials often expect at least one UV set.
         InData.NumTexCoords = 1;
-        InData.TextureCoordinates.Reset();
+        InData.TextureCoordinates.Empty();
         InData.TextureCoordinates.Add(FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_Float2));
         InData.ColorComponent = FVertexStreamComponent(&GNullColorVertexBuffer, 0, 0, VET_Color);
 
         InData.PositionComponentSRV = PosVB.ShaderResourceViewRHI;
+        // Ensure SRVs are valid even if using null buffers
         InData.TextureCoordinatesSRV = GNullVertexBuffer.VertexBufferSRV;
         InData.ColorComponentsSRV = GNullColorVertexBuffer.VertexBufferSRV;
 
-        SetData(RHICmdList, InData);
+        if (RHICmdList.IsImmediate())
+        {
+            SetData(RHICmdList, InData);
+        }
+        else
+        {
+            // For RDG/Async paths, we might need a different approach, but for DynamicMeshElements, immediate is usually fine.
+            SetData(RHICmdList, InData);
+        }
 
         if (!IsInitialized())
+        {
             InitResource(RHICmdList);
+        }
         else
+        {
             UpdateRHI(RHICmdList);
+        }
     }
 	
 }
