@@ -51,4 +51,8 @@ static bool KeysOverlapInBaseGrid(const FVoxelChunkKey& A, const FVoxelChunkKey&
 		RangesOverlapInclusive(AMin.Z, AMax.Z, BMin.Z, BMax.Z);
 }
 
-
+FORCEINLINE FString VoxelChunkKeyToString(const FVoxelChunkKey& K)
+{
+	return FString::Printf(TEXT("LOD=%d Coord=(%d,%d,%d)"),
+		K.LOD, K.Coord.X, K.Coord.Y, K.Coord.Z);
+}
