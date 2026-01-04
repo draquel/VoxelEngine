@@ -89,7 +89,7 @@ public:
 		VertexBufferRHI = SourceBufferRHI;
 
 		// SRV sees this as an array of FPackedNormal (4 bytes each)
-		ShaderResourceViewRHI = RHICmdList.CreateShaderResourceView(VertexBufferRHI, /*Stride=*/4, PF_R8G8B8A8);
+		ShaderResourceViewRHI = RHICmdList.CreateShaderResourceView(VertexBufferRHI, /*Stride=*/4, PF_R8G8B8A8_SNORM);
 		check(ShaderResourceViewRHI.IsValid());
 	}
 
