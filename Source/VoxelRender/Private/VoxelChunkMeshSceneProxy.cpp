@@ -10,6 +10,70 @@
 
 namespace VoxelRender
 {
+	static const TCHAR* ToString(EChunkDrawFailReason R)
+	{
+		switch (R)
+		{
+		case EChunkDrawFailReason::SlotInvalid:              return TEXT("SlotInvalid");
+		case EChunkDrawFailReason::MissingData:              return TEXT("MissingData");
+		case EChunkDrawFailReason::DataNotValidForDraw:      return TEXT("DataNotValidForDraw");
+		case EChunkDrawFailReason::MissingVF:                return TEXT("MissingVF");
+		case EChunkDrawFailReason::VFNotInitialized:         return TEXT("VFNotInitialized");
+		case EChunkDrawFailReason::MissingPositionVB:        return TEXT("MissingPositionVB");
+		case EChunkDrawFailReason::PositionVBNotInitialized: return TEXT("PositionVBNotInitialized");
+		case EChunkDrawFailReason::PositionSRVMissing:       return TEXT("PositionSRVMissing");
+		case EChunkDrawFailReason::MissingIndexIB:           return TEXT("MissingIndexIB");
+		case EChunkDrawFailReason::IndexIBNotInitialized:    return TEXT("IndexIBNotInitialized");
+		case EChunkDrawFailReason::MissingPrimitiveUB:       return TEXT("MissingPrimitiveUB");
+		case EChunkDrawFailReason::PrimitiveUBNotInitialized:return TEXT("PrimitiveUBNotInitialized");
+		case EChunkDrawFailReason::MaterialMissing:          return TEXT("MaterialMissing");
+		case EChunkDrawFailReason::CountsInvalid:            return TEXT("CountsInvalid");
+		default:                                             return TEXT("None");
+		}
+	}
+	
+	static uint64 MakeFailureKey(const VoxelRender::FChunkMeshRenderData& D)
+	{
+		// Best: hash FVoxelChunkKey if you have it here.
+		// Fallback: hash origin (quantized) + size.
+		const int32 X = FMath::FloorToInt(D.ChunkOriginWS.X);
+		const int32 Y = FMath::FloorToInt(D.ChunkOriginWS.Y);
+		const int32 Z = FMath::FloorToInt(D.ChunkOriginWS.Z);
+		const int32 S = FMath::FloorToInt(D.ChunkSizeWS);
+
+		uint64 H = 1469598103934665603ull;
+		auto Mix = [&H](uint64 V)
+		{
+			H ^= V;
+			H *= 1099511628211ull;
+		};
+
+		Mix((uint64)(uint32)X);
+		Mix((uint64)(uint32)Y);
+		Mix((uint64)(uint32)Z);
+		Mix((uint64)(uint32)S);
+		return H;
+	}
+	
+	static uint64 MakeLogOnceKey(const FVoxelChunkKey& Key, uint32 SlotIndex, uint8 Reason)
+	{
+		// 32-bit hash of the chunk key + slot + reason, then widen to 64
+		const uint32 K = GetTypeHash(Key);
+
+		// Mix into 64-bit; simple and stable
+		uint64 H = 1469598103934665603ull;
+		auto Mix = [&H](uint64 V)
+		{
+			H ^= V;
+			H *= 1099511628211ull;
+		};
+
+		Mix((uint64)K);
+		Mix((uint64)SlotIndex);
+		Mix((uint64)Reason);
+		return H;
+	}
+	
 	FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 	const UPrimitiveComponent* InComponent,
 	const TArray<TSharedPtr<FChunkMeshRenderData>>& InSlotDataGT)

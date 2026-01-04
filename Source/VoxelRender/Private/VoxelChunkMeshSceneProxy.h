@@ -3,14 +3,37 @@
 #include "CoreMinimal.h"
 #include "PrimitiveSceneProxy.h"
 #include "UniformBuffer.h"
-
-class FExternalVertexBuffer;
-class FExternalIndexBuffer;
+#include "VoxelChunkMeshRenderData.h"
+#include "VoxelChunkVertexFactory.h"
+#include "VoxelExternalVertexBuffer.h"
 
 namespace VoxelRender
 {
-	struct FChunkMeshRenderData;
-	class FChunkVertexFactory;
+	enum class EChunkDrawFailReason : uint8
+	{
+		None = 0,
+
+		SlotInvalid,
+		MissingData,
+		DataNotValidForDraw,
+
+		MissingVF,
+		VFNotInitialized,
+
+		MissingPositionVB,
+		PositionVBNotInitialized,
+		PositionSRVMissing,
+
+		MissingIndexIB,
+		IndexIBNotInitialized,
+
+		MissingPrimitiveUB,
+		PrimitiveUBNotInitialized,
+
+		MaterialMissing,
+
+		CountsInvalid, // redundancy: index%3, etc.
+	};
 
 	class FChunkMeshSceneProxy final : public FPrimitiveSceneProxy
 	{

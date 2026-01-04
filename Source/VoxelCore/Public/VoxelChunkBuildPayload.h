@@ -16,7 +16,7 @@ enum class EVoxelMeshMode : uint8
 enum class EChunkNormalFormat : uint8
 {
 	None,
-	Float4_NormalOnly,          // debug/unlit only
+	Float4NormalsDebug,          // debug/unlit only
 	Packed_TangentX_NormalZ     // lit-ready (future)
 };
 
