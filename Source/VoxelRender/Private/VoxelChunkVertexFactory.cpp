@@ -1,6 +1,6 @@
 ﻿#include "VoxelChunkVertexFactory.h"
 #include "RenderResource.h"
-#include "VoxelChunkMeshRenderData.h"
+
 
 namespace VoxelRender
 {
@@ -8,7 +8,7 @@ namespace VoxelRender
 	FRHICommandListBase& RHICmdList,
 	FExternalVertexBuffer& PosVB,
 	FExternalVertexBuffer* Float4NormalVBOrNull,
-	EChunkNormalFormat Binding)
+	EChunkVFNormalBinding Binding)
 	{
 		check(IsInRenderingThread());
 
@@ -34,7 +34,7 @@ namespace VoxelRender
 
 		// Provide a valid SRV for TangentsSRV even though tangent components are null.
 		// If you have float4 normals and want shader access later, map TangentsSRV to it.
-		if (Binding == EChunkNormalFormat::Float4NormalsDebug && Float4NormalVBOrNull)
+		if (Binding == EChunkVFNormalBinding::Float4NormalsDebug && Float4NormalVBOrNull)
 		{
 			InData.TangentsSRV = Float4NormalVBOrNull->ShaderResourceViewRHI;
 		}

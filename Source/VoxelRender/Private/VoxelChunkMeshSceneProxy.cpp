@@ -73,14 +73,6 @@ namespace VoxelRender
 
 	FChunkMeshSceneProxy::~FChunkMeshSceneProxy()
 	{
-		for (FSlotRT& Slot : SlotsRT)
-		{
-			if (Slot.PositionVB) Slot.PositionVB->ReleaseResource();
-			if (Slot.NormalVB)   Slot.NormalVB->ReleaseResource();
-			if (Slot.IndexIB)    Slot.IndexIB->ReleaseResource();
-			if (Slot.VF)         Slot.VF->ReleaseResource();
-			if (Slot.PrimitiveUB) Slot.PrimitiveUB->ReleaseResource();
-		}
 	}
 
 	void FChunkMeshSceneProxy::CreateRenderThreadResources(FRHICommandListBase& RHICmdList)
@@ -92,22 +84,52 @@ namespace VoxelRender
 			if (!Slot.bValid || !Slot.Data.IsValid())
 				continue;
 
-			// Init buffers NOW (this calls FExternalVertexBuffer::InitRHI)
+			// Optional: contract gate (recommended)
+			if (!Slot.Data->IsValidForDraw(/*bRequireSRVs=*/false))
+			{
+				Slot.bValid = false;
+				continue;
+			}
+
+			// --- Init buffers ---
+			check(Slot.PositionVB);
+			check(Slot.IndexIB);
+			check(Slot.VF);
+
 			Slot.PositionVB->InitResource(RHICmdList);
-			if (!Slot.PositionVB->VertexBufferRHI.IsValid())
-				continue; // (optional)
+			if (!Slot.PositionVB->VertexBufferRHI.IsValid() || !Slot.PositionVB->ShaderResourceViewRHI.IsValid())
+			{
+				Slot.bValid = false;
+				continue;
+			}
 
-			if (Slot.NormalVB) Slot.NormalVB->InitResource(RHICmdList);
+			if (Slot.NormalVB)
+			{
+				Slot.NormalVB->InitResource(RHICmdList);
+				// Don't fail the slot if normals are missing; they’re optional
+			}
+
 			Slot.IndexIB->InitResource(RHICmdList);
+			if (!Slot.IndexIB->IndexBufferRHI.IsValid())
+			{
+				Slot.bValid = false;
+				continue;
+			}
 
-			// Now safe
-			const EChunkNormalFormat Binding = (Slot.bHasFloat4Normals && Slot.NormalVB)	? EChunkNormalFormat::Float4NormalsDebug	: EChunkNormalFormat::None;
+			// VF resource init happens inside InitStreams_RenderThread (your current behavior).
+			const EChunkVFNormalBinding Binding =
+				(Slot.bHasFloat4Normals && Slot.NormalVB && Slot.NormalVB->ShaderResourceViewRHI.IsValid())
+				? EChunkVFNormalBinding::Float4NormalsDebug
+				: EChunkVFNormalBinding::None;
+
 			Slot.VF->InitStreams_RenderThread(RHICmdList, *Slot.PositionVB, Slot.NormalVB.Get(), Binding);
 
-			// Create per-slot uniform buffer
-			const FVector OriginWS = FVector(Slot.Data->ChunkOriginWS);
+			// --- Primitive uniform buffer ---
+			const FVector OriginWS = Slot.Data->ChunkOriginWS;
 			const float   SizeWS   = Slot.Data->ChunkSizeWS;
-			const FBox    ChunkBoxWS(OriginWS, OriginWS + FVector(SizeWS));
+
+			// For now: box bounds from origin+size. Later: replace with Mesh BoundsWS from build metadata.
+			const FBox ChunkBoxWS(OriginWS, OriginWS + FVector(SizeWS));
 
 			FPrimitiveUniformShaderParametersBuilder Builder;
 			Builder.Defaults()
@@ -122,6 +144,7 @@ namespace VoxelRender
 			{
 				Slot.PrimitiveUB = MakeUnique<TUniformBuffer<FPrimitiveUniformShaderParameters>>();
 			}
+
 			Slot.PrimitiveUB->SetContents(RHICmdList, Builder.Build());
 			if (!Slot.PrimitiveUB->IsInitialized())
 			{
@@ -130,16 +153,26 @@ namespace VoxelRender
 		}
 	}
 
-	void FChunkMeshSceneProxy::DestroyRenderThreadResources() 
+
+	void FChunkMeshSceneProxy::DestroyRenderThreadResources()
 	{
+		check(IsInRenderingThread());
+
 		for (FSlotRT& Slot : SlotsRT)
 		{
-			if (Slot.VF)         BeginReleaseResource(Slot.VF.Get());
-			if (Slot.IndexIB)    BeginReleaseResource(Slot.IndexIB.Get());
-			if (Slot.NormalVB)   BeginReleaseResource(Slot.NormalVB.Get());
-			if (Slot.PositionVB) BeginReleaseResource(Slot.PositionVB.Get());
-			if (Slot.PrimitiveUB)BeginReleaseResource(Slot.PrimitiveUB.Get());
+			if (Slot.PrimitiveUB)  Slot.PrimitiveUB->ReleaseResource();
+			if (Slot.VF)          Slot.VF->ReleaseResource();
+			if (Slot.IndexIB)     Slot.IndexIB->ReleaseResource();
+			if (Slot.NormalVB)    Slot.NormalVB->ReleaseResource();
+			if (Slot.PositionVB)  Slot.PositionVB->ReleaseResource();
+
+			Slot.PrimitiveUB.Reset();
+			Slot.VF.Reset();
+			Slot.IndexIB.Reset();
+			Slot.NormalVB.Reset();
+			Slot.PositionVB.Reset();
 		}
+
 		FPrimitiveSceneProxy::DestroyRenderThreadResources();
 	}
 

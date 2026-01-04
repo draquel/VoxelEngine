@@ -6,6 +6,13 @@
 
 namespace VoxelRender
 {
+	enum class EChunkVFNormalBinding : uint8
+	{
+		None,               // bind null tangents (safe for base pass)
+		Float4NormalsDebug, // SRV only; still bind null tangents to avoid incorrect lit shading
+		// PackedTangentBasis  // future
+	};
+	
 	struct FChunkVFStreams
 	{
 		FExternalVertexBuffer* PositionVB = nullptr; // required
@@ -19,7 +26,7 @@ namespace VoxelRender
 			: FLocalVertexFactory(InFeatureLevel, "VoxelRender::FChunkVertexFactory")
 		{}
 
-		void InitStreams_RenderThread(FRHICommandListBase& RHICmdList, FExternalVertexBuffer& PosVB, FExternalVertexBuffer* Float4NormalVBOrNull, EChunkNormalFormat
+		void InitStreams_RenderThread(FRHICommandListBase& RHICmdList, FExternalVertexBuffer& PosVB, FExternalVertexBuffer* Float4NormalVBOrNull, EChunkVFNormalBinding
 		                              Binding);
 	};
 }
