@@ -53,9 +53,6 @@ namespace VoxelRender
         else
             UpdateRHI(RHICmdList);
     }
-
-
-	
 	
 }
 
