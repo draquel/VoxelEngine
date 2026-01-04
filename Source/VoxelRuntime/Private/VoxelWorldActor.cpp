@@ -89,6 +89,8 @@ void AVoxelWorldActor::BeginPlay()
 
     ChunkSubsystem->InitializeVoxel(Settings, EditLayer);
 
+	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService = MakeShared<VoxelRender::FVoxelRDGChunkBuildService>();
+	ChunkSubsystem->SetBuildService(BuildService);
 	
 	//PMC DEBUG CONSUMER
     // TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer =
@@ -119,9 +121,6 @@ void AVoxelWorldActor::BeginPlay()
 	DebugPMC->SetVisibility(false, true);
 
     ChunkSubsystem->SetRenderConsumer(Consumer);
-	
-	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService = MakeShared<VoxelRender::FVoxelRDGChunkBuildService>();
-	ChunkSubsystem->SetBuildService(BuildService);
 }
 
 void AVoxelWorldActor::Tick(float DeltaSeconds)
