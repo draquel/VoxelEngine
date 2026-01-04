@@ -15,6 +15,11 @@
 #include "MarchingCubes/MC_NormalsPass.h"
 #include "MarchingCubes/MC_ScanPass.h"
 #include "MarchingCubes/MC_ScatterPass.h"
+// Voxel MC Pipeline Contract:
+// - Positions: float4, WORLD SPACE
+// - Normals: float4, WORLD SPACE
+// - Indices: uint32
+// - Bounds: World-space AABB
 
 // --------------------
 // Debug Grid: writes a trivial grid mesh into buffers.
