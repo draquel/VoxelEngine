@@ -2,6 +2,9 @@
 #include "CoreMinimal.h"
 #include "VoxelChunkKey.generated.h"
 
+UENUM(BlueprintType)
+enum class EVoxelSpaceMode : uint8 { Surface, Volume };
+
 USTRUCT(BlueprintType)
 struct VOXELCORE_API FVoxelChunkKey
 {
@@ -9,6 +12,7 @@ struct VOXELCORE_API FVoxelChunkKey
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 LOD = 0;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FIntVector Coord = FIntVector::ZeroValue; // chunk coords at this LOD
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) EVoxelSpaceMode Mode = EVoxelSpaceMode::Surface;
 
 	FORCEINLINE bool operator==(const FVoxelChunkKey& Rhs) const { return LOD == Rhs.LOD && Coord == Rhs.Coord; }
 	FORCEINLINE bool operator!=(const FVoxelChunkKey& Rhs) const { return !(*this == Rhs); }

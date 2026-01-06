@@ -3,6 +3,25 @@
 #include "VoxelWorldSettings.generated.h"
 
 USTRUCT(BlueprintType)
+struct FVoxelSurface2p5DSettings
+{
+	GENERATED_BODY()
+
+	// Finest mesh tile size (world units)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|Surface2p5D", meta=(ClampMin="100.0"))
+	float BaseTileSizeWS = 3200.f;
+
+	// Grid resolution per tile
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|Surface2p5D", meta=(ClampMin="9"))
+	int32 VertsPerSide = 33;
+
+	// Streaming / refinement behavior
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|Surface2p5D")
+	bool bKeepParentUntilChildrenReady = true;
+};
+
+
+USTRUCT(BlueprintType)
 struct FVoxelWorldSettings
 {
 	GENERATED_BODY()
@@ -10,7 +29,11 @@ struct FVoxelWorldSettings
 	// Authoritative seed for the whole world.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") int32 Seed = 1337;
 
-	// Chunk grid
+	// 2.5D QuadTree
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") FVoxelSurface2p5DSettings SurfaceSettings;
+	
+	
+	// 3D MC Pipeline
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") int32 CellsPerAxis = 32; // marching cubes cells per chunk edge
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") float BaseStepSize = 50.f; // cm per cell at LOD0 (0.5m)
 
@@ -23,3 +46,6 @@ struct FVoxelWorldSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableSmooth = true; // marching cubes
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableCubic  = false; // block mesher
 };
+
+
+
