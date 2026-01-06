@@ -7,8 +7,6 @@
 #include "RendererInterface.h"
 #include "VoxelChunkGPUResources.h"
 #include "VoxelChunkRecord.h"
-#include "VoxelChunkCoordUtils.h"
-#include "VoxelLODPolicy_Clipmap2p5D.h"
 #include "VoxelCore/Public/VoxelChunkRenderPayload.h"
 #include "VoxelCore/Public/IVoxelChunkBuildService.h"
 
@@ -239,7 +237,7 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 
 	EvictUnwanted(Desired);
 
-	EmitTelemetry(DeltaSeconds, Desired.Num());
+	EmitTelemetry(DeltaSeconds, Desired.Num(), Demands.Num());
 
 	// Update per-chunk desired bookkeeping AFTER eviction
 	for (auto& KVP : Chunks)
@@ -896,7 +894,7 @@ static const TCHAR* ToString(EVoxelChunkState S)
 	}
 }
 
-void UVoxelChunkSubsystem::EmitTelemetry(float DeltaSeconds, int32 DesiredCount)
+void UVoxelChunkSubsystem::EmitTelemetry(float DeltaSeconds, int32 DesiredCount, int32 DemandCount)
 {
 	if (!bTelemetryEnabled) return;
 
@@ -958,6 +956,11 @@ void UVoxelChunkSubsystem::EmitTelemetry(float DeltaSeconds, int32 DesiredCount)
 
 		UE_LOG(LogTemp, Warning, TEXT("[VoxelStream] LODs: 0=%d 1=%d 2=%d 3=%d 4=%d 5=%d 6=%d"),
 			LODCounts[0], LODCounts[1], LODCounts[2], LODCounts[3], LODCounts[4], LODCounts[5], LODCounts[6]);
+		
+		UE_LOG(LogTemp, VeryVerbose, TEXT("[VoxelStream] SpatialPolicy=%s Demands=%d"),
+			SpatialPolicy.IsValid() ? TEXT("YES") : TEXT("NO"),
+			DemandCount);
+
 		
 		Telemetry_Requested = Telemetry_Dispatched = Telemetry_BecameReady = Telemetry_BecameResident = Telemetry_Evicted = Telemetry_Canceled = 0;
 	}

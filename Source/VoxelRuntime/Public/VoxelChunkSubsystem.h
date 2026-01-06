@@ -43,7 +43,7 @@ public:
 	void OnConsumerBuilt(const FVoxelChunkKey& Key, uint64 BuiltBuildId);
 	void OnConsumerRemoved(const FVoxelChunkKey& Key);
 
-	void EmitTelemetry(float DeltaSeconds, int32 DesiredCount);
+	void EmitTelemetry(float DeltaSeconds, int32 DesiredCount, int32 DemandCount);
 	void SetRenderConsumer(TSharedPtr<Voxel::IVoxelChunkRenderConsumer> In) { RenderConsumer = MoveTemp(In); };
 	void SetBuildService(TSharedPtr<Voxel::IVoxelChunkBuildService> In) { BuildService = MoveTemp(In); };
 	void SetSpatialPolicy(TSharedPtr<Voxel::IVoxelSpatialPolicy> In) { SpatialPolicy = MoveTemp(In); };
