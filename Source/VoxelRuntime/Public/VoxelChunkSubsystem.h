@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "IVoxelChunkBuildService.h"
 #include "IVoxelChunkRenderConsumer.h"
-#include "IVoxelSpacialPolicy.h"
+#include "IVoxelSpatialPolicy.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "VoxelChunkKey.h"
 #include "VoxelChunkRecord.h"
