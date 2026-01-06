@@ -10,7 +10,8 @@ enum class EVoxelMeshMode : uint8
 {
 	DebugGrid,
 	MarchingCubes,
-	Blocky
+	Blocky,
+	SurfaceGrid	
 };
 
 enum class EChunkNormalFormat : uint8
@@ -18,6 +19,18 @@ enum class EChunkNormalFormat : uint8
 	None = 0,
 	Float4NormalsDebug,      // your current float4 normals
 	PackedTangentBasis       // NEW: 2x FPackedNormal per vertex, interleaved
+};
+
+struct FVoxelSurfaceGridParams
+{
+
+	int32 VertsPerSide = 33;        // N
+	float BaseTileSizeWS = 3200.f;  // LOD0 tile size (finest)
+	float UVScale = 1.f / 1000.f;
+
+	// optional for later
+	float SkirtDepthWS = 200.f;
+	bool  bEnableSkirts = true;
 };
 
 struct FVoxelChunkBuildPayload
@@ -34,6 +47,7 @@ struct FVoxelChunkBuildPayload
 	// MC-specific knobs can live here too if you want:
 	float IsoLevel = 0.f;
 	FVoxelNoiseParamsCPU NoiseParameters;
+	FVoxelSurfaceGridParams Surface;
 };
 
 struct FVoxelChunkBuildRequest
