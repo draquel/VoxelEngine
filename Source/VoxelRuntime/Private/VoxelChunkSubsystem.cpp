@@ -153,7 +153,7 @@ void UVoxelChunkSubsystem::ApplyDemands(
 		R.DesiredLOD = D.Key.LOD;
 
 		// Keep LastDistanceToCamera as "true distance" for eviction sorting stability
-		R.ChunkCenterWS = ComputeChunkCenterWS(D.Key);
+		// R.ChunkCenterWS = ComputeChunkCenterWS(D.Key); // Already computed in TickStreaming
 		R.LastDistanceToCamera = FVector::Dist2D(R.ChunkCenterWS, CameraWS);
 
 		// Policy priority drives scheduling (do NOT overwrite later)
@@ -185,7 +185,8 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 	if (IsEngineExitRequested() || !World)
 		return;
 
-	// Keep per-tick distances for eviction sorting (includes undesired chunks too)
+	// Optional: keep distances updated for ALL chunks (even undesired) for stable eviction ordering.
+	// If you keep this, ApplyDemands will still overwrite distance for desired keys (fine).
 	for (auto& KVP : Chunks)
 	{
 		FVoxelChunkRecord& R = KVP.Value;
@@ -196,10 +197,37 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 	TArray<FVoxelChunkDemand> Demands;
 	TSet<FVoxelChunkKey> Desired;
 
-	BuildDemands_Clipmap2p5D(CameraWS, Demands, Desired);
-	ApplyDemands(Demands, CameraWS);
-	CancelCoarserOverlaps_DemandTime(Demands);
-	
+	TArray<FVector> Cameras;
+	Cameras.Add(CameraWS);
+
+	if (SpatialPolicy.IsValid())
+	{
+		SpatialPolicy->ComputeDemands(Settings, LODParams, Cameras, Demands);
+
+			int32 LODCounts[8] = {0};
+			for (const FVoxelChunkDemand& D : Demands)
+			{
+				if (D.Key.LOD >= 0 && D.Key.LOD < 8) LODCounts[D.Key.LOD]++;
+			}
+			UE_LOG(LogTemp, Warning, TEXT("[VoxelStream] Demands LODs: 0=%d 1=%d 2=%d 3=%d"),
+				LODCounts[0], LODCounts[1], LODCounts[2], LODCounts[3]);
+			
+		Desired.Reserve(Demands.Num());
+		for (const FVoxelChunkDemand& D : Demands)
+		{
+			Desired.Add(D.Key);
+		}
+
+		ApplyDemands(Demands, CameraWS);
+	}
+	else
+	{
+		// Fallback to your older path if no policy is set.
+		BuildDemands_Clipmap2p5D(CameraWS, Demands, Desired);
+		ApplyDemands(Demands, CameraWS);
+	}
+
+	// Lifecycle steps
 	ScheduleGeneration(CameraWS);
 	AttachReadyToRender();
 
@@ -213,6 +241,7 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 
 	EmitTelemetry(DeltaSeconds, Desired.Num());
 
+	// Update per-chunk desired bookkeeping AFTER eviction
 	for (auto& KVP : Chunks)
 	{
 		KVP.Value.bWasDesiredLastTick = Desired.Contains(KVP.Key);
@@ -280,24 +309,29 @@ FVoxelChunkRecord& UVoxelChunkSubsystem::GetOrCreateChunk(const FVoxelChunkKey& 
 
 float UVoxelChunkSubsystem::ChunkSizeWS(const FVoxelWorldSettings& S, int32 LOD)
 {
+	// Keep as fallback if policy missing
 	return (S.BaseStepSize * float(1 << LOD)) * float(S.CellsPerAxis);
 }
 
 FVector UVoxelChunkSubsystem::ComputeChunkOriginWS(const FVoxelChunkKey& Key) const
 {
+	if (SpatialPolicy.IsValid())
+		return SpatialPolicy->ChunkOriginWS(Settings, Key);
+
+	// fallback (old behavior)
 	const float Size = ChunkSizeWS(Settings, Key.LOD);
-	return FVector(
-		Key.Coord.X * Size,
-		Key.Coord.Y * Size,
-		Key.Coord.Z * Size
-	);
+	return FVector(Key.Coord.X * Size, Key.Coord.Y * Size, Key.Coord.Z * Size);
 }
 
 FVector UVoxelChunkSubsystem::ComputeChunkCenterWS(const FVoxelChunkKey& Key) const
 {
+	if (SpatialPolicy.IsValid())
+		return SpatialPolicy->ChunkCenterWS(Settings, Key);
+
 	const float Size = ChunkSizeWS(Settings, Key.LOD);
-	return ComputeChunkOriginWS(Key) + FVector(Size * 0.5f, Size * 0.5f, Size * 0.5f);
+	return ComputeChunkOriginWS(Key) + FVector(Size * 0.5f);
 }
+
 
 void UVoxelChunkSubsystem::BuildDesiredSet(const FVector& CameraWS, TSet<FVoxelChunkKey>& OutDesired) const
 {
@@ -474,7 +508,13 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 
 		if (R.State == EVoxelChunkState::Requested)
 		{
-			R.Priority = ScoreChunk(R.Key, CameraWS);
+			if (R.Priority <= 0.f && !SpatialPolicy.IsValid())
+				R.Priority = ScoreChunk(R.Key, CameraWS);
+
+			// Consider treating as low priority or skip.
+			if (SpatialPolicy.IsValid() && R.Priority <= 0.f)
+				continue;
+
 			const int32 L = FMath::Clamp(R.Key.LOD, 0, 15);
 			Buckets[L].Add(&R);
 		}
@@ -493,14 +533,52 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 	int32 Remaining = FMath::Min(MaxGeneratePerTick, InFlightSlots);
 	if (Remaining <= 0) return;
 
-	// Per-tick LOD dispatch quotas: ensure coarse keeps up (tune later)
-	// LOD0 can’t take everything, so far field doesn’t vanish while moving.
-	int32 Quota[16] = {0};
-	Quota[0] = FMath::Max(1, Remaining / 2);  // near field
-	Quota[1] = FMath::Max(1, Remaining / 4);
-	Quota[2] = FMath::Max(0, Remaining / 8);
-	// The rest gets filled round-robin if we still have budget.
+	auto BuildQuota = [&](int32 Total, int32* OutQuota)
+	{
+		for (int32 i = 0; i < 16; ++i) OutQuota[i] = 0;
+		if (Total <= 0) return;
 
+		// A simple curve: 40% L0, 25% L1, 15% L2, 10% L3, rest 10% shared.
+		// Then enforce minimums if there is pending work in those buckets.
+		static const float W[16] =
+		{
+			0.40f, 0.25f, 0.15f, 0.10f,
+			0.03f, 0.02f, 0.02f, 0.01f,
+			0.01f, 0.01f, 0.00f, 0.00f,
+			0.00f, 0.00f, 0.00f, 0.00f
+		};
+
+		int32 Sum = 0;
+		for (int32 L = 0; L < 16; ++L)
+		{
+			OutQuota[L] = FMath::FloorToInt(W[L] * float(Total));
+			Sum += OutQuota[L];
+		}
+
+		// Distribute remainder starting from L0 outward
+		int32 Rem = Total - Sum;
+		for (int32 L = 0; L < 16 && Rem > 0; ++L)
+		{
+			OutQuota[L] += 1;
+			--Rem;
+		}
+	};
+	
+	int32 Quota[16];
+	BuildQuota(Remaining, Quota);
+
+	// Optional: minimum guarantees if those buckets have work
+	auto EnsureMin = [&](int32 L, int32 Min)
+	{
+		if (Buckets[L].Num() > 0)
+			Quota[L] = FMath::Max(Quota[L], Min);
+	};
+
+	EnsureMin(0, 1);
+	EnsureMin(1, 1);
+	EnsureMin(2, 1);
+	EnsureMin(3, 1);
+	
 	auto DispatchOne = [&](FVoxelChunkRecord* Rec)
 	{
 		if (!Rec || Remaining <= 0) return false;
@@ -509,13 +587,22 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		Rec->State = EVoxelChunkState::Generating;
 
 		FVoxelChunkBuildPayload Inputs;
-		Inputs.Key          = Rec->Key;
-		Inputs.Seed         = Settings.Seed;
-		Inputs.EditLayer    = EditLayer;
-		Inputs.CellsPerAxis = FMath::Max<uint32>(Settings.CellsPerAxis, 8);
-		Inputs.StepSizeWS   = Settings.BaseStepSize * float(1 << Rec->Key.LOD);
-		Inputs.ChunkOriginWS= ComputeChunkOriginWS(Rec->Key);
-		Inputs.NoiseParameters = FVoxelNoiseParamsCPU();
+		if (SpatialPolicy.IsValid())
+		{
+			SpatialPolicy->FillBuildPayload(Settings, LODParams, Rec->Key, Inputs);
+		}
+		else
+		{
+			// fallback
+			Inputs.Key          = Rec->Key;
+			Inputs.Seed         = Settings.Seed;
+			Inputs.CellsPerAxis = FMath::Max<uint32>(Settings.CellsPerAxis, 8);
+			Inputs.StepSizeWS   = Settings.BaseStepSize * float(1 << Rec->Key.LOD);
+			Inputs.ChunkOriginWS= ComputeChunkOriginWS(Rec->Key);
+			Inputs.NoiseParameters = FVoxelNoiseParamsCPU();
+		}
+
+		Inputs.EditLayer = EditLayer;
 
 		if (!Rec->GPU.IsValid())
 			Rec->GPU = MakeShared<FVoxelChunkGPUResources>();
@@ -529,7 +616,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		FVoxelChunkBuildRequest Req;
 		Req.Key     = Rec->Key;
 		Req.BuildId = ThisBuildId;
-		Req.Mode    = EVoxelMeshMode::MarchingCubes;
+		Req.Mode    = SpatialPolicy.IsValid() ? SpatialPolicy->MeshMode() : EVoxelMeshMode::MarchingCubes;
 		Req.Payload = Inputs;
 		Req.GPU     = Rec->GPU;
 
