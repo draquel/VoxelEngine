@@ -2,12 +2,14 @@
 
 #include "VoxelRender/Public/PMCDebugChunkRenderConsumer.h"
 #include "VoxelRDG/Public/VoxelRDGChunkBuildService.h"
+#include "VoxelSpatialPolicy_ClipMap2p5D.h"
 #include "VoxelChunkSubsystem.h"
 #include "ProceduralMeshComponent.h"
 #include "VFChunkRenderConsumer.h"
 #include "VoxelDensityDebugComponent.h"
 #include "VoxelEditLayer.h"
 #include "VoxelMCDebugComponent.h"
+#include "Engine/World.h"
 
 AVoxelWorldActor::AVoxelWorldActor()
 {
@@ -92,6 +94,9 @@ void AVoxelWorldActor::BeginPlay()
 	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService = MakeShared<VoxelRender::FVoxelRDGChunkBuildService>();
 	ChunkSubsystem->SetBuildService(BuildService);
 	
+	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_ClipMap2p5D>();
+	ChunkSubsystem->SetSpatialPolicy(SpatialPolicy);
+	
 	//PMC DEBUG CONSUMER
     // TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer =
     //     MakeShared<VoxelRender::FPMCDebugChunkRenderConsumer>(
@@ -109,14 +114,8 @@ void AVoxelWorldActor::BeginPlay()
 	TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer =
 		MakeShared<VoxelRender::FVFChunkRenderConsumer>(
 			VoxelMesh,
-			[this](const FVoxelChunkKey& Key, uint64 BuiltBuildId)
-			{
-				if (ChunkSubsystem) ChunkSubsystem->OnConsumerBuilt(Key, BuiltBuildId);
-			},
-			[this](const FVoxelChunkKey& Key)
-			{
-				if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key);
-			}
+			[this](const FVoxelChunkKey& Key, uint64 BuiltBuildId){ if (ChunkSubsystem) ChunkSubsystem->OnConsumerBuilt(Key, BuiltBuildId); },
+			[this](const FVoxelChunkKey& Key){ if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key); }
 		);
 	DebugPMC->SetVisibility(false, true);
 

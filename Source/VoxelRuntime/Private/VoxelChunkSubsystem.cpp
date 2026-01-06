@@ -1,10 +1,14 @@
 ﻿#include "VoxelRuntime/Public/VoxelChunkSubsystem.h"
 
+#include "Async/Async.h"
+#include "Engine/Engine.h"
 #include "PMCDebugChunkRenderConsumer.h"
 #include "RHICommandList.h"
 #include "RendererInterface.h"
 #include "VoxelChunkGPUResources.h"
 #include "VoxelChunkRecord.h"
+#include "VoxelChunkCoordUtils.h"
+#include "VoxelLODPolicy_Clipmap2p5D.h"
 #include "VoxelCore/Public/VoxelChunkRenderPayload.h"
 #include "VoxelCore/Public/IVoxelChunkBuildService.h"
 
@@ -24,7 +28,16 @@ void UVoxelChunkSubsystem::InitializeVoxel(const FVoxelWorldSettings& InSettings
 {
 	Settings = InSettings;
 	EditLayer = InEditLayer;
+
+	LODParams.CellsPerAxis = Settings.CellsPerAxis;
+	LODParams.BaseCellSizeWS = Settings.BaseStepSize;  // your “cell size” == step
+	LODParams.MaxLOD = 2;                              // start conservative
+	LODParams.R0Chunks = 4;                            // tune
+	LODParams.ZMinWS = -1500.f;
+	LODParams.ZMaxWS = +1500.f;
+	LODParams.MaxDesiredChunks = 512;               
 }
+
 
 uint8 UVoxelChunkSubsystem::ComputeSkirtMaskSameLOD(FVoxelChunkKey Key)
 {
@@ -50,6 +63,122 @@ uint8 UVoxelChunkSubsystem::ComputeSkirtMaskSameLOD(FVoxelChunkKey Key)
 	return Mask;
 }
 
+void UVoxelChunkSubsystem::CancelCoarserOverlaps_DemandTime(const TArray<FVoxelChunkDemand>& Demands)
+{
+	const double Now = FPlatformTime::Seconds();
+
+	TArray<FVoxelChunkKey> FineKeys;
+	FineKeys.Reserve(Demands.Num());
+	for (const FVoxelChunkDemand& D : Demands)
+	{
+		FineKeys.Add(D.Key);
+	}
+
+	FineKeys.Sort([](const FVoxelChunkKey& A, const FVoxelChunkKey& B)
+	{
+		return A.LOD < B.LOD; // finer first
+	});
+
+	for (const FVoxelChunkKey& Fine : FineKeys)
+	{
+		for (auto& KVP : Chunks)
+		{
+			FVoxelChunkRecord& CoarseRec = KVP.Value;
+			const FVoxelChunkKey& Coarse = CoarseRec.Key;
+
+			if (Coarse == Fine) continue;
+			if (Coarse.LOD <= Fine.LOD) continue;
+			if (!KeysOverlapInBaseGrid(Fine, Coarse)) continue;
+
+			// IMPORTANT: do NOT evict currently visible coarse tiles here.
+			if (CoarseRec.State == EVoxelChunkState::Resident)
+			{
+				continue; // keep as fallback until fine becomes resident
+			}
+
+			// Cancel builds / prevent attachment for coarser replacements
+			if (CoarseRec.State == EVoxelChunkState::Requested ||
+				CoarseRec.State == EVoxelChunkState::Generating ||
+				CoarseRec.State == EVoxelChunkState::Ready)
+			{
+				CoarseRec.bCancelRequested = true;
+				CoarseRec.State = EVoxelChunkState::Evicting;
+				CoarseRec.LastStateChangeSec = Now;
+				CoarseRec.LastEnqueuedRenderBuildId = 0;
+
+				// If it was Ready (about to enqueue render), prevent it:
+				// AttachReadyToRender already checks bCancelRequested.
+			}
+		}
+	}
+}
+
+
+void UVoxelChunkSubsystem::BuildDemands_Clipmap2p5D(
+	const FVector& CameraWS,
+	TArray<FVoxelChunkDemand>& OutDemands,
+	TSet<FVoxelChunkKey>& OutDesired) const
+{
+	OutDesired.Reset();
+	for (const FVoxelChunkDemand& D : OutDemands)
+	{
+		OutDesired.Add(D.Key);
+	}
+
+	// policy supports multiple cameras; keep it 1 for now
+	TArray<FVector> Cameras;
+	Cameras.Add(CameraWS);
+
+	SpatialPolicy->ComputeDemands(Settings,LODParams, Cameras, OutDemands);
+
+	// Build Desired set for eviction & bWasDesiredLastTick
+	OutDesired.Reserve(OutDemands.Num());
+	for (const FVoxelChunkDemand& D : OutDemands)
+	{
+		OutDesired.Add(D.Key);
+	}
+}
+
+void UVoxelChunkSubsystem::ApplyDemands(
+	const TArray<FVoxelChunkDemand>& Demands,
+	const FVector& CameraWS)
+{
+	const double NowSec = FPlatformTime::Seconds();
+
+	for (const FVoxelChunkDemand& D : Demands)
+	{
+		FVoxelChunkRecord& R = GetOrCreateChunk(D.Key);
+
+		// Track desired-LOD (debug/telemetry)
+		R.DesiredLOD = D.Key.LOD;
+
+		// Keep LastDistanceToCamera as "true distance" for eviction sorting stability
+		R.ChunkCenterWS = ComputeChunkCenterWS(D.Key);
+		R.LastDistanceToCamera = FVector::Dist2D(R.ChunkCenterWS, CameraWS);
+
+		// Policy priority drives scheduling (do NOT overwrite later)
+		R.Priority = D.Priority;
+
+		// If newly desired this tick, stamp
+		if (!R.bWasDesiredLastTick)
+			R.LastBecameDesiredSec = NowSec;
+
+		// Promote lifecycle if needed
+		if (R.State == EVoxelChunkState::Unloaded)
+		{
+			R.State = EVoxelChunkState::Requested;
+			R.LastStateChangeSec = NowSec;
+			Telemetry_Requested++;
+		}
+		else if (R.State == EVoxelChunkState::Evicting)
+		{
+			R.bCancelRequested = false;
+			R.State = EVoxelChunkState::Requested;
+			R.LastStateChangeSec = NowSec;
+			Telemetry_Requested++;
+		}
+	}
+}
 void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, const FVector& CameraWS)
 {
 	if (IsEngineExitRequested() || !World)
@@ -62,9 +191,13 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 		R.LastDistanceToCamera = FVector::Dist2D(R.ChunkCenterWS, CameraWS);
 	}
 
+	TArray<FVoxelChunkDemand> Demands;
 	TSet<FVoxelChunkKey> Desired;
-	BuildDesiredSet(CameraWS, Desired);
-	RequestMissing(Desired, CameraWS);
+
+	BuildDemands_Clipmap2p5D(CameraWS, Demands, Desired);
+	ApplyDemands(Demands, CameraWS);
+	CancelCoarserOverlaps_DemandTime(Demands);
+	
 	ScheduleGeneration(CameraWS);
 	AttachReadyToRender();
 	

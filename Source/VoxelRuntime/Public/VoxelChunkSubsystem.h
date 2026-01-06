@@ -1,10 +1,13 @@
 ﻿#pragma once
+
 #include "CoreMinimal.h"
 #include "IVoxelChunkBuildService.h"
 #include "IVoxelChunkRenderConsumer.h"
+#include "IVoxelSpacialPolicy.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "VoxelChunkKey.h"
 #include "VoxelChunkRecord.h"
+#include "VoxelLODPolicyTypes.h"
 #include "VoxelWorldSettings.h"
 #include "VoxelChunkSubsystem.generated.h"
 
@@ -42,14 +45,21 @@ public:
 
 	void EmitTelemetry(float DeltaSeconds, int32 DesiredCount);
 	void SetRenderConsumer(TSharedPtr<Voxel::IVoxelChunkRenderConsumer> In) { RenderConsumer = MoveTemp(In); };
-	void SetBuildService(TSharedPtr<Voxel::IVoxelChunkBuildService> In) { BuildService = MoveTemp(In); }
+	void SetBuildService(TSharedPtr<Voxel::IVoxelChunkBuildService> In) { BuildService = MoveTemp(In); };
+	void SetSpatialPolicy(TSharedPtr<Voxel::IVoxelSpatialPolicy> In) { SpatialPolicy = MoveTemp(In); };
 	uint8 ComputeSkirtMaskSameLOD(FVoxelChunkKey Key);
 	void AttachReadyToRender();
-	
+	void CancelCoarserOverlaps_DemandTime(const TArray<FVoxelChunkDemand>& Demands);
+
 private:
 
 	TSharedPtr<Voxel::IVoxelChunkRenderConsumer> RenderConsumer;
 	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService;
+	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy;
+
+	FVoxelLODPolicyParams LODParams;
+	void BuildDemands_Clipmap2p5D(const FVector& CameraWS, TArray<FVoxelChunkDemand>& OutDemands, TSet<FVoxelChunkKey>& OutDesired) const;
+	void ApplyDemands(const TArray<FVoxelChunkDemand>& Demands, const FVector& CameraWS);
 	
 	FVoxelWorldSettings Settings;
 	
