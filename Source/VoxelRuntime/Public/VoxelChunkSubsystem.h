@@ -70,7 +70,7 @@ private:
 	// Budgets (tune later)
 	int32 MaxGeneratePerTick = 2;
 	int32 MaxAttachPerTick   = 4;
-	int32 MaxEvictPerTick    = 64;
+	int32 MaxEvictPerTick    = 4;
 
 	// LOD / streaming policy
 	void BuildDesiredSet(const FVector& CameraWS, TSet<FVoxelChunkKey>& OutDesired) const;

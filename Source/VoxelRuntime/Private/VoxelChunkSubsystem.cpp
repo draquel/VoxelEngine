@@ -179,11 +179,13 @@ void UVoxelChunkSubsystem::ApplyDemands(
 		}
 	}
 }
+
 void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, const FVector& CameraWS)
 {
 	if (IsEngineExitRequested() || !World)
 		return;
 
+	// Keep per-tick distances for eviction sorting (includes undesired chunks too)
 	for (auto& KVP : Chunks)
 	{
 		FVoxelChunkRecord& R = KVP.Value;
@@ -200,23 +202,22 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 	
 	ScheduleGeneration(CameraWS);
 	AttachReadyToRender();
-	
+
 	if (RenderConsumer.IsValid())
 		RenderConsumer->Tick(DeltaSeconds);
 
 	if (BuildService)
 		BuildService->Tick(DeltaSeconds);
-	
+
 	EvictUnwanted(Desired);
-	
+
 	EmitTelemetry(DeltaSeconds, Desired.Num());
-	
+
 	for (auto& KVP : Chunks)
 	{
 		KVP.Value.bWasDesiredLastTick = Desired.Contains(KVP.Key);
 	}
 }
-
 
 void UVoxelChunkSubsystem::InvalidateRegionSphere(const FVector& CenterWS, float RadiusWS)
 {
@@ -305,9 +306,9 @@ void UVoxelChunkSubsystem::BuildDesiredSet(const FVector& CameraWS, TSet<FVoxelC
 	const float ZMinWS = -2500.f;
 	const float ZMaxWS = +2500.f;
 
-	const int32 MaxLOD = 0; // change later
+	const int32 MaxLOD = 4; // change later
 
-	const float RingMeters[3] = { 800.f, 1600.f, 3200.f };
+	const float RingMeters[5] = { 400.f, 800.f, 1600.f, 3200.f, 6400.f };
 	const float ExitScale = 1.10f;
 
 	// Candidates per LOD (ordered, not a set)
@@ -458,92 +459,117 @@ void UVoxelChunkSubsystem::RequestMissing(const TSet<FVoxelChunkKey>& Desired, c
 
 void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 {
-	// Sort by Priority and pick up to MaxGeneratePerTick
-	TArray<FVoxelChunkRecord*> Candidates;
-	Candidates.Reserve(Chunks.Num());
-	
+	TArray<FVoxelChunkRecord*> Buckets[16];
 	int32 InFlight = 0;
+
 	for (auto& KVP : Chunks)
 	{
 		FVoxelChunkRecord& R = KVP.Value;
 
-		if (R.State == EVoxelChunkState::Requested)
-		{
-			R.Priority = ScoreChunk(R.Key, CameraWS); // <— critical
-			Candidates.Add(&R);
-		}
-		else if (R.State == EVoxelChunkState::Generating)
+		if (R.State == EVoxelChunkState::Generating)
 		{
 			++InFlight;
+			continue;
+		}
+
+		if (R.State == EVoxelChunkState::Requested)
+		{
+			R.Priority = ScoreChunk(R.Key, CameraWS);
+			const int32 L = FMath::Clamp(R.Key.LOD, 0, 15);
+			Buckets[L].Add(&R);
 		}
 	}
 
-	// IMPORTANT: predicate takes references, not pointers
-	Candidates.Sort([](const FVoxelChunkRecord& A, const FVoxelChunkRecord& B)
+	// Sort each bucket by priority
+	for (int32 L = 0; L < 16; ++L)
 	{
-		return A.Priority > B.Priority;
-	});
-	
+		Buckets[L].Sort([](const FVoxelChunkRecord& A, const FVoxelChunkRecord& B)
+		{
+			return A.Priority > B.Priority;
+		});
+	}
+
 	const int32 InFlightSlots = FMath::Max(0, MaxInFlightBuilds - InFlight);
-	const int32 CanDispatch = FMath::Min(MaxGeneratePerTick, InFlightSlots);
+	int32 Remaining = FMath::Min(MaxGeneratePerTick, InFlightSlots);
+	if (Remaining <= 0) return;
 
-	int32 Remaining = CanDispatch;
+	// Per-tick LOD dispatch quotas: ensure coarse keeps up (tune later)
+	// LOD0 can’t take everything, so far field doesn’t vanish while moving.
+	int32 Quota[16] = {0};
+	Quota[0] = FMath::Max(1, Remaining / 2);  // near field
+	Quota[1] = FMath::Max(1, Remaining / 4);
+	Quota[2] = FMath::Max(0, Remaining / 8);
+	// The rest gets filled round-robin if we still have budget.
 
-	for (FVoxelChunkRecord* Rec : Candidates)
+	auto DispatchOne = [&](FVoxelChunkRecord* Rec)
 	{
-		if (Remaining <= 0) break;
-		if (Rec->State != EVoxelChunkState::Requested) continue;
+		if (!Rec || Remaining <= 0) return false;
+		if (Rec->State != EVoxelChunkState::Requested) return false;
 
 		Rec->State = EVoxelChunkState::Generating;
 
 		FVoxelChunkBuildPayload Inputs;
-		Inputs.Key = Rec->Key;
-		Inputs.Seed = Settings.Seed;
-		Inputs.EditLayer = EditLayer;
+		Inputs.Key          = Rec->Key;
+		Inputs.Seed         = Settings.Seed;
+		Inputs.EditLayer    = EditLayer;
 		Inputs.CellsPerAxis = FMath::Max<uint32>(Settings.CellsPerAxis, 8);
-		Inputs.StepSizeWS = Settings.BaseStepSize * float(1 << Rec->Key.LOD);
-		Inputs.ChunkOriginWS = ComputeChunkOriginWS(Rec->Key);
+		Inputs.StepSizeWS   = Settings.BaseStepSize * float(1 << Rec->Key.LOD);
+		Inputs.ChunkOriginWS= ComputeChunkOriginWS(Rec->Key);
 		Inputs.NoiseParameters = FVoxelNoiseParamsCPU();
-		
-		if (!Rec->GPU.IsValid())
-		{
-			Rec->GPU = MakeShared<FVoxelChunkGPUResources>();
-		}
-		TSharedPtr<FVoxelChunkGPUResources> GPU = Rec->GPU; // copy for lambda
-		EVoxelMeshMode Mode = EVoxelMeshMode::DebugGrid;
 
-		// UE_LOG(LogTemp, Warning, TEXT("Voxel Inputs: CellsPerAxis=%u Step=%f Seed=%d"),Inputs.CellsPerAxis, Inputs.StepSizeWS, Inputs.Seed);
-		if (Rec->GPU.IsValid())
-		{
-			Rec->GPU->bReadbackEnqueued = false;
-		}
+		if (!Rec->GPU.IsValid())
+			Rec->GPU = MakeShared<FVoxelChunkGPUResources>();
+		Rec->GPU->bReadbackEnqueued = false;
 
 		Rec->BuildId++;
 		const uint64 ThisBuildId = Rec->BuildId;
 		Rec->bCancelRequested = false;
 		Rec->LastEnqueuedRenderBuildId = 0;
-		Telemetry_Dispatched++;
 
 		FVoxelChunkBuildRequest Req;
-		Req.Key    = Rec->Key;
-		Req.BuildId= ThisBuildId;
-		Req.Mode   = EVoxelMeshMode::MarchingCubes; // or MarchingCubes later
+		Req.Key     = Rec->Key;
+		Req.BuildId = ThisBuildId;
+		Req.Mode    = EVoxelMeshMode::MarchingCubes;
 		Req.Payload = Inputs;
-		Req.GPU    = Rec->GPU;
+		Req.GPU     = Rec->GPU;
 
 		if (BuildService)
-		{
 			BuildService->EnqueueBuild(Req);
-		}
-		else
-		{
-			return;
-			// fallback: if you want, keep old direct pipeline path or just early-out
-		}
-		
-		Rec->GPU = GPU;
-		// Rec->State = EVoxelChunkState::Ready; // in real code: mark Ready after fence or completion signal
+
+		Telemetry_Dispatched++;
 		Remaining--;
+		return true;
+	};
+
+	// Pass 1: honor quotas for LOD0..2 (tuneable)
+	for (int32 L = 0; L < 16 && Remaining > 0; ++L)
+	{
+		int32 Take = Quota[L];
+		for (int32 i = 0; i < Buckets[L].Num() && Remaining > 0 && Take > 0; ++i)
+		{
+			if (DispatchOne(Buckets[L][i]))
+				--Take;
+		}
+	}
+
+	// Pass 2: round-robin fill remaining across all LODs (keeps far field alive)
+	int32 Cursor[16] = {0};
+	while (Remaining > 0)
+	{
+		bool bAny = false;
+		for (int32 L = 0; L < 16 && Remaining > 0; ++L)
+		{
+			while (Cursor[L] < Buckets[L].Num())
+			{
+				FVoxelChunkRecord* Rec = Buckets[L][Cursor[L]++];
+				if (DispatchOne(Rec))
+				{
+					bAny = true;
+					break;
+				}
+			}
+		}
+		if (!bAny) break; // nothing left to dispatch
 	}
 }
 
@@ -616,7 +642,7 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 	EvictCandidates.Reserve(Chunks.Num());
 	
 	const double Now = FPlatformTime::Seconds();
-	const double EvictDelaySec = 0;
+	const double EvictDelaySec = 0.5;
 
 	for (auto& KVP : Chunks)
 	{
@@ -760,7 +786,7 @@ void UVoxelChunkSubsystem::OnConsumerBuilt(const FVoxelChunkKey& Key, uint64 Bui
 		R->LastStateChangeSec = FPlatformTime::Seconds();
 
 		// NOW it's safe to remove overlapping coarser LODs.
-		// EvictOverlappingLODs(Key);
+		EvictOverlappingLODs(Key);
 	}
 }
 
@@ -835,6 +861,17 @@ void UVoxelChunkSubsystem::EmitTelemetry(float DeltaSeconds, int32 DesiredCount)
 		// 	Counts[(int32)EVoxelChunkState::Ready], Counts[(int32)EVoxelChunkState::Resident], Counts[(int32)EVoxelChunkState::Evicting],
 		// 	Telemetry_Requested, Telemetry_Dispatched, Telemetry_BecameReady, Telemetry_BecameResident, Telemetry_Evicted, Telemetry_Canceled);
 
+		int32 LODCounts[16] = {0};
+		for (auto& KVP : Chunks)
+		{
+			const int32 L = KVP.Key.LOD;
+			if (L >= 0 && L < UE_ARRAY_COUNT(LODCounts))
+				LODCounts[L]++;
+		}
+
+		UE_LOG(LogTemp, Warning, TEXT("[VoxelStream] LODs: 0=%d 1=%d 2=%d 3=%d 4=%d 5=%d 6=%d"),
+			LODCounts[0], LODCounts[1], LODCounts[2], LODCounts[3], LODCounts[4], LODCounts[5], LODCounts[6]);
+		
 		Telemetry_Requested = Telemetry_Dispatched = Telemetry_BecameReady = Telemetry_BecameResident = Telemetry_Evicted = Telemetry_Canceled = 0;
 	}
 }
