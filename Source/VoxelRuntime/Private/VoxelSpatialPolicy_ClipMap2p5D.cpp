@@ -13,7 +13,7 @@ namespace VoxelRuntime
 		const FVoxelWorldSettings& World, 
 		const FVoxelLODPolicyParams& Params,
 		const TArray<FVector>& CameraPositionsWS,
-		TArray<FVoxelChunkDemand>& OutDemands)
+		TArray<FVoxelChunkDemand>& OutDemands) const
 	{
 		OutDemands.Reset();
 		if (CameraPositionsWS.Num() == 0) return;
@@ -66,7 +66,7 @@ namespace VoxelRuntime
 				for (int32 dy = IterMin; dy <= IterMax; ++dy)
 					for (int32 dx = IterMin; dx <= IterMax; ++dx)
 					{
-						const int32 dCheb = FMath::Max(FMath::Abs(dx), FMath::Abs(dy));
+						const int32 dCheb = FMath::Max(FMath::Abs(dx), FMath::Abs(dy)); // should be Dist2D(center, camera)
 						if (dCheb < InnerR || dCheb > OuterR)
 							continue;
 
