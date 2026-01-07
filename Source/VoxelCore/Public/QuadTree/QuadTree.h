@@ -4,25 +4,28 @@
 #include "QuadTreeSettings.h"
 #include "QuadTreeNode.h"
 
-class VOXELCORE_API UQuadTree 
+namespace Voxel
 {
-public:
-	UQuadTree();
-	UQuadTree(FVector position, FVector size, FQuadTreeSettings settings);
-	QuadTreeNode RootNode;
+	class VOXELCORE_API QuadTree 
+	{
+	public:
+		QuadTree();
+		QuadTree(FVector position, FVector size, FQuadTreeSettings settings);
+		QuadTreeNode RootNode;
 
-	TArray<QuadTreeNode> Leaves;
+		TArray<QuadTreeNode> Leaves;
 
-	FVector Position;
-	FVector Center;
-	FVector Size;
+		FVector Position;
+		FVector Center;
+		FVector Size;
 
-	FQuadTreeSettings Settings;
+		FQuadTreeSettings Settings;
 
-	void Init(FVector position, FVector size, FQuadTreeSettings settings);
-	void GenerateTree(FVector viewerPosition);
-	int GetDepth();
-	void UpdateSettings(FQuadTreeSettings settings);
+		void Init(FVector position, FVector size, FQuadTreeSettings settings);
+		void GenerateTree(FVector viewerPosition);
+		int GetDepth();
+		void UpdateSettings(FQuadTreeSettings settings);
 
-	static int CountVerts(TArray<QuadTreeNode> nodes);
-};
+		static int CountVerts(TArray<QuadTreeNode> nodes);
+	};
+}

@@ -20,4 +20,13 @@ struct VOXELCORE_API FQuadTreeSettings
 		MaxDepth = 8;
 		DistanceModifier = 8;
 	}
+
+	FQuadTreeSettings(int32 minSize, int32 maxDepth, int32 distanceModifier)
+	{
+		MinSize = minSize;
+		MaxDepth = maxDepth;
+		DistanceModifier = distanceModifier;
+	}
+
+	bool operator==(const FQuadTreeSettings& OtherSettings) const = default;
 };
