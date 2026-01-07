@@ -1,0 +1,69 @@
+#include "/Engine/Private/Common.ush"
+#include "../Noise/VoxelNoiseParams.ush"
+
+// Parameters (must match C++ FParameters names)
+uint  VertsPerSide;
+float TileSizeWS;
+float VertexSpacingWS;
+float _Pad0;
+float3 TileOriginWS;
+
+
+// Resources
+StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
+RWBuffer<float4> OutVertices;
+RWBuffer<uint>   OutIndices;
+
+uint VertexIndex(uint x, uint y) { return y * VertsPerSide + x; }
+
+float SampleHeightWS(float3 WorldWS)
+{
+    FVoxelNoiseParams P = NoiseParamsBuf[0];
+    // TODO: call your real height/noise function here
+    return 0.0f;
+}
+
+[numthreads(8,8,1)]
+void SurfaceGrid_VertCS(uint3 DTid : SV_DispatchThreadID)
+{
+    uint x = DTid.x;
+    uint y = DTid.y;
+    if (x >= VertsPerSide || y >= VertsPerSide) return;
+
+    float2 localXY = (float2(x, y) / float(VertsPerSide - 1)) * TileSizeWS;
+    float3 posL = float3(localXY.x, localXY.y, 0);
+    float3 posWS = TileOriginWS + posL;
+
+    posL.z += SampleHeightWS(posWS);
+
+    uint v = VertexIndex(x, y);
+    OutVertices[v] = float4(posL, 0);
+}
+
+[numthreads(8,8,1)]
+void SurfaceGrid_IdxCS(uint3 DTid : SV_DispatchThreadID)
+{
+    uint x = DTid.x;
+    uint y = DTid.y;
+    if (x >= (VertsPerSide - 1) || y >= (VertsPerSide - 1)) return;
+
+    uint v00 = VertexIndex(x,     y);
+    uint v10 = VertexIndex(x + 1, y);
+    uint v01 = VertexIndex(x,     y + 1);
+    uint v11 = VertexIndex(x + 1, y + 1);
+
+    uint quadIndex = y * (VertsPerSide - 1) + x;
+    uint i0 = quadIndex * 6;
+
+    // CCW for +Z facing in Unreal (X=Forward, Y=Right)
+    // In grid space, this is a CW winding because mapping grid-x to world-X
+    // and grid-y to world-Y flips handedness.
+    OutIndices[i0 + 0] = v00;
+    OutIndices[i0 + 1] = v11;
+    OutIndices[i0 + 2] = v10;
+
+    OutIndices[i0 + 3] = v00;
+    OutIndices[i0 + 4] = v01;
+    OutIndices[i0 + 5] = v11;
+}
+

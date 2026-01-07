@@ -68,6 +68,75 @@ class FMCCopyCountsCS : public FGlobalShader
 };
 IMPLEMENT_GLOBAL_SHADER(FMCCopyCountsCS, "/Plugin/Voxel/MarchingCubes/MC_CopyCounts.usf", "Main", SF_Compute);
 
+//-- Surface Grid
+
+class FSurfaceGridVertCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FSurfaceGridVertCS);
+	SHADER_USE_PARAMETER_STRUCT(FSurfaceGridVertCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32,   VertsPerSide)
+		SHADER_PARAMETER(float,    TileSizeWS)
+		SHADER_PARAMETER(float,    VertexSpacingWS)
+		SHADER_PARAMETER(float,    _Pad0)
+
+		SHADER_PARAMETER(FVector3f, TileOriginWS)
+
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelNoiseParams>, NoiseParamsBuf)
+
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<FVector4f>, OutVertices)
+	END_SHADER_PARAMETER_STRUCT()
+};
+IMPLEMENT_GLOBAL_SHADER(FSurfaceGridVertCS, "/Plugin/Voxel/SurfaceGrid/SurfaceGrid.usf", "SurfaceGrid_VertCS", SF_Compute);
+
+class FSurfaceGridIdxCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FSurfaceGridIdxCS);
+	SHADER_USE_PARAMETER_STRUCT(FSurfaceGridIdxCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32, VertsPerSide)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutIndices)
+	END_SHADER_PARAMETER_STRUCT()
+};
+IMPLEMENT_GLOBAL_SHADER(FSurfaceGridIdxCS, "/Plugin/Voxel/SurfaceGrid/SurfaceGrid.usf", "SurfaceGrid_IdxCS", SF_Compute);
+
+class FSurfaceGridNormalsCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FSurfaceGridNormalsCS);
+	SHADER_USE_PARAMETER_STRUCT(FSurfaceGridNormalsCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32,    VertsPerSide)
+		SHADER_PARAMETER(float,     TileSizeWS)
+		SHADER_PARAMETER(float,     VertexSpacingWS)
+		SHADER_PARAMETER(float,     _Pad0)
+		SHADER_PARAMETER(FVector3f, TileOriginWS)
+		SHADER_PARAMETER(uint32,    NoiseIndex)
+
+		SHADER_PARAMETER_RDG_BUFFER_SRV(Buffer<FVector4f>, InPositions)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<FVector4f>, OutNormals)
+	END_SHADER_PARAMETER_STRUCT()
+};
+IMPLEMENT_GLOBAL_SHADER(FSurfaceGridNormalsCS, "/Plugin/Voxel/SurfaceGrid/SurfaceGrid_NormalsPerVertex.usf", "Main", SF_Compute);
+
+class FSurfaceGridCountsCS : public FGlobalShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FSurfaceGridCountsCS);
+	SHADER_USE_PARAMETER_STRUCT(FSurfaceGridCountsCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32, NumVerts)
+		SHADER_PARAMETER(uint32, NumIndices)
+		SHADER_PARAMETER(uint32, _Pad0)
+		SHADER_PARAMETER(uint32, _Pad1)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutVertexCount)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutIndexCount)
+	END_SHADER_PARAMETER_STRUCT()
+};
+IMPLEMENT_GLOBAL_SHADER(FSurfaceGridCountsCS, "/Plugin/Voxel/SurfaceGrid/SurfaceGrid_Counts.usf", "Main", SF_Compute);
 
 // --------------------
 // END GLOBAL SHADER IMPLEMENTATIONS
@@ -80,7 +149,7 @@ static void AllocateChunkBuffers(
 	const FVoxelChunkBuildRequest& Req,
 	FVoxelChunkGPUResources& Res)
 {
-	// Always allocate counts
+	// Always allocate counts (contract)
 	Res.VertexCountRDG = GraphBuilder.CreateBuffer(
 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 1),
 		TEXT("Voxel.VertexCount"));
@@ -88,25 +157,57 @@ static void AllocateChunkBuffers(
 	Res.IndexCountRDG = GraphBuilder.CreateBuffer(
 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 1),
 		TEXT("Voxel.IndexCount"));
-	
-	// Do NOT allocate MC output buffers here if MC pass creates its own (recommended).
-	// For DebugGrid, allocate explicit buffers:
+
+	Res.VertexBufferRDG        = nullptr;
+	Res.IndexBufferRDG         = nullptr;
+	Res.NormalsBufferRDG       = nullptr;
+	Res.TangentBasisBufferRDG  = nullptr;
+
 	if (Req.Mode == EVoxelMeshMode::DebugGrid)
 	{
 		const uint32 N = (uint32)Req.Payload.CellsPerAxis;
 		const uint32 MaxVerts   = (N + 1) * (N + 1);
 		const uint32 MaxIndices = (N * N) * 6;
-		
-		FRDGBufferDesc VBDesc = FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector4f), MaxVerts);
+
+		FRDGBufferDesc VBDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(FVector4f), MaxVerts);
 		VBDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
-		Res.VertexBufferRDG = GraphBuilder.CreateBuffer(VBDesc, TEXT("Voxel.MC.Vertices"));
+		Res.VertexBufferRDG = GraphBuilder.CreateBuffer(VBDesc, TEXT("Voxel.DebugGrid.Vertices"));
 
-		Res.IndexBufferRDG = GraphBuilder.CreateBuffer(
-			FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), MaxIndices),
-			TEXT("Voxel.DebugGrid.Indices"));
+		FRDGBufferDesc IBDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), MaxIndices);
+		IBDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_IndexBuffer;
+		Res.IndexBufferRDG = GraphBuilder.CreateBuffer(IBDesc, TEXT("Voxel.DebugGrid.Indices"));
+		return;
+	}
 
-		// optional for debug mode; can be null if builder generates normals
-		Res.NormalsBufferRDG = nullptr;
+	if (Req.Mode == EVoxelMeshMode::SurfaceGrid)
+	{
+		const uint32 VertsPerSide = (uint32)FMath::Max(2, Req.Payload.Surface.VertsPerSide);
+		const uint32 NumVerts     = VertsPerSide * VertsPerSide;
+		const uint32 QuadsPerSide = VertsPerSide - 1;
+		const uint32 NumIndices   = QuadsPerSide * QuadsPerSide * 6;
+
+		// Positions: float4 (matches your VF expectation)
+		{
+			FRDGBufferDesc VBDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(FVector4f), NumVerts);
+			VBDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
+			Res.VertexBufferRDG = GraphBuilder.CreateBuffer(VBDesc, TEXT("Voxel.SurfaceGrid.Vertices"));
+		}
+
+		// Indices: uint32
+		{
+			FRDGBufferDesc IBDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), NumIndices);
+			IBDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_IndexBuffer;
+			Res.IndexBufferRDG = GraphBuilder.CreateBuffer(IBDesc, TEXT("Voxel.SurfaceGrid.Indices"));
+		}
+
+		// Normals: float4 (xyz = normal)
+		{
+			FRDGBufferDesc NDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(FVector4f), NumVerts);
+			NDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource;
+			Res.NormalsBufferRDG = GraphBuilder.CreateBuffer(NDesc, TEXT("Voxel.SurfaceGrid.Normals"));
+		}
+
+		// TangentBasisBufferRDG will be allocated by FMC_TangentPass::AddMC_TangentPass later
 		Res.TangentBasisBufferRDG = nullptr;
 	}
 }
@@ -218,6 +319,115 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 				FIntVector(1,1,1));
 		}
 	}
+	
+	if (Req.Mode == EVoxelMeshMode::SurfaceGrid)
+	{
+		check(InOutResources->VertexBufferRDG);
+		check(InOutResources->IndexBufferRDG);
+		check(InOutResources->NormalsBufferRDG);
+
+		const uint32 VertsPerSide = (uint32)FMath::Max(2, Req.Payload.Surface.VertsPerSide);
+		const uint32 NumVerts     = VertsPerSide * VertsPerSide;
+		const uint32 QuadsPerSide = VertsPerSide - 1;
+		const uint32 NumIndices   = QuadsPerSide * QuadsPerSide * 6;
+
+		// 1) Write contract counts directly (deterministic)
+		{
+			auto* P = GraphBuilder.AllocParameters<FSurfaceGridCountsCS::FParameters>();
+			P->NumVerts      = NumVerts;
+			P->NumIndices    = NumIndices;
+			P->_Pad0         = 0;
+			P->_Pad1         = 0;
+			P->OutVertexCount= GraphBuilder.CreateUAV(InOutResources->VertexCountRDG);
+			P->OutIndexCount = GraphBuilder.CreateUAV(InOutResources->IndexCountRDG);
+
+			TShaderMapRef<FSurfaceGridCountsCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+			FComputeShaderUtils::AddPass(
+				GraphBuilder,
+				RDG_EVENT_NAME("Voxel.SurfaceGrid.WriteCounts"),
+				CS,
+				P,
+				FIntVector(1,1,1));
+		}
+
+		// 2) Vert/Idx/Normals passes
+		// (Assuming you already have a way to build NoiseParams SRV — same as MC)
+		FRDGBufferSRVRef NoiseSRV = /* CreateNoiseParamsSRV(GraphBuilder, Req.Payload.NoiseParameters) */ nullptr;
+
+		const float VertexSpacingWS = Req.Payload.StepSizeWS;
+		const float TileSizeWS      = Req.Payload.ChunkSizeWS;
+		const FVector3f OriginWS    = FVector3f(Req.Payload.ChunkOriginWS);
+
+		// Vert pass
+		{
+			auto* P = GraphBuilder.AllocParameters<FSurfaceGridVertCS::FParameters>();
+			P->VertsPerSide    = VertsPerSide;
+			P->TileSizeWS      = TileSizeWS;
+			P->VertexSpacingWS = VertexSpacingWS;
+			P->TileOriginWS    = OriginWS;
+			P->NoiseParamsBuf  = NoiseSRV;
+			P->OutVertices     = GraphBuilder.CreateUAV(InOutResources->VertexBufferRDG, PF_A32B32G32R32F);
+
+			TShaderMapRef<FSurfaceGridVertCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+			FComputeShaderUtils::AddPass(
+				GraphBuilder,
+				RDG_EVENT_NAME("Voxel.SurfaceGrid.Vert"),
+				CS,
+				P,
+				FIntVector(
+					FMath::DivideAndRoundUp((int32)VertsPerSide, 8),
+					FMath::DivideAndRoundUp((int32)VertsPerSide, 8),
+					1));
+		}
+
+		// Index pass
+		{
+			auto* P = GraphBuilder.AllocParameters<FSurfaceGridIdxCS::FParameters>();
+			P->VertsPerSide = VertsPerSide;
+			P->OutIndices   = GraphBuilder.CreateUAV(InOutResources->IndexBufferRDG, PF_R32_UINT);
+
+			TShaderMapRef<FSurfaceGridIdxCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+			FComputeShaderUtils::AddPass(
+				GraphBuilder,
+				RDG_EVENT_NAME("Voxel.SurfaceGrid.Indices"),
+				CS,
+				P,
+				FIntVector(
+					FMath::DivideAndRoundUp((int32)(VertsPerSide - 1), 8),
+					FMath::DivideAndRoundUp((int32)(VertsPerSide - 1), 8),
+					1));
+		}
+
+		// Normals per vertex (finite differences)
+		{
+			auto* P = GraphBuilder.AllocParameters<FSurfaceGridNormalsCS::FParameters>();
+			P->VertsPerSide    = VertsPerSide;
+			P->TileSizeWS      = TileSizeWS;
+			P->VertexSpacingWS = VertexSpacingWS;
+			P->TileOriginWS    = OriginWS;
+			P->NoiseIndex      = 0;
+
+			P->InPositions = GraphBuilder.CreateSRV(InOutResources->VertexBufferRDG, PF_A32B32G32R32F);
+			P->OutNormals  = GraphBuilder.CreateUAV(InOutResources->NormalsBufferRDG, PF_A32B32G32R32F);
+
+			TShaderMapRef<FSurfaceGridNormalsCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+			FComputeShaderUtils::AddPass(
+				GraphBuilder,
+				RDG_EVENT_NAME("Voxel.SurfaceGrid.Normals"),
+				CS,
+				P,
+				FIntVector(
+					FMath::DivideAndRoundUp((int32)VertsPerSide, 8),
+					FMath::DivideAndRoundUp((int32)VertsPerSide, 8),
+					1));
+		}
+
+		// 3) Pack tangent basis using your existing packed tangent pass (expects normals float4)
+		FRDGBufferRef PackedTangents = FMC_TangentPass::AddMC_TangentPass(GraphBuilder, InOutResources->NormalsBufferRDG, NumVerts);
+
+		InOutResources->TangentBasisBufferRDG = PackedTangents;
+	}
+
 
 	// ---- Extract only buffers that are NON-NULL ----
 	if (InOutResources->VertexBufferRDG)  GraphBuilder.QueueBufferExtraction(InOutResources->VertexBufferRDG,  &InOutResources->VertexPooled);

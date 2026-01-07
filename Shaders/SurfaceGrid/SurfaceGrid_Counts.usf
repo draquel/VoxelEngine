@@ -1,0 +1,16 @@
+﻿#include "/Engine/Private/Common.ush"
+
+RWStructuredBuffer<uint> OutVertexCount;
+RWStructuredBuffer<uint> OutIndexCount;
+
+uint NumVerts;
+uint NumIndices;
+uint _Pad0;
+uint _Pad1;
+
+[numthreads(1, 1, 1)]
+void Main()
+{
+	OutVertexCount[0] = NumVerts;
+	OutIndexCount[0]  = NumIndices;
+}
