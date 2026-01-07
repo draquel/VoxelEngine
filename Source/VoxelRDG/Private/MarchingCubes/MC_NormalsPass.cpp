@@ -5,8 +5,6 @@
 #include "MarchingCubes/MarchingCubesDispatch.h"
 #include "GlobalShader.h"
 
-
-
 class FMCNormalsCS : public FGlobalShader
 {
 public:
