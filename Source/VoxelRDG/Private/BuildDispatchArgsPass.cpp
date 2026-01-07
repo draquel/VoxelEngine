@@ -11,7 +11,7 @@ public:
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER(uint32, ThreadsPerGroup)
-		SHADER_PARAMETER_RDG_BUFFER_SRV(RWBuffer<uint>, InTotalTris)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(Buffer<uint>, InTotalTris)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutDispatchArgs)
 	END_SHADER_PARAMETER_STRUCT()
 };

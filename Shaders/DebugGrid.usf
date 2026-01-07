@@ -1,8 +1,8 @@
 ﻿#include "/Engine/Public/Platform.ush"
 #include "DebugDensity.ush"
 
-RWStructuredBuffer<float4> OutVertices;
-RWStructuredBuffer<uint>   OutIndices;
+RWBuffer<float4> OutVertices;
+RWBuffer<uint>   OutIndices;
 RWStructuredBuffer<uint>   VertexCount;
 RWStructuredBuffer<uint>   IndexCount;
 

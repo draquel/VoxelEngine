@@ -44,8 +44,8 @@ class FDebugGridCS : public FGlobalShader
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_STRUCT_REF(FDebugGridUniforms, Uniforms)
-		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<float4>, OutVertices)
-		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>,   OutIndices)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<FVector4f>, OutVertices)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>,   OutIndices)
 		// SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<float3>, OutNormals)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>,   VertexCount)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>,   IndexCount)
