@@ -5,10 +5,13 @@
 #include "VoxelSpatialPolicy_ClipMap2p5D.h"
 #include "VoxelChunkSubsystem.h"
 #include "ProceduralMeshComponent.h"
+#include "QuadTreeLeafSource_FromUQuadTree.h"
 #include "VFChunkRenderConsumer.h"
 #include "VoxelDensityDebugComponent.h"
 #include "VoxelEditLayer.h"
 #include "VoxelMCDebugComponent.h"
+#include "IQuadTreeLeafSource.h"
+#include "VoxelSpatialPolicy_QuadTree2p5D.h"
 #include "Engine/World.h"
 
 AVoxelWorldActor::AVoxelWorldActor()
@@ -94,7 +97,17 @@ void AVoxelWorldActor::BeginPlay()
 	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService = MakeShared<VoxelRender::FVoxelRDGChunkBuildService>();
 	ChunkSubsystem->SetBuildService(BuildService);
 	
-	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_ClipMap2p5D>();
+	// TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_ClipMap2p5D>();
+	
+	TSharedPtr<Voxel::IQuadTreeLeafSource> LeafSource =
+	MakeShared<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree>(
+		/*dummy*/ FVector::ZeroVector,
+		/*dummy*/ FVector(1,1,0),
+		FQuadTreeSettings());
+
+	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy =
+		MakeShared<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D>(LeafSource);
+	
 	ChunkSubsystem->SetSpatialPolicy(SpatialPolicy);
 	
 	//PMC DEBUG CONSUMER
