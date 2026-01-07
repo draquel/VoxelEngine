@@ -27,13 +27,13 @@ void UVoxelChunkSubsystem::InitializeVoxel(const FVoxelWorldSettings& InSettings
 	Settings = InSettings;
 	EditLayer = InEditLayer;
 
-	LODParams.CellsPerAxis = Settings.CellsPerAxis;
-	LODParams.BaseCellSizeWS = Settings.BaseStepSize;  // your “cell size” == step
-	LODParams.MaxLOD = 2;                              // start conservative
-	LODParams.R0Chunks = 4;                            // tune
-	LODParams.ZMinWS = -1500.f;
-	LODParams.ZMaxWS = +1500.f;
-	LODParams.MaxDesiredChunks = 512;               
+	// LODParams.CellsPerAxis = Settings.CellsPerAxis;
+	// LODParams.BaseCellSizeWS = Settings.BaseStepSize;  // your “cell size” == step
+	// LODParams.MaxLOD = 2;                              // start conservative
+	// LODParams.R0Chunks = 4;                            // tune
+	// LODParams.ZMinWS = -1500.f;
+	// LODParams.ZMaxWS = +1500.f;
+	// LODParams.MaxDesiredChunks = 512;               
 }
 
 
@@ -127,7 +127,7 @@ void UVoxelChunkSubsystem::BuildDemands_Clipmap2p5D(
 	TArray<FVector> Cameras;
 	Cameras.Add(CameraWS);
 
-	SpatialPolicy->ComputeDemands(Settings,LODParams, Cameras, OutDemands);
+	SpatialPolicy->ComputeDemands(Settings,Settings.LODParams, Cameras, OutDemands);
 
 	// Build Desired set for eviction & bWasDesiredLastTick
 	OutDesired.Reserve(OutDemands.Num());
@@ -200,7 +200,7 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 
 	if (SpatialPolicy.IsValid())
 	{
-		SpatialPolicy->ComputeDemands(Settings, LODParams, Cameras, Demands);
+		SpatialPolicy->ComputeDemands(Settings, Settings.LODParams, Cameras, Demands);
 
 			int32 LODCounts[8] = {0};
 			for (const FVoxelChunkDemand& D : Demands)
@@ -587,7 +587,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		FVoxelChunkBuildPayload Inputs;
 		if (SpatialPolicy.IsValid())
 		{
-			SpatialPolicy->FillBuildPayload(Settings, LODParams, Rec->Key, Inputs);
+			SpatialPolicy->FillBuildPayload(Settings, Settings.LODParams, Rec->Key, Inputs);
 		}
 		else
 		{
@@ -960,7 +960,6 @@ void UVoxelChunkSubsystem::EmitTelemetry(float DeltaSeconds, int32 DesiredCount,
 		UE_LOG(LogTemp, VeryVerbose, TEXT("[VoxelStream] SpatialPolicy=%s Demands=%d"),
 			SpatialPolicy.IsValid() ? TEXT("YES") : TEXT("NO"),
 			DemandCount);
-
 		
 		Telemetry_Requested = Telemetry_Dispatched = Telemetry_BecameReady = Telemetry_BecameResident = Telemetry_Evicted = Telemetry_Canceled = 0;
 	}

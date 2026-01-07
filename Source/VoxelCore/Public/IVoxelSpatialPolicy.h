@@ -1,6 +1,6 @@
 ﻿#pragma once
 #include "VoxelChunkBuildPayload.h"
-#include "VoxelLODPolicyTypes.h"
+#include "VoxelSpacialPolicyTypes.h"
 #include "VoxelWorldSettings.h"
 
 struct FVoxelWorldSettings;
@@ -14,7 +14,7 @@ namespace Voxel
 
 		virtual void ComputeDemands(
 			const FVoxelWorldSettings& World,
-			const FVoxelLODPolicyParams& Params,
+			const FVoxelSpatialPolicyParams& Params,
 			const TArray<FVector>& CamerasWS,
 			TArray<FVoxelChunkDemand>& OutDemands) const = 0;
 
@@ -33,7 +33,7 @@ namespace Voxel
 
 		virtual void FillBuildPayload(
 			const FVoxelWorldSettings& World,
-			const FVoxelLODPolicyParams& Params,
+			const FVoxelSpatialPolicyParams& Params,
 			const FVoxelChunkKey& Key,
 			FVoxelChunkBuildPayload& OutPayload) const
 		{

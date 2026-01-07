@@ -7,7 +7,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "VoxelChunkKey.h"
 #include "VoxelChunkRecord.h"
-#include "VoxelLODPolicyTypes.h"
+#include "VoxelSpacialPolicyTypes.h"
 #include "VoxelWorldSettings.h"
 #include "VoxelChunkSubsystem.generated.h"
 
@@ -57,7 +57,6 @@ private:
 	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService;
 	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy;
 
-	FVoxelLODPolicyParams LODParams;
 	void BuildDemands_Clipmap2p5D(const FVector& CameraWS, TArray<FVoxelChunkDemand>& OutDemands, TSet<FVoxelChunkKey>& OutDesired) const;
 	void ApplyDemands(const TArray<FVoxelChunkDemand>& Demands, const FVector& CameraWS);
 	

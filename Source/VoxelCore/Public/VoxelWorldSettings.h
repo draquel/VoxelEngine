@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "CoreMinimal.h"
+#include "VoxelSpacialPolicyTypes.h"
 #include "VoxelWorldSettings.generated.h"
 
 USTRUCT(BlueprintType)
@@ -29,6 +30,9 @@ struct FVoxelWorldSettings
 	// Authoritative seed for the whole world.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") int32 Seed = 1337;
 
+	//SpacialPolicy Settings
+	FVoxelSpatialPolicyParams LODParams;
+	
 	// 2.5D QuadTree
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") FVoxelSurface2p5DSettings SurfaceSettings;
 	

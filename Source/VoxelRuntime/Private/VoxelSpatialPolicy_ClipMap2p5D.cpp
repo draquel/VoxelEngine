@@ -11,7 +11,7 @@ namespace VoxelRuntime
 
 	void FVoxelSpatialPolicy_ClipMap2p5D::ComputeDemands(
 		const FVoxelWorldSettings& World, 
-		const FVoxelLODPolicyParams& Params,
+		const FVoxelSpatialPolicyParams& Params,
 		const TArray<FVector>& CameraPositionsWS,
 		TArray<FVoxelChunkDemand>& OutDemands) const
 	{

@@ -3,7 +3,8 @@
 #include "CoreMinimal.h"
 #include "VoxelChunkKey.h"
 #include "QuadTree/QuadTreeNode.h"
-#include "VoxelLODPolicyTypes.generated.h"
+#include "QuadTree/QuadTreeSettings.h"
+#include "VoxelSpacialPolicyTypes.generated.h"
 
 UENUM()
 enum class EVoxelChunkWantedState : uint8
@@ -14,7 +15,7 @@ enum class EVoxelChunkWantedState : uint8
 };
 
 USTRUCT()
-struct VOXELRUNTIME_API FVoxelChunkDemand
+struct VOXELCORE_API FVoxelChunkDemand
 {
 	GENERATED_BODY()
 
@@ -27,7 +28,7 @@ struct VOXELRUNTIME_API FVoxelChunkDemand
 };
 
 USTRUCT()
-struct VOXELRUNTIME_API FVoxelLODPolicyParams
+struct VOXELCORE_API FVoxelSpatialPolicyParams
 {
 	GENERATED_BODY()
 
@@ -44,6 +45,19 @@ struct VOXELRUNTIME_API FVoxelLODPolicyParams
 
 	// Hard safety cap (prevents VRAM death spirals)
 	UPROPERTY(EditAnywhere) int32 MaxDesiredChunks = 256; // start safe
+	
+	// --- Quadtree 2.5D ---
+	// Base tile size for LOD0 (finest). Coarser LODs are *2^LOD.
+	// UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") float SurfaceBaseTileSizeWS = 1600.f;
+
+	// How far out (in tiles at LOD0) we generate a coarse “keep-alive” envelope.
+	// NOTE: This is not a budget. It defines the fixed desired set.
+	UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") int32 SurfaceExtentTiles0 = 16;
+
+	// Quadtree depth (leaf depth). You said your old quadtree uses Depth increasing as it subdivides (finer).
+	UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") int32 QuadTreeMaxDepth = 8;
+	
+	UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") int32 SplitRadiusMultiplierPerLevel = 4;
 };
 
 // Adapter: Quadtree leaf set -> streaming demands (Engine convention: LOD 0 = finest)
@@ -112,13 +126,13 @@ inline void BuildDemands_FromQuadTreeLeaves_Surface2p5D(
 
 	for (const FQuadTreeLeaf& Leaf : Leaves)
 	{
-		const int32 QuadDepth = FMath::Max(0, int32(Leaf.Center.W)); // Depth 0 coarsest
+		const int32 QuadDepth = FMath::Max(0, int32(Leaf.Depth)); // Depth 0 coarsest
 		const int32 EngineLOD = FMath::Clamp(QuadSettings.MaxDepth - QuadDepth, 0, QuadSettings.MaxDepth); // LOD 0 finest
 
 		const float TileSizeWSL = TileSizeWSAtLOD(BaseTileSizeWS_LOD0, EngineLOD);
 
-		const FVector LeafCenterWS(float(Leaf.Center.X), float(Leaf.Center.Y), float(Leaf.Center.Z));
-		const FVector LeafSizeWS(float(Leaf.Size.X), float(Leaf.Size.Y), float(Leaf.Size.Z));
+		const FVector LeafCenterWS = Leaf.Center;
+		const FVector LeafSizeWS = Leaf.Size;
 
 		// Convert leaf -> snapped chunk key using MIN CORNER quantization
 		const FVector MinCornerWS = LeafCenterWS - (LeafSizeWS * 0.5f);
