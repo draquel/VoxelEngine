@@ -7,7 +7,7 @@
 
 namespace Voxel { struct FVoxelChunkMeshPayload; } // forward
 
-struct VOXELRUNTIME_API FVoxelChunkBuildHandle
+struct VOXELCORE_API FVoxelChunkBuildHandle
 {
 	uint64 BuildId = 0;              // monotonically increasing
 	double SubmitTimeSec = 0.0;      // debug/telemetry
@@ -15,7 +15,7 @@ struct VOXELRUNTIME_API FVoxelChunkBuildHandle
 };
 
 USTRUCT(BlueprintType)
-struct VOXELRUNTIME_API FVoxelChunkRecord
+struct VOXELCORE_API FVoxelChunkRecord
 {
 	GENERATED_BODY()
 	
