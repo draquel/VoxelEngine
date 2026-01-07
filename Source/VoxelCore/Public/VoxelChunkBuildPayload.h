@@ -41,6 +41,7 @@ struct FVoxelChunkBuildPayload
 
 	// Derived
 	FVector ChunkOriginWS = FVector::ZeroVector;
+	float ChunkSizeWS = 0.f;
 	float StepSizeWS = 50.f;
 	int32 CellsPerAxis = 32;
 
