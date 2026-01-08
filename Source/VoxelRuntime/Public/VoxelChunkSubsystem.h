@@ -11,6 +11,12 @@
 #include "VoxelWorldSettings.h"
 #include "VoxelChunkSubsystem.generated.h"
 
+namespace VoxelRuntime
+{
+	class FQuadTreeLeafSource_FromQuadTree;
+	
+}
+
 class UVoxelDensityDebugComponent;
 class UProceduralMeshComponent;
 class UVoxelEditLayer;
@@ -56,6 +62,7 @@ private:
 	TSharedPtr<Voxel::IVoxelChunkRenderConsumer> RenderConsumer;
 	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService;
 	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy;
+	bool bDrawDomainDebug = true;
 
 	void BuildDemands_Clipmap2p5D(const FVector& CameraWS, TArray<FVoxelChunkDemand>& OutDemands, TSet<FVoxelChunkKey>& OutDesired) const;
 	void ApplyDemands(const TArray<FVoxelChunkDemand>& Demands, const FVector& CameraWS);
