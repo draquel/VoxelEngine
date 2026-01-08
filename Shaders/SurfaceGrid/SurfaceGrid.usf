@@ -1,5 +1,6 @@
 #include "/Engine/Private/Common.ush"
-#include "../Noise/VoxelNoiseParams.ush"
+// #include "../Noise/VoxelNoiseParams.ush"
+#include "../Noise/VoxelDensity.ush"
 
 // Parameters (must match C++ FParameters names)
 uint  VertsPerSide;
@@ -19,8 +20,7 @@ uint VertexIndex(uint x, uint y) { return y * VertsPerSide + x; }
 float SampleHeightWS(float3 WorldWS)
 {
     FVoxelNoiseParams P = NoiseParamsBuf[0];
-    // TODO: call your real height/noise function here
-    return 0.0f;
+    return SampleDensity_Terrain_Noise(WorldWS, P, P.Seed);
 }
 
 [numthreads(8,8,1)]

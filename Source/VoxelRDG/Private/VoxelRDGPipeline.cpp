@@ -352,7 +352,17 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 
 		// 2) Vert/Idx/Normals passes
 		// (Assuming you already have a way to build NoiseParams SRV — same as MC)
-		FRDGBufferSRVRef NoiseSRV = /* CreateNoiseParamsSRV(GraphBuilder, Req.Payload.NoiseParameters) */ nullptr;
+		// FRDGBufferSRVRef NoiseSRV = /* CreateNoiseParamsSRV(GraphBuilder, Req.Payload.NoiseParameters) */ nullptr;
+		const FVoxelNoiseParams NoiseParamsGPU = MakeVoxelNoiseParams(Req.Payload.NoiseParameters);
+		FRDGBufferRef NoiseParamsBuffer =
+			CreateStructuredBuffer(
+				GraphBuilder,
+				TEXT("Voxel.NoiseParams"),
+				sizeof(FVoxelNoiseParams),
+				1,
+				&NoiseParamsGPU,
+				sizeof(FVoxelNoiseParams));
+		FRDGBufferSRVRef NoiseSRV = GraphBuilder.CreateSRV(NoiseParamsBuffer);
 
 		const float VertexSpacingWS = Req.Payload.StepSizeWS;
 		const float TileSizeWS      = Req.Payload.ChunkSizeWS;
