@@ -13,7 +13,7 @@ namespace Voxel
 		Size = size;
 
 		Settings = settings;
-		Center = Position + (size / 2);
+		Center = Position + (Size / 2);
 	}
 
 	void QuadTree::Init(FVector position, FVector size, FQuadTreeSettings settings)
@@ -21,7 +21,7 @@ namespace Voxel
 		Position = position;
 		Size = size;
 		Settings = settings;
-		Center = Position + (Size / 2.0);
+		Center = Position + (Size / 2);
 	}
 
 	void QuadTree::GenerateTree(FVector viewerPosition)

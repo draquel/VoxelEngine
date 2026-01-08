@@ -48,10 +48,7 @@ namespace Voxel
 
 	bool QuadTreeNode::NodeCheck()
 	{
-		if(Size.X / 2.0f >= Settings->MinSize && Depth < Settings->MaxDepth){
-			return true;
-		}
-		return false;
+		return (Size.X >= Settings->MinSize) && (Depth < Settings->MaxDepth);
 	}
 
 	void QuadTreeNode::Split()
