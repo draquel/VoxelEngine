@@ -74,7 +74,7 @@ private:
 	TMap<FVoxelChunkKey, FVoxelChunkRecord> Chunks;
 	
 	// Budgets (tune later)
-	int32 MaxGeneratePerTick = 2;
+	int32 MaxGeneratePerTick = 4;
 	int32 MaxAttachPerTick   = 4;
 	int32 MaxEvictPerTick    = 4;
 
@@ -112,5 +112,5 @@ private:
 	bool bTelemetryOnScreen = true;
 
 	// Budgets (you already have these)
-	int32 MaxInFlightBuilds = 4;
+	int32 MaxInFlightBuilds = 6;
 };

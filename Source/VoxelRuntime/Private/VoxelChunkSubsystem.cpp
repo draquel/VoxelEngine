@@ -12,69 +12,6 @@
 #include "VoxelCore/Public/VoxelChunkRenderPayload.h"
 #include "VoxelCore/Public/IVoxelChunkBuildService.h"
 
-
-static void DrawQuadtreeDomainDebug(
-		UWorld* World,
-		const FVector& CamWS,
-		const FVector& DomainMinWS,
-		float DomainSizeWS,
-		float MarginWS,
-		float BaseTileWS,
-		float LifeTime = 0.f,
-		uint8 DepthPriority = 0)
-{
-	if (!World || DomainSizeWS <= 0.f)
-		return;
-
-	const FVector DomainMaxWS = DomainMinWS + FVector(DomainSizeWS, DomainSizeWS, 0.f);
-
-	// Domain box (2D domain drawn as a thin slab)
-	const FVector Center = (DomainMinWS + DomainMaxWS) * 0.5f + FVector(0,0,50.f);
-	const FVector Extent = FVector(DomainSizeWS * 0.5f, DomainSizeWS * 0.5f, 50.f);
-
-	DrawDebugBox(World, Center, Extent, FColor::Cyan, false, LifeTime, DepthPriority, 5.f);
-
-	// Safe region (inset by margin)
-	const FVector SafeMin = DomainMinWS + FVector(MarginWS, MarginWS, 0.f);
-	const FVector SafeMax = DomainMaxWS - FVector(MarginWS, MarginWS, 0.f);
-
-	const FVector SafeCenter = (SafeMin + SafeMax) * 0.5f + FVector(0,0,50.f);
-	const FVector SafeExtent = FVector((SafeMax.X - SafeMin.X) * 0.5f, (SafeMax.Y - SafeMin.Y) * 0.5f, 50.f);
-
-	DrawDebugBox(World, SafeCenter, SafeExtent, FColor::Yellow, false, LifeTime, DepthPriority, 2.f);
-
-	// Camera point
-	DrawDebugPoint(World, CamWS + FVector(0,0,80.f), 14.f, FColor::White, false, LifeTime, DepthPriority);
-
-	// Base-tile grid lines (draw only a limited count so it doesn’t spam)
-	if (BaseTileWS > 1.f)
-	{
-		const int32 MaxLines = 64; // keep it readable
-		const int32 LinesX = FMath::Min(MaxLines, FMath::CeilToInt(DomainSizeWS / BaseTileWS) + 1);
-		const int32 LinesY = LinesX;
-
-		for (int32 i = 0; i < LinesX; ++i)
-		{
-			const float X = DomainMinWS.X + float(i) * BaseTileWS;
-			DrawDebugLine(World,
-				FVector(X, DomainMinWS.Y, 60.f),
-				FVector(X, DomainMaxWS.Y, 60.f),
-				FColor(0, 180, 255),
-				false, LifeTime, DepthPriority, 0.5f);
-		}
-
-		for (int32 j = 0; j < LinesY; ++j)
-		{
-			const float Y = DomainMinWS.Y + float(j) * BaseTileWS;
-			DrawDebugLine(World,
-				FVector(DomainMinWS.X, Y, 60.f),
-				FVector(DomainMaxWS.X, Y, 60.f),
-				FColor(0, 180, 255),
-				false, LifeTime, DepthPriority, 0.5f);
-		}
-	}
-}
-
 void UVoxelChunkSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
