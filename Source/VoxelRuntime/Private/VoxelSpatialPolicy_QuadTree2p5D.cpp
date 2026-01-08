@@ -44,7 +44,7 @@ void FVoxelSpatialPolicy_QuadTree2p5D::ComputeDemands(
 	TSet<FVoxelChunkKey> Seen;
 	Seen.Reserve(Leaves.Num() * 2);
 
-	const int32 MaxLOD       = FMath::Max(0, Params.MaxLOD);
+	const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
 
 	// NOTE: For pure surface rendering, consider forcing Z to exactly one slice:
 	// const int32 MinZChunk = 0, MaxZChunk = 0; (or derived from World Z)
@@ -55,25 +55,30 @@ void FVoxelSpatialPolicy_QuadTree2p5D::ComputeDemands(
 	for (const FQuadTreeLeaf& Leaf : Leaves)
 	{
 		// Map leaf size to engine LOD: Size = BaseTile * 2^LOD
-		const double LeafSizeWS_X = (double)Leaf.Size.X;
-		const int32 LOD = FMath::Clamp(FMath::RoundToInt(FMath::Log2(LeafSizeWS_X / BaseTileSizeWS)), 0, MaxLOD);
+		// const int32 MaxDepth = FMath::Max(0, World.LODParams.QuadTreeMaxDepth);
 
+		// Depth: 0 coarsest -> MaxDepth finest.
+		// LOD:   0 finest   -> MaxLOD coarsest.
+		// const int32 LeafDepth = (int32)Leaf.Depth;
+		// const int32 LODFromDepth = FMath::Clamp(MaxDepth - LeafDepth, 0, MaxLOD);
+		// const int32 LOD = LODFromDepth;
+
+
+		// still compute an LOD label if you want:
+		const double LeafSizeWS_X = (double)Leaf.Size.X;
+		const int32 LOD = ComputeLODFromLeafSize_ClampToLeaf(LeafSizeWS_X, BaseTileSizeWS, MaxLOD);
 		const double TileSizeWS = TileSizeWSAtLOD(World, LOD);
 
-		const FVector LeafCenterWS = Leaf.Center;
-		const FVector LeafSizeWS_Vec = Leaf.Size;
-
-		// Leaf min-corner in WS
-		const FVector LeafMinWS = LeafCenterWS - 0.5 * LeafSizeWS_Vec;
-
-		// Convert leaf -> snapped chunk key using MIN CORNER quantization
-		const int32 X = FloorDivWS(LeafMinWS.X, TileSizeWS);
-		const int32 Y = FloorDivWS(LeafMinWS.Y, TileSizeWS);
 
 		FVoxelChunkKey Key;
 		Key.LOD = LOD;
-		Key.Coord = FIntVector(X, Y, 0); // 2.5D Surface layer always at Z=0 for a continuous plane
 
+		// IMPORTANT: quantize using LeafMin and TileSizeWS (== leaf size)
+		const FVector LeafCenterWS(Leaf.Center.X, Leaf.Center.Y, 0);
+		const FVector LeafMinWS = LeafCenterWS - 0.5 * FVector(Leaf.Size.X, Leaf.Size.Y, 0);
+
+		Key.Coord = WorldToTileCoord_MinCorner(LeafMinWS, TileSizeWS, 0);
+		
 		if (Seen.Contains(Key))
 			continue;
 		Seen.Add(Key);
@@ -110,6 +115,10 @@ void FVoxelSpatialPolicy_QuadTree2p5D::ComputeDemands(
 		if (A.Wanted != B.Wanted) return A.Wanted > B.Wanted;
 		return A.Priority > B.Priority;
 	});
+	
+	TSet<FIntPoint> UniqueXY;
+	for (auto& D : OutDemands) UniqueXY.Add(FIntPoint(D.Key.Coord.X, D.Key.Coord.Y));
+	UE_LOG(LogTemp, Warning, TEXT("Leaves=%d Demands=%d UniqueXY=%d"), Leaves.Num(), OutDemands.Num(), UniqueXY.Num());
 }
 
 	float FVoxelSpatialPolicy_QuadTree2p5D::ChunkSizeWS(const FVoxelWorldSettings& World, int32 LOD) const
@@ -127,6 +136,30 @@ void FVoxelSpatialPolicy_QuadTree2p5D::ComputeDemands(
 			(double)Key.Coord.Y * Size,
 			(double)Key.Coord.Z * Size
 		);
+	}
+
+	int32 FVoxelSpatialPolicy_QuadTree2p5D::ComputeLODFromLeafSize_ClampToLeaf(
+			double LeafSizeWS,
+			double BaseTileWS,
+			int32 MaxLOD)
+	{
+		BaseTileWS = FMath::Max(1.0, BaseTileWS);
+		LeafSizeWS = FMath::Max(BaseTileWS, LeafSizeWS);
+
+		const double Ratio = LeafSizeWS / BaseTileWS;
+
+		// initial estimate
+		int32 LOD = FMath::Clamp((int32)FMath::FloorToInt(FMath::Log2(Ratio + 1e-12)), 0, MaxLOD);
+
+		// IMPORTANT: ensure TileSizeWS <= LeafSizeWS (never larger than the leaf we’re representing)
+		while (LOD > 0)
+		{
+			const double TileSize = BaseTileWS * double(1 << LOD);
+			if (TileSize <= LeafSizeWS + 1e-3)
+				break;
+			--LOD;
+		}
+		return LOD;
 	}
 
 	void FVoxelSpatialPolicy_QuadTree2p5D::FillBuildPayload(

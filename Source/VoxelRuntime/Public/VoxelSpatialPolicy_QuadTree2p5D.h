@@ -25,6 +25,7 @@ namespace VoxelRuntime
 		// Invariants (surface tiles, not MC chunks)
 		virtual float   ChunkSizeWS  (const FVoxelWorldSettings& World, int32 LOD) const override;
 		virtual FVector ChunkOriginWS(const FVoxelWorldSettings& World, const FVoxelChunkKey& Key) const override;
+		static int32 ComputeLODFromLeafSize_ClampToLeaf(double LeafSizeWS, double BaseTileWS, int32 MaxLOD);
 
 		// Surface policy should build SurfaceGrid, not MarchingCubes
 		virtual EVoxelMeshMode MeshMode() const override { return EVoxelMeshMode::SurfaceGrid; } 
@@ -36,8 +37,9 @@ namespace VoxelRuntime
 			const FVoxelChunkKey& Key,
 			FVoxelChunkBuildPayload& OutPayload) const override;
 
-	private:
 		TSharedPtr<Voxel::IQuadTreeLeafSource> LeafSource;
+	private:
+		
 
 		static int32 FloorDivWS(double World, double TileSizeWS);
 		static FIntVector WorldToTileCoord_MinCorner(const FVector& MinCornerWS, double TileSizeWS, int32 ZChunk);
