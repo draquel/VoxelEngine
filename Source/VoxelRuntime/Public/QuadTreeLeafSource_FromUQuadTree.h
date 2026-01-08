@@ -4,6 +4,7 @@
 #include "IQuadTreeLeafSource.h"
 #include "VoxelWorldSettings.h"
 #include "VoxelSpacialPolicyTypes.h"
+#include "VoxelCore/Public/DrawDebugHelpers.h"
 #include "QuadTree/QuadTree.h"
 #include "QuadTree/QuadTreeSettings.h"
 

@@ -99,14 +99,13 @@ void AVoxelWorldActor::BeginPlay()
 	
 	// TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_ClipMap2p5D>();
 	
-	TSharedPtr<Voxel::IQuadTreeLeafSource> LeafSource =
+	TSharedPtr<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree> LeafSource =
 	MakeShared<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree>(
 		/*dummy*/ FVector::ZeroVector,
 		/*dummy*/ FVector(1,1,0),
 		FQuadTreeSettings());
 
-	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy =
-		MakeShared<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D>(LeafSource);
+	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D>(LeafSource);
 	
 	ChunkSubsystem->SetSpatialPolicy(SpatialPolicy);
 	
