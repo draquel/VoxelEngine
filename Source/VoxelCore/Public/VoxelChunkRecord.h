@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "VoxelChunkKey.h"
 #include "VoxelChunkState.h"
+#include "VoxelChunkBuildPayload.h"
 #include "VoxelChunkRecord.generated.h"
 
 namespace Voxel { struct FVoxelChunkMeshPayload; } // forward
@@ -46,4 +47,6 @@ struct VOXELCORE_API FVoxelChunkRecord
 	
 	// Existing debug pipeline handle
 	TSharedPtr<struct FVoxelChunkGPUResources> GPU;
+	
+	FVoxelChunkBuildPayload LastBuildPayload;
 };

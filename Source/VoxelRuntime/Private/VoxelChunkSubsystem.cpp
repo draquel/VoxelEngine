@@ -705,6 +705,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		const uint64 ThisBuildId = Rec->BuildId;
 		Rec->bCancelRequested = false;
 		Rec->LastEnqueuedRenderBuildId = 0;
+		Rec->LastBuildPayload = Inputs;
 
 		FVoxelChunkBuildRequest Req;
 		Req.Key     = Rec->Key;
@@ -802,6 +803,8 @@ void UVoxelChunkSubsystem::AttachReadyToRender()
             P.VertexSpace  = EVoxelVertexSpace::ChunkLocal;
             P.ChunkOriginWS= GetChunkOriginWS(R.Key);
             P.ChunkSize    = GetChunkSizeWS(R.Key);
+        	P.StepSizeWS    = R.LastBuildPayload.StepSizeWS;
+        	P.CellsPerAxis  = R.LastBuildPayload.CellsPerAxis;
 
             P.SkirtDepth   = Settings.BaseStepSize * 4.0f;
             P.SkirtEdgeMask= ComputeSkirtMaskSameLOD(R.Key);
