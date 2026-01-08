@@ -63,6 +63,7 @@ private:
 	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService;
 	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy;
 	bool bDrawDomainDebug = true;
+	bool bDrawDemandDebug = true;
 
 	void BuildDemands_Clipmap2p5D(const FVector& CameraWS, TArray<FVoxelChunkDemand>& OutDemands, TSet<FVoxelChunkKey>& OutDesired) const;
 	void ApplyDemands(const TArray<FVoxelChunkDemand>& Demands, const FVector& CameraWS);

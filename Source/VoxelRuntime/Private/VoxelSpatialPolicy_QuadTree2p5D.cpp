@@ -45,6 +45,25 @@ void FVoxelSpatialPolicy_QuadTree2p5D::ComputeDemands(
 	Seen.Reserve(Leaves.Num() * 2);
 
 	const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
+	int32 MisalignedLeaves = 0;
+	FVector SampleLeafMinWS = FVector::ZeroVector;
+	double SampleTileSizeWS = 0.0;
+	int32 SampleLOD = 0;
+
+	auto IsAlignedToTile = [](double Value, double TileSizeWS) -> bool
+	{
+		if (TileSizeWS <= 0.0)
+		{
+			return true;
+		}
+		double Mod = FMath::Fmod(Value, TileSizeWS);
+		if (Mod < 0.0)
+		{
+			Mod += TileSizeWS;
+		}
+		const double Epsilon = TileSizeWS * 1e-3;
+		return (Mod <= Epsilon) || (TileSizeWS - Mod <= Epsilon);
+	};
 
 	// NOTE: For pure surface rendering, consider forcing Z to exactly one slice:
 	// const int32 MinZChunk = 0, MaxZChunk = 0; (or derived from World Z)
@@ -76,6 +95,17 @@ void FVoxelSpatialPolicy_QuadTree2p5D::ComputeDemands(
 		// IMPORTANT: quantize using LeafMin and TileSizeWS (== leaf size)
 		const FVector LeafCenterWS(Leaf.Center.X, Leaf.Center.Y, 0);
 		const FVector LeafMinWS = LeafCenterWS - 0.5 * FVector(Leaf.Size.X, Leaf.Size.Y, 0);
+
+		if (!IsAlignedToTile(LeafMinWS.X, TileSizeWS) || !IsAlignedToTile(LeafMinWS.Y, TileSizeWS))
+		{
+			++MisalignedLeaves;
+			if (MisalignedLeaves == 1)
+			{
+				SampleLeafMinWS = LeafMinWS;
+				SampleTileSizeWS = TileSizeWS;
+				SampleLOD = LOD;
+			}
+		}
 
 		Key.Coord = WorldToTileCoord_MinCorner(LeafMinWS, TileSizeWS, 0);
 		
@@ -109,6 +139,19 @@ void FVoxelSpatialPolicy_QuadTree2p5D::ComputeDemands(
 		OutDemands.Add(D);
 	}
 	UE_LOG(LogTemp, Warning, TEXT("QuadTree leaves=%d demands=%d"), Leaves.Num(), OutDemands.Num());
+#if !(UE_BUILD_SHIPPING)
+	if (MisalignedLeaves > 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("QuadTree leaf min alignment mismatch: %d/%d leaves (sample MinWS=(%.2f, %.2f) Tile=%.2f LOD=%d)"),
+			MisalignedLeaves,
+			Leaves.Num(),
+			SampleLeafMinWS.X,
+			SampleLeafMinWS.Y,
+			SampleTileSizeWS,
+			SampleLOD);
+	}
+#endif
 
 	OutDemands.Sort([](const FVoxelChunkDemand& A, const FVoxelChunkDemand& B)
 	{

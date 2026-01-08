@@ -12,6 +12,27 @@
 #include "VoxelCore/Public/VoxelChunkRenderPayload.h"
 #include "VoxelCore/Public/IVoxelChunkBuildService.h"
 
+namespace
+{
+	FColor LODToColor(int32 LOD)
+	{
+		static const FColor Colors[] =
+		{
+			FColor::Cyan,
+			FColor::Green,
+			FColor::Yellow,
+			FColor::Orange,
+			FColor::Red,
+			FColor::Purple,
+			FColor(255, 105, 180),
+			FColor::White
+		};
+
+		const int32 Index = FMath::Clamp(LOD, 0, UE_ARRAY_COUNT(Colors) - 1);
+		return Colors[Index];
+	}
+}
+
 void UVoxelChunkSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -206,20 +227,37 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 			
 		
 #if !(UE_BUILD_SHIPPING)
-			if (bDrawDomainDebug && World)
+		if (World && (bDrawDomainDebug || bDrawDemandDebug))
+		{
+			if (VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D* QT =
+				static_cast<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D*>(SpatialPolicy.Get()))
 			{
-				if (VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D* QT =
-					static_cast<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D*>(SpatialPolicy.Get()))
+				if (QT->LeafSource.IsValid())
 				{
-					if (QT->LeafSource.IsValid())
+					if (VoxelRuntime::FQuadTreeLeafSource_FromQuadTree* LS =
+						static_cast<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree*>(QT->LeafSource.Get()))
 					{
-						if (VoxelRuntime::FQuadTreeLeafSource_FromQuadTree* LS = static_cast<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree*>(QT->LeafSource.Get()))
+						if (bDrawDomainDebug)
 						{
-							LS->DebugDrawDomain(World,0.f,false);
+							LS->DebugDrawDomain(World, 0.f, false);
 						}
 					}
 				}
 			}
+
+			if (bDrawDemandDebug)
+			{
+				for (const FVoxelChunkDemand& Demand : Demands)
+				{
+					const float SizeWS = GetChunkSizeWS(Demand.Key);
+					const FVector OriginWS = GetChunkOriginWS(Demand.Key);
+					const FVector CenterWS = OriginWS + FVector(SizeWS * 0.5f, SizeWS * 0.5f, 0.0f);
+					const FVector Extent(SizeWS * 0.5f, SizeWS * 0.5f, 25.0f);
+					const FColor Color = LODToColor(Demand.Key.LOD);
+					DrawDebugBox(World, CenterWS, Extent, Color, false, 0.f, 0, 3.f);
+				}
+			}
+		}
 #endif
 			
 		Desired.Reserve(Demands.Num());
@@ -1038,5 +1076,4 @@ void UVoxelChunkSubsystem::EmitTelemetry(float DeltaSeconds, int32 DesiredCount,
 	}
 	
 }
-
 
