@@ -41,6 +41,9 @@ struct VOXELCORE_API FVoxelChunkRecord
 	uint64 LastEnqueuedRenderBuildId = 0;
 	double LastSkirtRefreshRequestSec = 0.0;
 	
+	double LastBecameUnwantedSec = 0.0;
+	double LastBecameVisibleSec  = 0.0; // when it became Resident (optional but useful)
+	
 	// Existing debug pipeline handle
 	TSharedPtr<struct FVoxelChunkGPUResources> GPU;
 };

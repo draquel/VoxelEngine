@@ -800,37 +800,72 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 {
 	TArray<FVoxelChunkRecord*> EvictCandidates;
 	EvictCandidates.Reserve(Chunks.Num());
-	
+
 	const double Now = FPlatformTime::Seconds();
-	const double EvictDelaySec = 0.5;
+
+	// Base delays (tune)
+	const double BaseEvictDelaySec = 1.0;   // was 0.5
+	const double MinVisibleSec     = 0.75;  // prevents “pop out” right after attach
+
+	auto EvictDelayForLOD = [&](int32 LOD) -> double
+	{
+		// Coarser tiles should linger longer to avoid far-field collapse.
+		// Example curve: LOD0=1s, LOD1=1.5s, LOD2=2.25s, LOD3=3.4s...
+		return BaseEvictDelaySec * FMath::Pow(1.5, (double)FMath::Max(0, LOD));
+	};
 
 	for (auto& KVP : Chunks)
 	{
 		FVoxelChunkRecord& R = KVP.Value;
-		if (Desired.Contains(R.Key)) continue;
-		if (R.State == EVoxelChunkState::Generating)
+
+		const bool bDesired = Desired.Contains(R.Key);
+
+		if (bDesired)
 		{
-			R.bCancelRequested = true;
-			R.LastStateChangeSec = Now;
+			// If it was previously marked unwanted/evicting, restore it cleanly.
+			if (R.State == EVoxelChunkState::Evicting)
+			{
+				R.State = EVoxelChunkState::Requested; // or keep Resident/Ready as-is; depends on your state machine
+				R.bCancelRequested = false;
+			}
+			R.LastBecameUnwantedSec = 0.0;
 			continue;
 		}
 
-		// If not already evicting, mark it
+		// Not desired:
+		// 1) request cancel if generating
+		if (R.State == EVoxelChunkState::Generating)
+		{
+			R.bCancelRequested = true;
+			// Don’t start evict timer until it’s actually “unwanted” for a bit
+			if (R.LastBecameUnwantedSec <= 0.0)
+				R.LastBecameUnwantedSec = Now;
+			continue;
+		}
+
+		// 2) stamp when it first became unwanted
+		if (R.LastBecameUnwantedSec <= 0.0)
+			R.LastBecameUnwantedSec = Now;
+
+		// 3) don’t evict something that *just* became visible
+		if (R.LastBecameVisibleSec > 0.0 && (Now - R.LastBecameVisibleSec) < MinVisibleSec)
+			continue;
+
+		// 4) mark state evicting, but only remove after per-LOD delay
 		if (R.State != EVoxelChunkState::Evicting)
 		{
 			R.State = EVoxelChunkState::Evicting;
-			R.LastStateChangeSec = FPlatformTime::Seconds();
+			R.LastStateChangeSec = Now;
 		}
-		if (R.State == EVoxelChunkState::Evicting)
-		{
-			if ((Now - R.LastStateChangeSec) < EvictDelaySec)
-				continue;
-		}
-		
+
+		const double NeedDelay = EvictDelayForLOD(R.Key.LOD);
+		if ((Now - R.LastBecameUnwantedSec) < NeedDelay)
+			continue;
+
 		EvictCandidates.Add(&R);
 	}
 
-	// Evict farthest first (stable behavior)
+	// Evict farthest first
 	EvictCandidates.Sort([](const FVoxelChunkRecord& A, const FVoxelChunkRecord& B)
 	{
 		return A.LastDistanceToCamera > B.LastDistanceToCamera;
@@ -838,15 +873,18 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 
 	int32 Evicted = 0;
 	TArray<FVoxelChunkKey> ToRemove;
+	ToRemove.Reserve(FMath::Min(MaxEvictPerTick, EvictCandidates.Num()));
+
 	for (FVoxelChunkRecord* R : EvictCandidates)
 	{
-		if (Evicted >= MaxEvictPerTick) break;
+		if (!R || Evicted >= MaxEvictPerTick) break;
 
 		if (RenderConsumer)
 		{
 			RenderConsumer->RemoveChunk(R->Key);
 			R->LastEnqueuedRenderBuildId = 0;
 		}
+
 		R->GPU.Reset();
 		ToRemove.Add(R->Key);
 		++Evicted;
@@ -858,6 +896,7 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 		Chunks.Remove(K);
 	}
 }
+
 
 void UVoxelChunkSubsystem::EvictOverlappingLODs(const FVoxelChunkKey& NewKey)
 {
@@ -944,6 +983,7 @@ void UVoxelChunkSubsystem::OnConsumerBuilt(const FVoxelChunkKey& Key, uint64 Bui
 	{
 		R->State = EVoxelChunkState::Resident;
 		R->LastStateChangeSec = FPlatformTime::Seconds();
+		R->LastBecameVisibleSec = FPlatformTime::Seconds();
 
 		// NOW it's safe to remove overlapping coarser LODs.
 		EvictOverlappingLODs(Key);
