@@ -64,7 +64,14 @@ void FVoxelSpatialPolicy_QuadTree2p5D::ComputeDemands(
 		const double Epsilon = TileSizeWS * 1e-3;
 		return (Mod <= Epsilon) || (TileSizeWS - Mod <= Epsilon);
 	};
-
+	auto SnapRoundWS = [](double Value, double TileSizeWS) -> double
+	{
+		if (TileSizeWS <= 0.0)
+		{
+			return Value;
+		}
+		return FMath::RoundToDouble(Value / TileSizeWS) * TileSizeWS;
+	};
 	// NOTE: For pure surface rendering, consider forcing Z to exactly one slice:
 	// const int32 MinZChunk = 0, MaxZChunk = 0; (or derived from World Z)
 	//
@@ -95,7 +102,11 @@ void FVoxelSpatialPolicy_QuadTree2p5D::ComputeDemands(
 		// IMPORTANT: quantize using LeafMin and TileSizeWS (== leaf size)
 		const FVector LeafCenterWS(Leaf.Center.X, Leaf.Center.Y, 0);
 		const FVector LeafMinWS = LeafCenterWS - 0.5 * FVector(Leaf.Size.X, Leaf.Size.Y, 0);
-
+		const FVector LeafMinSnappedWS(
+					SnapRoundWS(LeafMinWS.X, TileSizeWS),
+					SnapRoundWS(LeafMinWS.Y, TileSizeWS),
+					LeafMinWS.Z);
+		
 		if (!IsAlignedToTile(LeafMinWS.X, TileSizeWS) || !IsAlignedToTile(LeafMinWS.Y, TileSizeWS))
 		{
 			++MisalignedLeaves;
@@ -107,7 +118,7 @@ void FVoxelSpatialPolicy_QuadTree2p5D::ComputeDemands(
 			}
 		}
 
-		Key.Coord = WorldToTileCoord_MinCorner(LeafMinWS, TileSizeWS, 0);
+		Key.Coord = WorldToTileCoord_MinCorner(LeafMinSnappedWS, TileSizeWS, 0);
 		
 		if (Seen.Contains(Key))
 			continue;

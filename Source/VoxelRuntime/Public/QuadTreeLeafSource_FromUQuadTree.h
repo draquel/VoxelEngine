@@ -47,7 +47,8 @@ namespace VoxelRuntime
 			const float BaseTile = World.SurfaceSettings.BaseTileSizeWS;
 			const int32 ExtTiles     = FMath::Max(1, Params.SurfaceExtentTiles0);
 			const int32 GuardTiles = 1;
-			const int32 TilesPerSide = 2 * (ExtTiles + GuardTiles) + 1;
+			const int32 RequestedTilesPerSide = 2 * (ExtTiles + GuardTiles) + 1;
+			const int32 TilesPerSide = 1 << CeilLog2_Int(RequestedTilesPerSide);
 			const float SizeWS       = float(TilesPerSide) * BaseTile;
 			const float RadiusWS     = SizeWS * 0.5f;
 
