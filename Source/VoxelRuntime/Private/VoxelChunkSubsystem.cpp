@@ -253,7 +253,7 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 	for (auto& KVP : Chunks)
 	{
 		FVoxelChunkRecord& R = KVP.Value;
-		R.ChunkCenterWS = ComputeChunkCenterWS(R.Key);
+		R.ChunkCenterWS = GetChunkCenterWS(R.Key);
 		R.LastDistanceToCamera = FVector::Dist2D(R.ChunkCenterWS, CameraWS);
 	}
 
@@ -388,22 +388,42 @@ float UVoxelChunkSubsystem::ChunkSizeWS(const FVoxelWorldSettings& S, int32 LOD)
 
 FVector UVoxelChunkSubsystem::ComputeChunkOriginWS(const FVoxelChunkKey& Key) const
 {
-	if (SpatialPolicy.IsValid())
-		return SpatialPolicy->ChunkOriginWS(Settings, Key);
-
-	// fallback (old behavior)
 	const float Size = ChunkSizeWS(Settings, Key.LOD);
 	return FVector(Key.Coord.X * Size, Key.Coord.Y * Size, Key.Coord.Z * Size);
 }
 
 FVector UVoxelChunkSubsystem::ComputeChunkCenterWS(const FVoxelChunkKey& Key) const
 {
-	if (SpatialPolicy.IsValid())
-		return SpatialPolicy->ChunkCenterWS(Settings, Key);
-
 	const float Size = ChunkSizeWS(Settings, Key.LOD);
 	return ComputeChunkOriginWS(Key) + FVector(Size * 0.5f);
 }
+
+
+FORCEINLINE float UVoxelChunkSubsystem::GetChunkSizeWS(const FVoxelChunkKey& Key) const
+{
+	if (SpatialPolicy.IsValid())
+		return SpatialPolicy->ChunkSizeWS(Settings, Key.LOD);
+
+	// fallback: old MC chunk size
+	return ChunkSizeWS(Settings, Key.LOD);
+}
+
+FORCEINLINE FVector UVoxelChunkSubsystem::GetChunkOriginWS(const FVoxelChunkKey& Key) const
+{
+	if (SpatialPolicy.IsValid())
+		return SpatialPolicy->ChunkOriginWS(Settings, Key);
+
+	return ComputeChunkOriginWS(Key);
+}
+
+FORCEINLINE FVector UVoxelChunkSubsystem::GetChunkCenterWS(const FVoxelChunkKey& Key) const
+{
+	if (SpatialPolicy.IsValid())
+		return SpatialPolicy->ChunkCenterWS(Settings, Key);
+
+	return ComputeChunkCenterWS(Key);
+}
+
 
 
 void UVoxelChunkSubsystem::BuildDesiredSet(const FVector& CameraWS, TSet<FVoxelChunkKey>& OutDesired) const
@@ -780,10 +800,8 @@ void UVoxelChunkSubsystem::AttachReadyToRender()
             P.BuildId      = R.BuildId;
             P.GPU          = R.GPU;
             P.VertexSpace  = EVoxelVertexSpace::ChunkLocal;
-            P.ChunkOriginWS= ComputeChunkOriginWS(R.Key);
-            P.ChunkSize    = ChunkSizeWS(Settings, R.Key.LOD);
-            P.StepSizeWS   = Settings.BaseStepSize * float(1 << R.Key.LOD);
-            P.CellsPerAxis = Settings.CellsPerAxis;
+            P.ChunkOriginWS= GetChunkOriginWS(R.Key);
+            P.ChunkSize    = GetChunkSizeWS(R.Key);
 
             P.SkirtDepth   = Settings.BaseStepSize * 4.0f;
             P.SkirtEdgeMask= ComputeSkirtMaskSameLOD(R.Key);

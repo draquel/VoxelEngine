@@ -41,7 +41,7 @@ public:
 	void PollGeneratingToReady();
 
 	FVoxelChunkRecord& GetOrCreateChunk(const FVoxelChunkKey& Key);
-	static float ChunkSizeWS(const FVoxelWorldSettings& S, int32 LOD);
+	
 	void ScheduleGeneration(const FVector& CameraWS);
 
 	UFUNCTION(BlueprintCallable, Category="Voxel")
@@ -88,6 +88,11 @@ private:
 	void EvictOverlappingLODs(const FVoxelChunkKey& NewKey);
 
 	// Helpers
+	float GetChunkSizeWS(const FVoxelChunkKey& Key) const;
+	FVector GetChunkOriginWS(const FVoxelChunkKey& Key) const;
+	FVector GetChunkCenterWS(const FVoxelChunkKey& Key) const;
+	
+	static float ChunkSizeWS(const FVoxelWorldSettings& S, int32 LOD);
 	FVector ComputeChunkCenterWS(const FVoxelChunkKey& Key) const;
 	FVector ComputeChunkOriginWS(const FVoxelChunkKey& Key) const;
 
