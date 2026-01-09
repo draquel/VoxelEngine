@@ -837,6 +837,53 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 			continue;
 		}
 		
+		// 2) stamp when it first became unwanted
+		if (R.LastBecameUnwantedSec <= 0.0)
+			R.LastBecameUnwantedSec = Now;
+
+		// --- Transition-aware eviction: don't leave holes ---
+		// If we're resident, stay resident until our replacements (whatever they are) are also resident.
+		if (R.State == EVoxelChunkState::Resident)
+		{
+			bool bAnyOverlappingDesiredNotResident = false;
+			bool bAllOverlappingDesiredAreOldEnough = true;
+			bool bHasAnyOverlappingDesired = false;
+
+			for (const FVoxelChunkKey& DesiredKey : Desired)
+			{
+				if (KeysOverlapInBaseGrid(R.Key, DesiredKey))
+				{
+					bHasAnyOverlappingDesired = true;
+					const FVoxelChunkRecord* DesiredRec = Chunks.Find(DesiredKey);
+					if (!DesiredRec || DesiredRec->State != EVoxelChunkState::Resident)
+					{
+						bAnyOverlappingDesiredNotResident = true;
+						break;
+					}
+
+					// We wait for a tiny bit (0.1s) to ensure the renderer has actually swapped the mesh
+					// This avoids "flashing" where the new mesh isn't yet visible but the old one is gone.
+					if ((Now - DesiredRec->LastBecameVisibleSec) < 0.1)
+					{
+						bAllOverlappingDesiredAreOldEnough = false;
+						// Continue checking other desired overlaps
+					}
+				}
+			}
+
+			if (bAnyOverlappingDesiredNotResident || (bHasAnyOverlappingDesired && !bAllOverlappingDesiredAreOldEnough))
+			{
+				continue; // keep as fallback
+			}
+
+			// If it's covered and children are old enough, we can fast-track eviction to avoid Z-fighting.
+			if (bHasAnyOverlappingDesired && bAllOverlappingDesiredAreOldEnough)
+			{
+				EvictCandidates.Add(&R);
+				continue;
+			}
+		}
+
 		// Keep recently desired tiles around briefly even if they fall out this tick
 		if ((Now - R.LastBecameDesiredSec) < DesiredGraceSec)
 			continue;
@@ -850,15 +897,8 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 		if (R.State == EVoxelChunkState::Generating)
 		{
 			R.bCancelRequested = true;
-			// Don’t start evict timer until it’s actually “unwanted” for a bit
-			if (R.LastBecameUnwantedSec <= 0.0)
-				R.LastBecameUnwantedSec = Now;
 			continue;
 		}
-
-		// 2) stamp when it first became unwanted
-		if (R.LastBecameUnwantedSec <= 0.0)
-			R.LastBecameUnwantedSec = Now;
 
 		// 3) don’t evict something that *just* became visible
 		if (R.LastBecameVisibleSec > 0.0 && (Now - R.LastBecameVisibleSec) < MinVisibleSec)
