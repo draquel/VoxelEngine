@@ -46,7 +46,7 @@ namespace VoxelRuntime
 
 			const float BaseTile = World.SurfaceSettings.BaseTileSizeWS;
 			const int32 ExtTiles     = FMath::Max(1, Params.SurfaceExtentTiles0);
-			const int32 GuardTiles = 2;
+			const int32 GuardTiles = FMath::Max(2, Params.MarginTiles);
 			const int32 RequestedTilesPerSide = 2 * (ExtTiles + GuardTiles) + 1;
 			const int32 TilesPerSide = 1 << CeilLog2_Int(RequestedTilesPerSide);
 			const float SizeWS       = float(TilesPerSide) * BaseTile;
@@ -78,7 +78,7 @@ namespace VoxelRuntime
 			LastDomainSizeWS = SizeWS;
 			LastRadiusWS     = RadiusWS;
 			LastBaseTileWS   = BaseTile;
-			LastMarginWS     = BaseTile * 2.0f; // must match UpdateDomainIfNeeded
+			LastMarginWS     = BaseTile * Params.MarginTiles; // must match UpdateDomainIfNeeded
 		}
 
 		// Tunables (put these in Params or SurfaceSettings later)
