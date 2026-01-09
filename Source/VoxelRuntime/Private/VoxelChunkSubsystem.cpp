@@ -253,12 +253,25 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 			Desired.Add(D.Key);
 		}
 
+		// Update bWasDesiredLastTick immediately so callbacks see the fresh state
+		for (auto& KVP : Chunks)
+		{
+			KVP.Value.bWasDesiredLastTick = Desired.Contains(KVP.Key);
+		}
+
 		ApplyDemands(Demands, CameraWS);
 	}
 	else
 	{
 		// Fallback to your older path if no policy is set.
 		BuildDemands_Clipmap2p5D(CameraWS, Demands, Desired);
+
+		// Update bWasDesiredLastTick immediately so callbacks see the fresh state
+		for (auto& KVP : Chunks)
+		{
+			KVP.Value.bWasDesiredLastTick = Desired.Contains(KVP.Key);
+		}
+
 		ApplyDemands(Demands, CameraWS);
 	}
 
@@ -275,12 +288,6 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 	EvictUnwanted(Desired);
 
 	EmitTelemetry(DeltaSeconds, Desired.Num(), Demands.Num());
-
-	// Update per-chunk desired bookkeeping AFTER eviction
-	for (auto& KVP : Chunks)
-	{
-		KVP.Value.bWasDesiredLastTick = Desired.Contains(KVP.Key);
-	}
 }
 
 void UVoxelChunkSubsystem::InvalidateRegionSphere(const FVector& CenterWS, float RadiusWS)
