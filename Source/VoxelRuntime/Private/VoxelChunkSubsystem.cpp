@@ -965,41 +965,44 @@ void UVoxelChunkSubsystem::EvictOverlappingLODs(const FVoxelChunkKey& NewKey)
 		if (!KeysOverlapInBaseGrid(NewKey, Other.Key))
 			continue;
 
-		// Only remove COARSER chunks (bigger LOD number).
-		if (Other.Key.LOD <= NewKey.LOD)
+		if (Other.State == EVoxelChunkState::Evicting)
 			continue;
 
-		// If it's queued to be built, retire it so ScheduleGeneration won't pick it again.
-		if (Other.State == EVoxelChunkState::Requested)
+		// --- Case 1: Refinement (NewKey is finer, Other is coarser) ---
+		if (Other.Key.LOD > NewKey.LOD)
 		{
-			Other.bCancelRequested = true;
-			Other.State = EVoxelChunkState::Evicting;
-			Other.LastStateChangeSec = Now;
-			Other.LastEnqueuedRenderBuildId = 0;
-			continue;
-		}
+			// If it's building, cancel it.
+			if (Other.State == EVoxelChunkState::Requested ||
+				Other.State == EVoxelChunkState::Generating ||
+				Other.State == EVoxelChunkState::Ready)
+			{
+				if (RenderConsumer)
+					RenderConsumer->RemoveChunk(Other.Key);
 
-		// If it's building, request cancel AND mark evicting so AttachReadyToRender won't submit it.
-		if (Other.State == EVoxelChunkState::Generating)
-		{
-			Other.bCancelRequested = true;
-			Other.State = EVoxelChunkState::Evicting;
-			Other.LastStateChangeSec = Now;
-			Other.LastEnqueuedRenderBuildId = 0;
-
-			// If/when you add it: BuildService->CancelBuild(Other.Key, Other.BuildId);
+				Other.bCancelRequested = true;
+				Other.State = EVoxelChunkState::Evicting;
+				Other.LastStateChangeSec = Now;
+				Other.LastEnqueuedRenderBuildId = 0;
+			}
 			continue;
 		}
-
-		// If it is already visible, remove it now.
-		if (Other.State == EVoxelChunkState::Resident || Other.State == EVoxelChunkState::Ready)
+		// --- Case 2: Coarsening (NewKey is coarser, Other is finer) ---
+		else if (Other.Key.LOD < NewKey.LOD)
 		{
-			if (RenderConsumer)
-				RenderConsumer->RemoveChunk(Other.Key);
+			// If the parent is now resident, we can immediately cancel children that are being built.
+			if (Other.State == EVoxelChunkState::Requested ||
+				Other.State == EVoxelChunkState::Generating ||
+				Other.State == EVoxelChunkState::Ready)
+			{
+				if (RenderConsumer)
+					RenderConsumer->RemoveChunk(Other.Key);
 
-			Other.State = EVoxelChunkState::Evicting;
-			Other.LastStateChangeSec = Now;
-			Other.LastEnqueuedRenderBuildId = 0;
+				Other.bCancelRequested = true;
+				Other.State = EVoxelChunkState::Evicting;
+				Other.LastStateChangeSec = Now;
+				Other.LastEnqueuedRenderBuildId = 0;
+			}
+			continue;
 		}
 	}
 }
