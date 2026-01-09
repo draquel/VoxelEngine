@@ -5,24 +5,21 @@
 
 namespace VoxelRuntime
 {
-	static FORCEINLINE bool IsNearlyAligned(double Value, double Grid)
+	static FORCEINLINE double EffectiveBaseTileSizeWS(const FVoxelWorldSettings& World)
 	{
-		if (Grid <= 0.0) return true;
-
-		// robust modulo for negatives
-		double M = FMath::Fmod(Value, Grid);
-		if (M < 0.0) M += Grid;
-
-		// tolerance proportional to grid size
-		const double Eps = Grid * 1e-3; // 0.1% of tile
-		return (M <= Eps) || ((Grid - M) <= Eps);
+		return FMath::Max(1.0, (double)World.SurfaceSettings.BaseTileSizeWS);
 	}
 
-	// Snap to nearest gridline (robust for negatives)
-	static FORCEINLINE double SnapRound(double Value, double Grid)
+	// Snap down to a gridline with a small epsilon to absorb float error
+	static FORCEINLINE double SnapDownWithEps(double Value, double Grid)
 	{
-		if (Grid <= 0.0) return Value;
-		return FMath::RoundToDouble(Value / Grid) * Grid;
+		if (Grid <= 0.0)
+		{
+			return Value;
+		}
+
+		const double Eps = Grid * 1e-4;
+		return FMath::FloorToDouble((Value + Eps) / Grid) * Grid;
 	}
 	
 	// Helpers you likely already have, but included here for completeness.
@@ -42,7 +39,7 @@ namespace VoxelRuntime
 
 	double FVoxelSpatialPolicy_QuadTree2p5D::TileSizeWSAtLOD(const FVoxelWorldSettings& World, int32 LOD)
 	{
-		const double Base = FMath::Max(1.0, (double)World.SurfaceSettings.BaseTileSizeWS);
+		const double Base = EffectiveBaseTileSizeWS(World);
 		return Base * (double)(1 << FMath::Max(0, LOD));
 	}
 
@@ -84,19 +81,11 @@ namespace VoxelRuntime
 			const double Epsilon = TileSizeWS * 1e-3;
 			return (Mod <= Epsilon) || (TileSizeWS - Mod <= Epsilon);
 		};
-		auto SnapRoundWS = [](double Value, double TileSizeWS) -> double
-		{
-			if (TileSizeWS <= 0.0)
-			{
-				return Value;
-			}
-			return FMath::RoundToDouble(Value / TileSizeWS) * TileSizeWS;
-		};
 		// NOTE: For pure surface rendering, consider forcing Z to exactly one slice:
 		// const int32 MinZChunk = 0, MaxZChunk = 0; (or derived from World Z)
 		//
 		// Keeping your existing Z slab approach:
-		const double BaseTileSizeWS = FMath::Max(1.0, (double)World.SurfaceSettings.BaseTileSizeWS);
+		const double BaseTileSizeWS = EffectiveBaseTileSizeWS(World);
 
 		for (const FQuadTreeLeaf& Leaf : Leaves)
 		{
@@ -110,10 +99,10 @@ namespace VoxelRuntime
 			// const int32 LOD = LODFromDepth;
 
 
-			// still compute an LOD label if you want:
-			const double LeafSizeWS_X = (double)Leaf.Size.X;
-			const int32 LOD = ComputeLODFromLeafSize_ClampToLeaf(LeafSizeWS_X, BaseTileSizeWS, MaxLOD);
-			const double TileSizeWS = TileSizeWSAtLOD(World, LOD);
+			const int32 MaxDepth = FMath::Max(0, World.LODParams.QuadTreeMaxDepth);
+			const int32 LeafDepth = FMath::Clamp((int32)Leaf.Depth, 0, MaxDepth);
+			const int32 LOD = FMath::Clamp(MaxDepth - LeafDepth, 0, MaxLOD);
+			const double TileSizeWS = BaseTileSizeWS * (double)(1 << LOD);
 
 
 			FVoxelChunkKey Key;
@@ -123,8 +112,8 @@ namespace VoxelRuntime
 			const FVector LeafCenterWS(Leaf.Center.X, Leaf.Center.Y, 0);
 			const FVector LeafMinWS = LeafCenterWS - 0.5 * FVector(Leaf.Size.X, Leaf.Size.Y, 0);
 			const FVector LeafMinSnappedWS(
-						SnapRoundWS(LeafMinWS.X, TileSizeWS),
-						SnapRoundWS(LeafMinWS.Y, TileSizeWS),
+						SnapDownWithEps(LeafMinWS.X, TileSizeWS),
+						SnapDownWithEps(LeafMinWS.Y, TileSizeWS),
 						LeafMinWS.Z);
 			
 			if (!IsAlignedToTile(LeafMinWS.X, TileSizeWS) || !IsAlignedToTile(LeafMinWS.Y, TileSizeWS))
@@ -248,7 +237,7 @@ namespace VoxelRuntime
 		OutPayload.EditLayer    = nullptr; // subsystem fills
 		OutPayload.ChunkOriginWS= ChunkOriginWS(World, Key);
 		OutPayload.ChunkSizeWS  = ChunkSizeWS(World, Key.LOD);
-		OutPayload.Surface.BaseTileSizeWS = FMath::Max(1.0f, World.SurfaceSettings.BaseTileSizeWS);
+		OutPayload.Surface.BaseTileSizeWS = (float)EffectiveBaseTileSizeWS(World);
 		OutPayload.Surface.VertsPerSide = FMath::Max(9, World.SurfaceSettings.VertsPerSide);
 
 		// Surface mesh resolution
