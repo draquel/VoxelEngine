@@ -50,6 +50,10 @@ void UVoxelChunkSubsystem::InitializeVoxel(const FVoxelWorldSettings& InSettings
 	Settings = InSettings;
 	EditLayer = InEditLayer;
 
+	bDrawDemandDebug = InSettings.bEnableDemandDebug;
+	bDrawDomainDebug = InSettings.bEnableDomainDebug;
+	bQuadTreeDebug = InSettings.bEnableQuadTreeDebug;
+	
 	// LODParams.CellsPerAxis = Settings.CellsPerAxis;
 	// LODParams.BaseCellSizeWS = Settings.BaseStepSize;  // your “cell size” == step
 	// LODParams.MaxLOD = 2;                              // start conservative

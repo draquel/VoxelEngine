@@ -5,6 +5,26 @@
 
 namespace VoxelRuntime
 {
+	static FORCEINLINE bool IsNearlyAligned(double Value, double Grid)
+	{
+		if (Grid <= 0.0) return true;
+
+		// robust modulo for negatives
+		double M = FMath::Fmod(Value, Grid);
+		if (M < 0.0) M += Grid;
+
+		// tolerance proportional to grid size
+		const double Eps = Grid * 1e-3; // 0.1% of tile
+		return (M <= Eps) || ((Grid - M) <= Eps);
+	}
+
+	// Snap to nearest gridline (robust for negatives)
+	static FORCEINLINE double SnapRound(double Value, double Grid)
+	{
+		if (Grid <= 0.0) return Value;
+		return FMath::RoundToDouble(Value / Grid) * Grid;
+	}
+	
 	// Helpers you likely already have, but included here for completeness.
 int32 FVoxelSpatialPolicy_QuadTree2p5D::FloorDivWS(double World, double SizeWS)
 {

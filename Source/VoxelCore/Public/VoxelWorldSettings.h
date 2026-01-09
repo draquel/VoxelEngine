@@ -49,6 +49,11 @@ struct FVoxelWorldSettings
 	// Rendering modes (keep both even if you implement one first)
 	// UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableSmooth = true; // marching cubes
 	// UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableCubic  = false; // block mesher
+	
+	//Debug
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableQuadTreeDebug = false;	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableDomainDebug = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableDemandDebug = false;
 };
 
 
