@@ -176,6 +176,11 @@ namespace VoxelRuntime
 			// Maintain snap (should already be snapped due to tile shifts, but keep it robust)
 			DomainMinWS = SnapDownXY(DomainMinWS, BaseTile);
 		}
+	
+		void DebugDrawQuadTree(UWorld* World)
+		{
+			Tree.Visualize(World);
+		}
 		
 		void DebugDrawDomain(UWorld* World, float Lifetime = 0.f, bool bPersistentLines = false) const
 		{
@@ -183,7 +188,7 @@ namespace VoxelRuntime
 			if (!World || !bHasLastDebug)
 				return;
 
-			const float Z = 500.f; // lift slightly above surface
+			const float Z = 750.f; // lift slightly above surface
 			const FVector Min = FVector(LastDomainMinWS.X, LastDomainMinWS.Y, Z);
 			const FVector Max = FVector(LastDomainMinWS.X + LastDomainSizeWS, LastDomainMinWS.Y + LastDomainSizeWS, Z);
 
@@ -193,11 +198,12 @@ namespace VoxelRuntime
 				const FVector B(RMax.X, RMin.Y, Z);
 				const FVector D(RMin.X, RMax.Y, Z);
 				const FVector Cc(RMax.X, RMax.Y, Z);
+				float thickness = 40.f;
 
-				DrawDebugLine(World, A, B, C, bPersistentLines, Lifetime, 0, 4.f);
-				DrawDebugLine(World, B, Cc, C, bPersistentLines, Lifetime, 0, 4.f);
-				DrawDebugLine(World, Cc, D, C, bPersistentLines, Lifetime, 0, 4.f);
-				DrawDebugLine(World, D, A, C, bPersistentLines, Lifetime, 0, 4.f);
+				DrawDebugLine(World, A, B, C, bPersistentLines, Lifetime, 0, thickness);
+				DrawDebugLine(World, B, Cc, C, bPersistentLines, Lifetime, 0, thickness);
+				DrawDebugLine(World, Cc, D, C, bPersistentLines, Lifetime, 0, thickness);
+				DrawDebugLine(World, D, A, C, bPersistentLines, Lifetime, 0, thickness);
 			};
 
 			// Outer domain
@@ -242,6 +248,4 @@ namespace VoxelRuntime
 		mutable float   LastMarginWS = 0.f;
 
 	};
-	
-	
 }

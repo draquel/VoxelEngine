@@ -66,6 +66,14 @@ namespace Voxel
 		}
 		return count;
 	}
+	
+	void QuadTree::Visualize(UWorld* World)
+	{
+		for (QuadTreeNode& node : Leaves)
+		{
+			node.Visualize(World);
+		}
+	}
 	// Adapter: Quadtree leaf set -> streaming demands (Engine convention: LOD 0 = finest)
 	//
 	// Assumptions:

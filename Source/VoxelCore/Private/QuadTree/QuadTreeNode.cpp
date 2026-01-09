@@ -1,4 +1,6 @@
 #include "QuadTree/QuadTreeNode.h"
+
+#include "DrawDebugHelpers.h"
 #include "QuadTree/QuadTree.h"
 
 namespace Voxel
@@ -123,5 +125,14 @@ namespace Voxel
 			}
 		}
 		return res;
+	}
+	
+	void QuadTreeNode::Visualize(UWorld* World)
+	{
+		FVector Extent = Size * 0.5f;
+		Extent.Z = 500.0f;
+		FBox box(Center - Extent, Center + Extent);
+		DrawDebugBox(World,Center,Extent,Voxel::LODToColor(Settings->MaxDepth-Depth), false,0.f,0,20);
+		
 	}
 }

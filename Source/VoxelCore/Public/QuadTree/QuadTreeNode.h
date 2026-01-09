@@ -36,7 +36,7 @@ namespace Voxel
 		void CheckNeighbors();
 		bool CheckNeighborDepth(int direction, uint32 hash) const;
 		int GetNeighborDepth(uint32 queryHash, int targetDepth);
-
+		void Visualize(UWorld* World);
 	};
 
 	

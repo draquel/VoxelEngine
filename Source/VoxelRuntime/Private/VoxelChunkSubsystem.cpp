@@ -231,7 +231,7 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 			
 		
 #if !(UE_BUILD_SHIPPING)
-		if (World && (bDrawDomainDebug || bDrawDemandDebug))
+		if (World && (bDrawDomainDebug || bDrawDemandDebug || bQuadTreeDebug))
 		{
 			if (VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D* QT =
 				static_cast<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D*>(SpatialPolicy.Get()))
@@ -245,6 +245,10 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 						{
 							LS->DebugDrawDomain(World, 0.f, false);
 						}
+						if (bQuadTreeDebug)
+						{
+							LS->DebugDrawQuadTree(World);
+						}
 					}
 				}
 			}
@@ -256,9 +260,9 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 					const float SizeWS = GetChunkSizeWS(Demand.Key);
 					const FVector OriginWS = GetChunkOriginWS(Demand.Key);
 					const FVector CenterWS = OriginWS + FVector(SizeWS * 0.5f, SizeWS * 0.5f, 0.0f);
-					const FVector Extent(SizeWS * 0.5f, SizeWS * 0.5f, 25.0f);
-					const FColor Color = LODToColor(Demand.Key.LOD);
-					DrawDebugBox(World, CenterWS, Extent, Color, false, 0.f, 0, 3.f);
+					const FVector Extent(SizeWS * 0.5f, SizeWS * 0.5f, 50.0f);
+					const FColor Color = Voxel::LODToColor(Demand.Key.LOD);
+					DrawDebugBox(World, CenterWS, Extent, Color, false, 0.f, 0, 10.f);
 				}
 			}
 		}
