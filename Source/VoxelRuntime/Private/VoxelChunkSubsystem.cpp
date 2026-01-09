@@ -12,27 +12,6 @@
 #include "VoxelCore/Public/VoxelChunkRenderPayload.h"
 #include "VoxelCore/Public/IVoxelChunkBuildService.h"
 
-namespace
-{
-	FColor LODToColor(int32 LOD)
-	{
-		static const FColor Colors[] =
-		{
-			FColor::Cyan,
-			FColor::Green,
-			FColor::Yellow,
-			FColor::Orange,
-			FColor::Red,
-			FColor::Purple,
-			FColor(255, 105, 180),
-			FColor::White
-		};
-
-		const int32 Index = FMath::Clamp(LOD, 0, UE_ARRAY_COUNT(Colors) - 1);
-		return Colors[Index];
-	}
-}
-
 void UVoxelChunkSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -1065,19 +1044,12 @@ void UVoxelChunkSubsystem::EmitTelemetry(float DeltaSeconds, int32 DesiredCount,
 		// 	Counts[(int32)EVoxelChunkState::Ready], Counts[(int32)EVoxelChunkState::Resident], Counts[(int32)EVoxelChunkState::Evicting],
 		// 	Telemetry_Requested, Telemetry_Dispatched, Telemetry_BecameReady, Telemetry_BecameResident, Telemetry_Evicted, Telemetry_Canceled);
 
-		int32 LODCounts[16] = {0};
 		for (auto& KVP : Chunks)
-		{
 			const int32 L = KVP.Key.LOD;
-			if (L >= 0 && L < UE_ARRAY_COUNT(LODCounts))
 				LODCounts[L]++;
-		}
 
-		UE_LOG(LogTemp, Warning, TEXT("[VoxelStream] LODs: 0=%d 1=%d 2=%d 3=%d 4=%d 5=%d 6=%d"),
 			LODCounts[0], LODCounts[1], LODCounts[2], LODCounts[3], LODCounts[4], LODCounts[5], LODCounts[6]);
-		
 		UE_LOG(LogTemp, VeryVerbose, TEXT("[VoxelStream] SpatialPolicy=%s Demands=%d"),
-			SpatialPolicy.IsValid() ? TEXT("YES") : TEXT("NO"),
 			DemandCount);
 		
 		Telemetry_Requested = Telemetry_Dispatched = Telemetry_BecameReady = Telemetry_BecameResident = Telemetry_Evicted = Telemetry_Canceled = 0;
