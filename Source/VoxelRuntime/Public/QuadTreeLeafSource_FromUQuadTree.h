@@ -52,7 +52,7 @@ namespace VoxelRuntime
 			const float SizeWS       = float(TilesPerSide) * BaseTile;
 			const float RadiusWS     = SizeWS * 0.5f;
 
-			UpdateDomainIfNeeded(CamWS, BaseTile, SizeWS, ExtTiles);
+			UpdateDomainIfNeeded(CamWS, BaseTile, SizeWS, Params);
 
 			const FVector DomainMin  = DomainMinWS;
 			const FVector DomainSize(SizeWS, SizeWS, 0.f);
@@ -100,7 +100,7 @@ namespace VoxelRuntime
 			const FVector& CamWS,
 			float BaseTile,
 			float SizeWS,
-			int32 ExtTiles // pass this from GetLeaves (SurfaceExtentTiles0)
+			const FVoxelSpatialPolicyParams& Params 
 		) const
 		{
 			const float RadiusWS = SizeWS * 0.5f;
@@ -110,7 +110,7 @@ namespace VoxelRuntime
 			LastRadiusWS   = RadiusWS;
 
 			// Margin as *tiles* (more controllable than "BaseTile*2")
-			const int32 MarginTiles = DefaultMarginTiles(ExtTiles);
+			const int32 MarginTiles = Params.MarginTiles > 0 ? Params.MarginTiles : DefaultMarginTiles(Params.SurfaceExtentTiles0);
 			const float MarginWS    = float(MarginTiles) * BaseTile;
 			LastMarginWS = MarginWS;
 
@@ -166,7 +166,7 @@ namespace VoxelRuntime
 				return;
 
 			// Optional: clamp how much we can shift per update (reduces sudden jumps / thrash)
-			const int32 MaxShiftTiles = DefaultMaxShiftTilesPerUpdate(ExtTiles);
+			const int32 MaxShiftTiles = Params.MaxShiftTilesPerUpdate > 0 ? Params.MaxShiftTilesPerUpdate : DefaultMaxShiftTilesPerUpdate(FMath::Max(1, Params.SurfaceExtentTiles0));
 			ShiftTilesX = FMath::Clamp(ShiftTilesX, -MaxShiftTiles, +MaxShiftTiles);
 			ShiftTilesY = FMath::Clamp(ShiftTilesY, -MaxShiftTiles, +MaxShiftTiles);
 
