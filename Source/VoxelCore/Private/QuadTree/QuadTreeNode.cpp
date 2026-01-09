@@ -13,6 +13,7 @@ namespace Voxel
 	QuadTreeNode::QuadTreeNode(FVector center, FVector size, QuadTreeNode* rootNode, FQuadTreeSettings* settings, UINT32 hash, int depth, int corner)
 	{
 		Center = center;
+		Position = center - FVector(size.X/2.0,size.Y/2.0,0);
 		Size = size;
 		RootNode = rootNode;
 		Hash = hash;
@@ -55,8 +56,8 @@ namespace Voxel
 
 	void QuadTreeNode::Split()
 	{
-		FVector halfSize = FVector(Size.X/2.0f,Size.Y/2.0f,Size.Z);
-		FVector qtrSize = FVector(halfSize.X/2.0f,halfSize.Y/2.0f,0);
+		FVector halfSize = FVector(Size.X/2.0,Size.Y/2.0,Size.Z);
+		FVector qtrSize = FVector(halfSize.X/2.0,halfSize.Y/2.0,0);
 		Children = {
 			QuadTreeNode(Center+FVector(-qtrSize.X,qtrSize.Y,0), halfSize, RootNode, Settings, Hash*4,Depth+1,0),
 			QuadTreeNode(Center+FVector(qtrSize.X,qtrSize.Y,0), halfSize, RootNode, Settings, Hash*4+1,Depth+1,1),
@@ -129,9 +130,9 @@ namespace Voxel
 	
 	void QuadTreeNode::Visualize(UWorld* World)
 	{
-		FVector Extent = Size * 0.5f;
-		Extent.Z = 500.0f;
-		FBox box(Center - Extent, Center + Extent);
+		FVector Extent = Size / 2.0;
+		Extent.Z = 500.0;
+		FBox box(Position, Center + Extent);
 		DrawDebugBox(World,Center,Extent,Voxel::LODToColor(Settings->MaxDepth-Depth), false,0.f,0,20);
 		
 	}

@@ -10,6 +10,7 @@ namespace Voxel
 	{
 	public:
 		FVector Center;
+		FVector Position; //Min Corner
 		FVector Size;
 
 		UINT32 Hash;
@@ -50,6 +51,8 @@ struct VOXELCORE_API FQuadTreeLeaf
 	UPROPERTY(EditAnywhere)
 	FVector Center;
 	UPROPERTY(EditAnywhere)
+	FVector Position;
+	UPROPERTY(EditAnywhere)
 	FVector Size;
 	UPROPERTY(EditAnywhere)
 	uint32 Depth;
@@ -67,6 +70,7 @@ struct VOXELCORE_API FQuadTreeLeaf
 	FQuadTreeLeaf(const Voxel::QuadTreeNode& Node)
 	{
 		Center = Node.Center;
+		Position = Node.Center - (Node.Size / 2.0);
 		Size = Node.Size;
 		Depth = Node.Depth;
 		Neighbors = FVector4f(Node.Neighbors[0]?1:0,Node.Neighbors[1]?1:0,Node.Neighbors[2]?1:0,Node.Neighbors[3]?1:0);

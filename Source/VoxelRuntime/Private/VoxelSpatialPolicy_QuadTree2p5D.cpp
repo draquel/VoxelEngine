@@ -89,45 +89,63 @@ namespace VoxelRuntime
 
 		for (const FQuadTreeLeaf& Leaf : Leaves)
 		{
-			// Map leaf size to engine LOD: Size = BaseTile * 2^LOD
-			// const int32 MaxDepth = FMath::Max(0, World.LODParams.QuadTreeMaxDepth);
-
-			// Depth: 0 coarsest -> MaxDepth finest.
-			// LOD:   0 finest   -> MaxLOD coarsest.
-			// const int32 LeafDepth = (int32)Leaf.Depth;
-			// const int32 LODFromDepth = FMath::Clamp(MaxDepth - LeafDepth, 0, MaxLOD);
-			// const int32 LOD = LODFromDepth;
-
-
 			const int32 MaxDepth = FMath::Max(0, World.LODParams.QuadTreeMaxDepth);
 			const int32 LeafDepth = FMath::Clamp((int32)Leaf.Depth, 0, MaxDepth);
-			const int32 LOD = FMath::Clamp(MaxDepth - LeafDepth, 0, MaxLOD);
-			const double TileSizeWS = BaseTileSizeWS * (double)(1 << LOD);
 
+			// Depth: 0 = coarsest, MaxDepth = finest
+			// LOD:   0 = finest,  MaxLOD   = coarsest
+			const int32 LOD = FMath::Clamp(MaxDepth - LeafDepth, 0, MaxLOD);
+
+			// Use the leaf’s actual size as the tile size (prevents drift from float math)
+			const double TileSizeWS = (double)Leaf.Size.X;
+
+			// Optional sanity: expected tile size from base + LOD
+			// const double Expected = EffectiveBaseTileSizeWS(World) * double(1 << LOD);
+			// ensureMsgf(FMath::IsNearlyEqual(TileSizeWS, Expected, Expected * 1e-3), TEXT("Leaf size mismatch"));
+
+			const FVector LeafMinWS = Leaf.Position;
+
+			// Snap-down is only to absorb tiny float noise, not to “fix” alignment.
+			// If DomainMin is correct, LeafMin should already be aligned.
+			const double Eps = TileSizeWS * 1e-6;
+			const double X0 = FMath::FloorToDouble((LeafMinWS.X + Eps) / TileSizeWS);
+			const double Y0 = FMath::FloorToDouble((LeafMinWS.Y + Eps) / TileSizeWS);
 
 			FVoxelChunkKey Key;
-			Key.LOD = LOD;
+			Key.LOD   = LOD;
+			Key.Coord = FIntVector((int32)X0, (int32)Y0, 0);
 
-			// IMPORTANT: quantize using LeafMin and TileSizeWS (== leaf size)
-			const FVector LeafCenterWS(Leaf.Center.X, Leaf.Center.Y, 0);
-			const FVector LeafMinWS = LeafCenterWS - 0.5 * FVector(Leaf.Size.X, Leaf.Size.Y, 0);
-			const FVector LeafMinSnappedWS(
-						SnapDownWithEps(LeafMinWS.X, TileSizeWS),
-						SnapDownWithEps(LeafMinWS.Y, TileSizeWS),
-						LeafMinWS.Z);
-			
-			if (!IsAlignedToTile(LeafMinWS.X, TileSizeWS) || !IsAlignedToTile(LeafMinWS.Y, TileSizeWS))
-			{
-				++MisalignedLeaves;
-				if (MisalignedLeaves == 1)
-				{
-					SampleLeafMinWS = LeafMinWS;
-					SampleTileSizeWS = TileSizeWS;
-					SampleLOD = LOD;
-				}
-			}
-
-			Key.Coord = WorldToTileCoord_MinCorner(LeafMinSnappedWS, TileSizeWS, 0);
+			// const int32 MaxDepth = FMath::Max(0, World.LODParams.QuadTreeMaxDepth);
+			// const int32 LeafDepth = FMath::Clamp((int32)Leaf.Depth, 0, MaxDepth);
+			// const int32 LOD = FMath::Clamp(MaxDepth - LeafDepth, 0, MaxLOD);
+			// const double TileSizeWS = BaseTileSizeWS * (double)(1 << LOD);
+			//
+			//
+			// FVoxelChunkKey Key;
+			// Key.LOD = LOD;
+			//
+			// // IMPORTANT: quantize using LeafMin and TileSizeWS (== leaf size)
+			// // const FVector LeafCenterWS(Leaf.Center.X, Leaf.Center.Y, 0);
+			// // const FVector LeafMinWS = LeafCenterWS - 0.5 * FVector(Leaf.Size.X, Leaf.Size.Y, 0);
+			// const FVector LeafMinWS = Leaf.Position;
+			// const FVector LeafMinSnappedWS(
+			// 			SnapDownWithEps(LeafMinWS.X, TileSizeWS),
+			// 			SnapDownWithEps(LeafMinWS.Y, TileSizeWS),
+			// 			LeafMinWS.Z);
+			//
+			// if (!IsAlignedToTile(LeafMinWS.X, TileSizeWS) || !IsAlignedToTile(LeafMinWS.Y, TileSizeWS))
+			// {
+			// 	++MisalignedLeaves;
+			// 	if (MisalignedLeaves == 1)
+			// 	{
+			// 		SampleLeafMinWS = LeafMinWS;
+			// 		SampleTileSizeWS = TileSizeWS;
+			// 		SampleLOD = LOD;
+			// 	}
+			// }
+			//
+			// Key.Coord = WorldToTileCoord_MinCorner(LeafMinSnappedWS, TileSizeWS, 0);
+			// UE_LOG(LogTemp, Log, TEXT("WorldToTileCoord_MinCorner:LOD:%d LeafMinSnappedWS=%s, TileSizeWS=%f, ZChunk=%d, Coord=%s"), LOD, *LeafMinSnappedWS.ToString(), TileSizeWS, 0, *Key.Coord.ToString());
 			
 			if (Seen.Contains(Key))
 				continue;

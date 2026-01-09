@@ -11,7 +11,6 @@
 
 namespace VoxelRuntime
 {
-
 	class FQuadTreeLeafSource_FromQuadTree final : public Voxel::IQuadTreeLeafSource
 	{
 	public:
@@ -108,6 +107,9 @@ namespace VoxelRuntime
 			// ---- Debug bookkeeping ----
 			LastBaseTileWS = BaseTile;
 			LastRadiusWS   = RadiusWS;
+			
+			const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
+			const float CoarsestTileWS = BaseTile * float(1 << MaxLOD);
 
 			// Margin as *tiles* (more controllable than "BaseTile*2")
 			const int32 MarginTiles = Params.MarginTiles > 0 ? Params.MarginTiles : DefaultMarginTiles(Params.SurfaceExtentTiles0);
@@ -118,7 +120,7 @@ namespace VoxelRuntime
 			if (!bHasDomain || !FMath::IsNearlyEqual(DomainSizeWS, SizeWS))
 			{
 				const FVector DesiredMin(CamWS.X - RadiusWS, CamWS.Y - RadiusWS, 0.f);
-				DomainMinWS  = SnapDownXY(DesiredMin, BaseTile);
+				DomainMinWS  = SnapDownXY(DesiredMin, CoarsestTileWS);
 				DomainSizeWS = SizeWS;
 				bHasDomain   = true;
 				return;
