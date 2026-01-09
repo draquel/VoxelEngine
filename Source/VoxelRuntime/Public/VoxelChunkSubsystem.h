@@ -78,7 +78,7 @@ private:
 	// Budgets (tune later)
 	int32 MaxGeneratePerTick = 4;
 	int32 MaxAttachPerTick   = 4;
-	int32 MaxEvictPerTick    = 4;
+	int32 MaxEvictPerTick    = 8;
 
 	// LOD / streaming policy
 	void BuildDesiredSet(const FVector& CameraWS, TSet<FVoxelChunkKey>& OutDesired) const;
@@ -114,5 +114,5 @@ private:
 	bool bTelemetryOnScreen = true;
 
 	// Budgets (you already have these)
-	int32 MaxInFlightBuilds = 6;
+	int32 MaxInFlightBuilds = 8;
 };

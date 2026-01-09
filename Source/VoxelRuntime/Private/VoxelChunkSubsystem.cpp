@@ -785,6 +785,9 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 	EvictCandidates.Reserve(Chunks.Num());
 
 	const double Now = FPlatformTime::Seconds();
+	const double DesiredGraceSec = 0.35;   // prevents “stop-and-pop holes”
+	const double VisibleGraceSec = 0.75;   // keep recently visible tiles a bit longer
+
 
 	// Base delays (tune)
 	const double BaseEvictDelaySec = 1.0;   // was 0.5
@@ -805,15 +808,35 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 
 		if (bDesired)
 		{
-			// If it was previously marked unwanted/evicting, restore it cleanly.
 			if (R.State == EVoxelChunkState::Evicting)
 			{
-				R.State = EVoxelChunkState::Requested; // or keep Resident/Ready as-is; depends on your state machine
 				R.bCancelRequested = false;
+
+				// If it was visible before, keep it visible.
+				// Otherwise, Requested is fine.
+				if (R.GPU.IsValid() && (R.LastBecameVisibleSec > 0.0))
+				{
+					R.State = EVoxelChunkState::Resident;
+				}
+				else
+				{
+					R.State = EVoxelChunkState::Requested;
+				}
+
+				R.LastStateChangeSec = Now;
 			}
+
 			R.LastBecameUnwantedSec = 0.0;
 			continue;
 		}
+		
+		// Keep recently desired tiles around briefly even if they fall out this tick
+		if ((Now - R.LastBecameDesiredSec) < DesiredGraceSec)
+			continue;
+		
+		// Keep recently visible tiles around a bit (stops flicker near boundaries)
+		if (R.State == EVoxelChunkState::Resident && (Now - R.LastBecameVisibleSec) < VisibleGraceSec)
+			continue;
 
 		// Not desired:
 		// 1) request cancel if generating
