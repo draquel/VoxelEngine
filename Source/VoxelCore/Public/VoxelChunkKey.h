@@ -13,14 +13,25 @@ struct VOXELCORE_API FVoxelChunkKey
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 LOD = 0;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FIntVector Coord = FIntVector::ZeroValue; // chunk coords at this LOD
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) EVoxelSpaceMode Mode = EVoxelSpaceMode::Surface;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int64 DomainEpoch = 0;
 
-	FORCEINLINE bool operator==(const FVoxelChunkKey& Rhs) const { return LOD == Rhs.LOD && Coord == Rhs.Coord; }
+	FORCEINLINE bool operator==(const FVoxelChunkKey& Rhs) const
+	{
+		return LOD == Rhs.LOD &&
+			   Coord == Rhs.Coord &&
+			   Mode == Rhs.Mode &&
+			   DomainEpoch == Rhs.DomainEpoch;
+	}
 	FORCEINLINE bool operator!=(const FVoxelChunkKey& Rhs) const { return !(*this == Rhs); }
 };
 
 FORCEINLINE uint32 GetTypeHash(const FVoxelChunkKey& K)
 {
-	return HashCombine(::GetTypeHash(K.LOD), GetTypeHash(K.Coord));
+	uint32 Hash = ::GetTypeHash(K.LOD);
+	Hash = HashCombine(Hash, GetTypeHash(K.Coord));
+	Hash = HashCombine(Hash, ::GetTypeHash((uint8)K.Mode));
+	Hash = HashCombine(Hash, ::GetTypeHash(K.DomainEpoch));
+	return Hash;
 }
 
 static FORCEINLINE void GetBaseGridRect(const FVoxelChunkKey& K, FIntPoint& OutMin, FIntPoint& OutMaxExcl)
@@ -57,6 +68,6 @@ static bool KeysOverlapInBaseGrid(const FVoxelChunkKey& A, const FVoxelChunkKey&
 
 FORCEINLINE FString VoxelChunkKeyToString(const FVoxelChunkKey& K)
 {
-	return FString::Printf(TEXT("LOD=%d Coord=(%d,%d,%d)"),
-		K.LOD, K.Coord.X, K.Coord.Y, K.Coord.Z);
+	return FString::Printf(TEXT("LOD=%d Coord=(%d,%d,%d) Mode=%d Epoch=%lld"),
+		K.LOD, K.Coord.X, K.Coord.Y, K.Coord.Z, (int32)K.Mode, K.DomainEpoch);
 }
