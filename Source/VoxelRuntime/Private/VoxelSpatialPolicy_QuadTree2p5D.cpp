@@ -44,131 +44,121 @@ namespace VoxelRuntime
 	}
 
 	void FVoxelSpatialPolicy_QuadTree2p5D::ComputeDemands(
-		const FVoxelWorldSettings& World,
-		const FVoxelSpatialPolicyParams& Params,
-		const TArray<FVector>& CamerasWS,
-		TArray<FVoxelChunkDemand>& OutDemands) const
+	    const FVoxelWorldSettings& World,
+	    const FVoxelSpatialPolicyParams& Params,
+	    const TArray<FVector>& CamerasWS,
+	    TArray<FVoxelChunkDemand>& OutDemands) const
 	{
-		OutDemands.Reset();
-		if (!LeafSource.IsValid() || CamerasWS.Num() == 0)
-			return;
+	    OutDemands.Reset();
+	    if (!LeafSource.IsValid() || CamerasWS.Num() == 0)
+	        return;
 
-		TArray<FQuadTreeLeaf> Leaves;
-		LeafSource->GetLeaves(World, Params, CamerasWS, Leaves);
-		if (Leaves.Num() == 0)
-			return;
+	    TArray<FQuadTreeLeaf> Leaves;
+	    LeafSource->GetLeaves(World, Params, CamerasWS, Leaves);
+	    if (Leaves.Num() == 0)
+	        return;
 
-		TSet<FVoxelChunkKey> Seen;
-		Seen.Reserve(Leaves.Num() * 2);
+	    TSet<FVoxelChunkKey> Seen;
+	    Seen.Reserve(Leaves.Num() * 2);
 
-		const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
-		int32 MisalignedLeaves = 0;
-		FVector SampleLeafMinWS = FVector::ZeroVector;
-		double SampleTileSizeWS = 0.0;
-		int32 SampleLOD = 0;
+	    const int32 MaxLOD   = FMath::Max(0, Params.MaxLOD);
+	    const int32 MaxDepth = FMath::Max(0, World.LODParams.QuadTreeMaxDepth);
 
-		auto IsAlignedToTile = [](double Value, double TileSizeWS) -> bool
-		{
-			if (TileSizeWS <= 0.0)
-			{
-				return true;
-			}
-			double Mod = FMath::Fmod(Value, TileSizeWS);
-			if (Mod < 0.0)
-			{
-				Mod += TileSizeWS;
-			}
-			const double Epsilon = TileSizeWS * 1e-3;
-			return (Mod <= Epsilon) || (TileSizeWS - Mod <= Epsilon);
-		};
-		// NOTE: For pure surface rendering, consider forcing Z to exactly one slice:
-		// const int32 MinZChunk = 0, MaxZChunk = 0; (or derived from World Z)
-		//
-		// Keeping your existing Z slab approach:
-		const double BaseTileSizeWS = EffectiveBaseTileSizeWS(World);
+	    auto RoundToGridIndex = [](double Value, double Grid) -> int64
+	    {
+	        if (Grid <= 0.0) return 0;
+	        // If DomainMin is aligned, Value/Grid should be near an integer.
+	        // Round is more stable than Floor here for "half-step" drift cases.
+	        return (int64)FMath::RoundToDouble(Value / Grid);
+	    };
 
-		for (const FQuadTreeLeaf& Leaf : Leaves)
-		{
-			const int32 MaxDepth = FMath::Max(0, World.LODParams.QuadTreeMaxDepth);
-			const int32 LeafDepth = FMath::Clamp((int32)Leaf.Depth, 0, MaxDepth);
-
-			// Depth: 0 = coarsest, MaxDepth = finest
-			// LOD:   0 = finest,  MaxLOD   = coarsest
-			const int32 LOD = FMath::Clamp(MaxDepth - LeafDepth, 0, MaxLOD);
-
-			// Use the leaf’s actual size as the tile size (prevents drift from float math)
-			const double TileSizeWS = (double)Leaf.Size.X;
-
-			// Optional sanity: expected tile size from base + LOD
-			// const double Expected = EffectiveBaseTileSizeWS(World) * double(1 << LOD);
-			// ensureMsgf(FMath::IsNearlyEqual(TileSizeWS, Expected, Expected * 1e-3), TEXT("Leaf size mismatch"));
-
-			const FVector LeafMinWS = Leaf.Position;
-
-			// Snap-down is only to absorb tiny float noise, not to “fix” alignment.
-			// If DomainMin is correct, LeafMin should already be aligned.
-			const double Eps = TileSizeWS * 1e-6;
-			const double X0 = FMath::FloorToDouble((LeafMinWS.X + Eps) / TileSizeWS);
-			const double Y0 = FMath::FloorToDouble((LeafMinWS.Y + Eps) / TileSizeWS);
-
-			FVoxelChunkKey Key;
-			Key.LOD   = LOD;
-			Key.Coord = FIntVector((int32)X0, (int32)Y0, 0);
-
-			if (Seen.Contains(Key))
-				continue;
-			Seen.Add(Key);
-
-			// Compute chunk center based on snapped grid for stable priority
-			const FVector TileOriginWS(
-				(double)Key.Coord.X * TileSizeWS,
-				(double)Key.Coord.Y * TileSizeWS,
-				0.0
-			);
-			const FVector TileCenterWS = TileOriginWS + FVector(TileSizeWS * 0.5, TileSizeWS * 0.5, 0.0);
-
-			float BestDist = BIG_NUMBER;
-			for (const FVector& Cam : CamerasWS)
-			{
-				BestDist = FMath::Min(BestDist, FVector::Dist2D(TileCenterWS, Cam));
-			}
-
-			FVoxelChunkDemand D;
-			D.Key = Key;
-			D.Wanted = (LOD <= Params.ResidentThroughLOD)
-				? EVoxelChunkWantedState::Resident
-				: EVoxelChunkWantedState::Requested;
-
-			D.ApproxDistWS = BestDist;
-			D.Priority     = Voxel::ComputePriority(BestDist, LOD);
-
-			OutDemands.Add(D);
-		}
-		// UE_LOG(LogTemp, Warning, TEXT("QuadTree leaves=%d demands=%d"), Leaves.Num(), OutDemands.Num());
 	#if !(UE_BUILD_SHIPPING)
-		if (MisalignedLeaves > 0)
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("QuadTree leaf min alignment mismatch: %d/%d leaves (sample MinWS=(%.2f, %.2f) Tile=%.2f LOD=%d)"),
-				MisalignedLeaves,
-				Leaves.Num(),
-				SampleLeafMinWS.X,
-				SampleLeafMinWS.Y,
-				SampleTileSizeWS,
-				SampleLOD);
-		}
+	    int32 Bad = 0;
+	#endif
+		// You need DomainMinWS from the leaf source.
+		// Easiest: have LeafSource expose the current DomainMinWS (or pass it back with Leaves).
+		const FVector DomainMinWS = LeafSource->GetDomainMinWS_DebugOnlyOrAPI(); // you add this
+
+	    for (const FQuadTreeLeaf& Leaf : Leaves)
+	    {
+	    	const int32 LeafDepth = FMath::Clamp((int32)Leaf.Depth, 0, MaxDepth);
+	    	const int32 LOD       = FMath::Clamp(MaxDepth - LeafDepth, 0, Params.MaxLOD);
+
+	    	const double TileSizeWS = (double)Leaf.Size.X;     // leaf size is authoritative
+	    	const FVector LeafMinWS = Leaf.Position;           // leaf min is authoritative
+
+	    	// Key coords are in “TileSizeWS units”, but anchored at DomainMinWS
+	    	const double Eps = TileSizeWS * 1e-6;
+
+	    	const int32 X = (int32)FMath::FloorToDouble(((LeafMinWS.X - DomainMinWS.X) + Eps) / TileSizeWS);
+	    	const int32 Y = (int32)FMath::FloorToDouble(((LeafMinWS.Y - DomainMinWS.Y) + Eps) / TileSizeWS);
+
+	    	FVoxelChunkKey Key;
+	    	Key.LOD   = LOD;
+	    	Key.Coord = FIntVector(X, Y, 0);
+
+	        if (Seen.Contains(Key))
+	            continue;
+	        Seen.Add(Key);
+
+	#if !(UE_BUILD_SHIPPING)
+	        // Validate the reconstruction is actually the same as the leaf min.
+	        const FVector ReconstructedMin(
+	            (double)Key.Coord.X * TileSizeWS,
+	            (double)Key.Coord.Y * TileSizeWS,
+	            0.0
+	        );
+
+	        const double ErrX = FMath::Abs(ReconstructedMin.X - LeafMinWS.X);
+	        const double ErrY = FMath::Abs(ReconstructedMin.Y - LeafMinWS.Y);
+	        const double Tol  = TileSizeWS * 1e-3; // 0.1% of tile
+	        if (ErrX > Tol || ErrY > Tol)
+	        {
+	            ++Bad;
+	            if (Bad < 8)
+	            {
+	                UE_LOG(LogTemp, Warning,
+	                    TEXT("Leaf->Demand mismatch LOD=%d Tile=%.3f LeafMin=(%.3f,%.3f) Recon=(%.3f,%.3f) Err=(%.3f,%.3f)"),
+	                    LOD, TileSizeWS,
+	                    LeafMinWS.X, LeafMinWS.Y,
+	                    ReconstructedMin.X, ReconstructedMin.Y,
+	                    ErrX, ErrY);
+	            }
+	        }
 	#endif
 
-		OutDemands.Sort([](const FVoxelChunkDemand& A, const FVoxelChunkDemand& B)
-		{
-			if (A.Wanted != B.Wanted) return A.Wanted > B.Wanted;
-			return A.Priority > B.Priority;
-		});
-		
-		// TSet<FIntPoint> UniqueXY;
-		// for (auto& D : OutDemands) UniqueXY.Add(FIntPoint(D.Key.Coord.X, D.Key.Coord.Y));
-		// UE_LOG(LogTemp, Warning, TEXT("Leaves=%d Demands=%d UniqueXY=%d"), Leaves.Num(), OutDemands.Num(), UniqueXY.Num());
+	        // Priority / distance uses the leaf itself (not reconstructed grid) to be consistent
+	        const FVector LeafCenterWS = LeafMinWS + FVector(TileSizeWS * 0.5, TileSizeWS * 0.5, 0.0);
+
+	        float BestDist = BIG_NUMBER;
+	        for (const FVector& Cam : CamerasWS)
+	        {
+	            BestDist = FMath::Min(BestDist, FVector::Dist2D(LeafCenterWS, Cam));
+	        }
+
+	        FVoxelChunkDemand D;
+	        D.Key         = Key;
+	        D.Wanted      = (LOD <= Params.ResidentThroughLOD) ? EVoxelChunkWantedState::Resident : EVoxelChunkWantedState::Requested;
+	        D.ApproxDistWS= BestDist;
+	        D.Priority    = Voxel::ComputePriority(BestDist, LOD);
+
+	        OutDemands.Add(D);
+	    }
+
+	#if !(UE_BUILD_SHIPPING)
+	    if (Bad > 0)
+	    {
+	        UE_LOG(LogTemp, Warning, TEXT("ComputeDemands: %d leaf->demand reconstruction mismatches"), Bad);
+	    }
+	#endif
+
+	    OutDemands.Sort([](const FVoxelChunkDemand& A, const FVoxelChunkDemand& B)
+	    {
+	        if (A.Wanted != B.Wanted) return A.Wanted > B.Wanted;
+	        return A.Priority > B.Priority;
+	    });
 	}
+
 
 	float FVoxelSpatialPolicy_QuadTree2p5D::ChunkSizeWS(const FVoxelWorldSettings& World, int32 LOD) const
 	{
@@ -177,13 +167,15 @@ namespace VoxelRuntime
 
 	FVector FVoxelSpatialPolicy_QuadTree2p5D::ChunkOriginWS(const FVoxelWorldSettings& World, const FVoxelChunkKey& Key) const
 	{
-		const double Size = TileSizeWSAtLOD(World, Key.LOD);
+		const double TileSize = TileSizeWSAtLOD(World, Key.LOD);
 
-		// Z for 2.5D: keep it grid-aligned anyway (lets you later extend to small slabs cleanly)
+		// IMPORTANT: anchor to current domain min, not world origin
+		const FVector DomainMinWS = LeafSource->GetDomainMinWS_DebugOnlyOrAPI();
+
 		return FVector(
-			(double)Key.Coord.X * Size,
-			(double)Key.Coord.Y * Size,
-			(double)Key.Coord.Z * Size
+			DomainMinWS.X + (double)Key.Coord.X * TileSize,
+			DomainMinWS.Y + (double)Key.Coord.Y * TileSize,
+			0.0
 		);
 	}
 
