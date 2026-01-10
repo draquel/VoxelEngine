@@ -142,6 +142,8 @@ namespace VoxelRuntime
 	        D.Wanted      = (LOD <= Params.ResidentThroughLOD) ? EVoxelChunkWantedState::Resident : EVoxelChunkWantedState::Requested;
 	        D.ApproxDistWS= BestDist;
 	        D.Priority    = Voxel::ComputePriority(BestDist, LOD);
+	    	D.DomainEpoch = LeafSource->GetDomainEpoch();
+
 
 	        OutDemands.Add(D);
 	    }

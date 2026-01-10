@@ -383,8 +383,8 @@ FVoxelChunkRecord& UVoxelChunkSubsystem::GetOrCreateChunk(const FVoxelChunkKey& 
 
 	FVoxelChunkRecord& NewRecord = Chunks.Add(Key);
 	NewRecord.Key = Key;
-	NewRecord.ChunkCenterWS = ComputeChunkCenterWS(Key);
-	NewRecord.ChunkOriginWS = ComputeChunkOriginWS(Key);
+	NewRecord.ChunkCenterWS = GetChunkCenterWS(Key);
+	NewRecord.ChunkOriginWS = GetChunkOriginWS(Key);
 	NewRecord.State = EVoxelChunkState::Unloaded;
 	NewRecord.Priority = 0.f;
 	NewRecord.GPU = nullptr;

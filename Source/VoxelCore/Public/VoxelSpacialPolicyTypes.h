@@ -25,6 +25,7 @@ struct VOXELCORE_API FVoxelChunkDemand
 
 	// Optional debug/telemetry
 	UPROPERTY() float ApproxDistWS = 0.f;
+	UPROPERTY() uint64 DomainEpoch = 0;
 };
 
 USTRUCT(BlueprintType)
