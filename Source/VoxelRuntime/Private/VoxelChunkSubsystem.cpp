@@ -86,6 +86,9 @@ void UVoxelChunkSubsystem::CancelCoarserOverlaps_DemandTime(const TArray<FVoxelC
 
 	for (const FVoxelChunkKey& Fine : FineKeys)
 	{
+		const FVoxelChunkRecord* FineRec = Chunks.Find(Fine);
+		if (!FineRec) continue;
+
 		for (auto& KVP : Chunks)
 		{
 			FVoxelChunkRecord& CoarseRec = KVP.Value;
@@ -93,7 +96,20 @@ void UVoxelChunkSubsystem::CancelCoarserOverlaps_DemandTime(const TArray<FVoxelC
 
 			if (Coarse == Fine) continue;
 			if (Coarse.LOD <= Fine.LOD) continue;
-			if (!KeysOverlapInBaseGrid(Fine, Coarse)) continue;
+
+			// Cross-epoch overlap check
+			bool bOverlap = false;
+			if (SpatialPolicy.IsValid())
+				const float SizeCoarse = SpatialPolicy->ChunkSizeWS(Settings, Coarse.LOD);
+				
+						   Overlaps1D(MinFine.Y, MaxFine.Y, MinCoarse.Y, MaxCoarse.Y);
+			}
+			else
+			{
+				bOverlap = KeysOverlapInBaseGrid(Fine, Coarse);
+			}
+
+			if (!bOverlap) continue;
 
 			// IMPORTANT: do NOT evict currently visible coarse tiles here.
 			if (CoarseRec.State == EVoxelChunkState::Resident)
@@ -156,9 +172,22 @@ void UVoxelChunkSubsystem::ApplyDemands(
 
 		// Track desired-LOD (debug/telemetry)
 		R.DesiredLOD = D.Key.LOD;
+		R.DomainEpoch = (uint64)R.Key.DomainEpoch;
+
+		// Immediately refresh WS positions using the correct epoch
+		if (SpatialPolicy.IsValid())
+		{
+			R.ChunkOriginWS = SpatialPolicy->ChunkOriginWS(Settings, R.Key);
+			const float Size = SpatialPolicy->ChunkSizeWS(Settings, R.Key.LOD);
+			R.ChunkCenterWS = R.ChunkOriginWS + FVector(Size * 0.5f);
+		}
+		else
+		{
+			R.ChunkOriginWS = GetChunkOriginWS(R.Key);
+			R.ChunkCenterWS = GetChunkCenterWS(R.Key);
+		}
 
 		// Keep LastDistanceToCamera as "true distance" for eviction sorting stability
-		// R.ChunkCenterWS = ComputeChunkCenterWS(D.Key); // Already computed in TickStreaming
 		R.LastDistanceToCamera = FVector::Dist2D(R.ChunkCenterWS, CameraWS);
 
 		// Policy priority drives scheduling (do NOT overwrite later)
@@ -195,7 +224,19 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 	for (auto& KVP : Chunks)
 	{
 		FVoxelChunkRecord& R = KVP.Value;
-		R.ChunkCenterWS = GetChunkCenterWS(R.Key);
+		
+		// If the spatial policy is epoch-aware, we MUST use its epoch-aware origin/center logic
+		if (SpatialPolicy.IsValid())
+		{
+			R.ChunkOriginWS = SpatialPolicy->ChunkOriginWS(Settings, R.Key);
+			const float Size = SpatialPolicy->ChunkSizeWS(Settings, R.Key.LOD);
+			R.ChunkCenterWS = R.ChunkOriginWS + FVector(Size * 0.5f);
+		}
+		else
+		{
+			R.ChunkCenterWS = GetChunkCenterWS(R.Key);
+		}
+		
 		R.LastDistanceToCamera = FVector::Dist2D(R.ChunkCenterWS, CameraWS);
 	}
 
@@ -952,61 +993,6 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 }
 
 
-void UVoxelChunkSubsystem::EvictOverlappingLODs(const FVoxelChunkKey& NewKey)
-{
-	const double Now = FPlatformTime::Seconds();
-
-	for (auto& KVP : Chunks)
-	{
-		FVoxelChunkRecord& Other = KVP.Value;
-
-		if (Other.Key == NewKey)
-			continue;
-
-		if (!KeysOverlapInBaseGrid(NewKey, Other.Key))
-			continue;
-
-		if (Other.State == EVoxelChunkState::Evicting)
-			continue;
-
-		// --- Case 1: Refinement (NewKey is finer, Other is coarser) ---
-		if (Other.Key.LOD > NewKey.LOD)
-		{
-			// If it's building, cancel it.
-			if (Other.State == EVoxelChunkState::Requested ||
-				Other.State == EVoxelChunkState::Generating ||
-				Other.State == EVoxelChunkState::Ready)
-			{
-				if (RenderConsumer)
-					RenderConsumer->RemoveChunk(Other.Key);
-
-				Other.bCancelRequested = true;
-				Other.State = EVoxelChunkState::Evicting;
-				Other.LastStateChangeSec = Now;
-				Other.LastEnqueuedRenderBuildId = 0;
-			}
-			continue;
-		}
-		// --- Case 2: Coarsening (NewKey is coarser, Other is finer) ---
-		else if (Other.Key.LOD < NewKey.LOD)
-		{
-			// If the parent is now resident, we can immediately cancel children that are being built.
-			if (Other.State == EVoxelChunkState::Requested ||
-				Other.State == EVoxelChunkState::Generating ||
-				Other.State == EVoxelChunkState::Ready)
-			{
-				if (RenderConsumer)
-					RenderConsumer->RemoveChunk(Other.Key);
-
-				Other.bCancelRequested = true;
-				Other.State = EVoxelChunkState::Evicting;
-				Other.LastStateChangeSec = Now;
-				Other.LastEnqueuedRenderBuildId = 0;
-			}
-			continue;
-		}
-	}
-}
 
 void UVoxelChunkSubsystem::DebugRequestChunkOnce(const FVoxelChunkKey& Key)
 {
@@ -1041,9 +1027,6 @@ void UVoxelChunkSubsystem::OnConsumerBuilt(const FVoxelChunkKey& Key, uint64 Bui
 		R->State = EVoxelChunkState::Resident;
 		R->LastStateChangeSec = FPlatformTime::Seconds();
 		R->LastBecameVisibleSec = FPlatformTime::Seconds();
-
-		// NOW it's safe to remove overlapping coarser LODs.
-		EvictOverlappingLODs(Key);
 	}
 }
 

@@ -87,7 +87,6 @@ private:
 	// Lifecycle steps
 	void RequestMissing(const TSet<FVoxelChunkKey>& Desired, const FVector& CameraWS);
 	void EvictUnwanted(const TSet<FVoxelChunkKey>& Desired);
-	void EvictOverlappingLODs(const FVoxelChunkKey& NewKey);
 
 	// Helpers
 	float GetChunkSizeWS(const FVoxelChunkKey& Key) const;

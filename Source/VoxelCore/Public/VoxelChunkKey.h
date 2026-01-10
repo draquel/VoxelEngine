@@ -56,6 +56,13 @@ static void KeyToBaseRangeInclusive(const FVoxelChunkKey& K, FIntVector& OutMin,
 
 static bool KeysOverlapInBaseGrid(const FVoxelChunkKey& A, const FVoxelChunkKey& B)
 {
+	if (A.DomainEpoch != B.DomainEpoch)
+	{
+		// Different epochs are relative to different domain origins. 
+		// Cannot compare them in grid space.
+		return false; 
+	}
+
 	FIntVector AMin, AMax, BMin, BMax;
 	KeyToBaseRangeInclusive(A, AMin, AMax);
 	KeyToBaseRangeInclusive(B, BMin, BMax);
