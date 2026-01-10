@@ -8,6 +8,7 @@
 #include "VoxelCore/Public/DrawDebugHelpers.h"
 #include "QuadTree/QuadTree.h"
 #include "QuadTree/QuadTreeSettings.h"
+#include "Util/ColorUtils.h"
 
 namespace VoxelRuntime
 {
@@ -181,7 +182,7 @@ namespace VoxelRuntime
 	
 		void DebugDrawQuadTree(UWorld* World)
 		{
-			Tree.Visualize(World);
+			Tree.Visualize(World, Voxel::FColorUtils::LODColors(), 500, 0);
 		}
 		
 		void DebugDrawDomain(UWorld* World, float Lifetime = 0.f, bool bPersistentLines = false) const

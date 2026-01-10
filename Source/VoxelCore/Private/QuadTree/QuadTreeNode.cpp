@@ -2,6 +2,7 @@
 
 #include "DrawDebugHelpers.h"
 #include "QuadTree/QuadTree.h"
+#include "Util/ColorUtils.h"
 
 namespace Voxel
 {
@@ -128,12 +129,23 @@ namespace Voxel
 		return res;
 	}
 	
-	void QuadTreeNode::Visualize(UWorld* World)
+	void QuadTreeNode::Visualize(UWorld* World, TArray<FColor> Colors, int32 Height, float Duration)
 	{
+		TArray<FColor> ColorArray;
+		UE_LOG(LogTemp,Warning,TEXT("Visualize Colors: %d MaxDepth: %d"),Colors.Num(),Settings->MaxDepth);
+		if(Colors.Num() < Settings->MaxDepth)
+		{
+			TArray<FColor> Generated = Voxel::FColorUtils::GenerateDistinctColors(Settings->MaxDepth, FPlatformTime::Seconds());
+			ColorArray = Generated;
+		}else
+		{
+			ColorArray = Colors;
+		}
+		
 		FVector Extent = Size / 2.0;
-		Extent.Z = 500.0;
+		Extent.Z = Height;
 		FBox box(Position, Center + Extent);
-		DrawDebugBox(World,Center,Extent,Voxel::LODToColor(Settings->MaxDepth-Depth), false,0.f,0,20);
+		DrawDebugBox(World,Center,Extent,ColorArray[Settings->MaxDepth-Depth], false,Duration,0,20);
 		
 	}
 }

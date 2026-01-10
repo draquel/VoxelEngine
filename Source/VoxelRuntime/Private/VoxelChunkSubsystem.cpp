@@ -12,6 +12,7 @@
 #include "VoxelCore/Public/VoxelChunkRenderPayload.h"
 #include "VoxelCore/Public/IVoxelChunkBuildService.h"
 
+
 void UVoxelChunkSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -240,7 +241,7 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 					const FVector OriginWS = GetChunkOriginWS(Demand.Key);
 					const FVector CenterWS = OriginWS + FVector(SizeWS * 0.5f, SizeWS * 0.5f, 0.0f);
 					const FVector Extent(SizeWS * 0.5f, SizeWS * 0.5f, 50.0f);
-					const FColor Color = Voxel::LODToColor(Demand.Key.LOD);
+					const FColor Color = Voxel::FColorUtils::LODColors()[Demand.Key.LOD];
 					DrawDebugBox(World, CenterWS, Extent, Color, false, 0.f, 0, 10.f);
 				}
 			}
