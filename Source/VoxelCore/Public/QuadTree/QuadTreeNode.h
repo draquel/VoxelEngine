@@ -37,7 +37,7 @@ namespace Voxel
 		void CheckNeighbors();
 		bool CheckNeighborDepth(int direction, uint32 hash) const;
 		int GetNeighborDepth(uint32 queryHash, int targetDepth);
-		void Visualize(UWorld* World);
+		void Visualize(UWorld* World, TArray<FColor> Colors, int32 Height, float Duration);
 	};
 
 	
@@ -62,6 +62,7 @@ struct VOXELCORE_API FQuadTreeLeaf
 	FQuadTreeLeaf()
 	{
 		Center = FVector::ZeroVector;
+		Position = FVector::ZeroVector;
 		Size = FVector::ZeroVector;
 		Depth = 0;
 		Neighbors = FVector4f::Zero();

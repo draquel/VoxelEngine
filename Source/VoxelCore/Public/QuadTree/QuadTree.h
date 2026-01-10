@@ -27,6 +27,6 @@ namespace Voxel
 		void UpdateSettings(FQuadTreeSettings settings);
 
 		static int CountVerts(TArray<QuadTreeNode> nodes);
-		void Visualize(UWorld* World);
+		void Visualize(UWorld* World, TArray<FColor> Colors, uint32 Height, float Duration);
 	};
 }
