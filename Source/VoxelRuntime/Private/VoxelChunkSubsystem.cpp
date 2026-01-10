@@ -708,6 +708,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		if (SpatialPolicy.IsValid())
 		{
 			SpatialPolicy->FillBuildPayload(Settings, Settings.LODParams, Rec->Key, Inputs);
+			Inputs.ChunkOriginWS = Rec->ChunkOriginWS;
 		}
 		else
 		{
@@ -826,7 +827,7 @@ void UVoxelChunkSubsystem::AttachReadyToRender()
             P.BuildId      = R.BuildId;
             P.GPU          = R.GPU;
             P.VertexSpace  = EVoxelVertexSpace::ChunkLocal;
-            P.ChunkOriginWS= GetChunkOriginWS(R.Key);
+            P.ChunkOriginWS= R.ChunkOriginWS;
             P.ChunkSize    = GetChunkSizeWS(R.Key);
         	P.StepSizeWS    = R.LastBuildPayload.StepSizeWS;
         	P.CellsPerAxis  = R.LastBuildPayload.CellsPerAxis;
