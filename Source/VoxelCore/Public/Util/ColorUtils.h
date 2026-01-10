@@ -13,10 +13,10 @@ namespace Voxel
 				FColor::Red,
 				FColor::Orange,
 				FColor::Yellow,
-				FColor::Magenta,
-				FColor::Cyan,
-				FColor::Blue,
 				FColor::Green,
+				FColor::Blue,
+				FColor::Purple,
+				FColor::Black,
 				FColor::White
 			};
 			return Result;
