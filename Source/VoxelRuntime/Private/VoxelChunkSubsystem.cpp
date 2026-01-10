@@ -100,8 +100,22 @@ void UVoxelChunkSubsystem::CancelCoarserOverlaps_DemandTime(const TArray<FVoxelC
 			// Cross-epoch overlap check
 			bool bOverlap = false;
 			if (SpatialPolicy.IsValid())
+			{
+				const float SizeFine = SpatialPolicy->ChunkSizeWS(Settings, Fine.LOD);
 				const float SizeCoarse = SpatialPolicy->ChunkSizeWS(Settings, Coarse.LOD);
 				
+				const FVector MinFine = FineRec->ChunkOriginWS;
+				const FVector MaxFine = MinFine + FVector(SizeFine, SizeFine, 0.0f);
+				
+				const FVector MinCoarse = CoarseRec.ChunkOriginWS;
+				const FVector MaxCoarse = MinCoarse + FVector(SizeCoarse, SizeCoarse, 0.0f);
+				
+				auto Overlaps1D = [](float Min1, float Max1, float Min2, float Max2)
+				{
+					return (Min1 < Max2 - 1e-3f) && (Min2 < Max1 - 1e-3f);
+				};
+				
+				bOverlap = Overlaps1D(MinFine.X, MaxFine.X, MinCoarse.X, MaxCoarse.X) &&
 						   Overlaps1D(MinFine.Y, MaxFine.Y, MinCoarse.Y, MaxCoarse.Y);
 			}
 			else
@@ -848,13 +862,38 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 		// Example curve: LOD0=1s, LOD1=1.5s, LOD2=2.25s, LOD3=3.4s...
 		return BaseEvictDelaySec * FMath::Pow(1.5, (double)FMath::Max(0, LOD));
 	};
+	
+	VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D* QT = static_cast<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D*>(SpatialPolicy.Get());
+	VoxelRuntime::FQuadTreeLeafSource_FromQuadTree* LeafSource = static_cast<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree*>(QT->LeafSource.Get());
+	const uint64 CurrentEpoch = LeafSource->GetDomainEpoch();
+	
+	auto RecordsOverlapWS = [&](const FVoxelChunkRecord& A, const FVoxelChunkRecord& B) -> bool
+	{
+		// 2.5D overlap check in world space
+		const float SizeA = SpatialPolicy->ChunkSizeWS(Settings, A.Key.LOD);
+		const float SizeB = SpatialPolicy->ChunkSizeWS(Settings, B.Key.LOD);
+		
+		const FVector MinA = A.ChunkOriginWS;
+		const FVector MaxA = MinA + FVector(SizeA, SizeA, 0.0f);
+		
+		const FVector MinB = B.ChunkOriginWS;
+		const FVector MaxB = MinB + FVector(SizeB, SizeB, 0.0f);
+		
+		auto Overlaps1D = [](float Min1, float Max1, float Min2, float Max2)
+		{
+			return (Min1 < Max2 - 1e-3f) && (Min2 < Max1 - 1e-3f);
+		};
+		
+		return Overlaps1D(MinA.X, MaxA.X, MinB.X, MaxB.X) &&
+			   Overlaps1D(MinA.Y, MaxA.Y, MinB.Y, MaxB.Y);
+	};
 
 	for (auto& KVP : Chunks)
 	{
 		FVoxelChunkRecord& R = KVP.Value;
 
 		const bool bDesired = Desired.Contains(R.Key);
-
+		
 		if (bDesired)
 		{
 			if (R.State == EVoxelChunkState::Evicting)
@@ -879,74 +918,59 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 			continue;
 		}
 		
-		// 2) stamp when it first became unwanted
-		if (R.LastBecameUnwantedSec <= 0.0)
-			R.LastBecameUnwantedSec = Now;
-
-		// --- Transition-aware eviction: don't leave holes ---
-		// If we're resident, stay resident until our replacements (whatever they are) are also resident.
-		if (R.State == EVoxelChunkState::Resident)
-		{
-			bool bAnyOverlappingDesiredNotResident = false;
-			bool bAllOverlappingDesiredAreOldEnough = true;
-			bool bHasAnyOverlappingDesired = false;
-
-			for (const FVoxelChunkKey& DesiredKey : Desired)
-			{
-				if (KeysOverlapInBaseGrid(R.Key, DesiredKey))
-				{
-					bHasAnyOverlappingDesired = true;
-					const FVoxelChunkRecord* DesiredRec = Chunks.Find(DesiredKey);
-					if (!DesiredRec || DesiredRec->State != EVoxelChunkState::Resident)
-					{
-						bAnyOverlappingDesiredNotResident = true;
-						break;
-					}
-
-					// We wait for a tiny bit (0.1s) to ensure the renderer has actually swapped the mesh
-					// This avoids "flashing" where the new mesh isn't yet visible but the old one is gone.
-					if ((Now - DesiredRec->LastBecameVisibleSec) < 0.1)
-					{
-						bAllOverlappingDesiredAreOldEnough = false;
-						// Continue checking other desired overlaps
-					}
-				}
-			}
-
-			if (bAnyOverlappingDesiredNotResident || (bHasAnyOverlappingDesired && !bAllOverlappingDesiredAreOldEnough))
-			{
-				continue; // keep as fallback
-			}
-
-			// If it's covered and children are old enough, we can fast-track eviction to avoid Z-fighting.
-			if (bHasAnyOverlappingDesired && bAllOverlappingDesiredAreOldEnough)
-			{
-				EvictCandidates.Add(&R);
-				continue;
-			}
-		}
-
-		// Keep recently desired tiles around briefly even if they fall out this tick
-		if ((Now - R.LastBecameDesiredSec) < DesiredGraceSec)
-			continue;
-		
-		// Keep recently visible tiles around a bit (stops flicker near boundaries)
-		if (R.State == EVoxelChunkState::Resident && (Now - R.LastBecameVisibleSec) < VisibleGraceSec)
-			continue;
-
-		// Not desired:
-		// 1) request cancel if generating
+		// 1) request cancel if generating (as it's no longer desired)
 		if (R.State == EVoxelChunkState::Generating)
 		{
 			R.bCancelRequested = true;
 			continue;
 		}
 
-		// 3) don’t evict something that *just* became visible
+		// --- Transition-aware eviction: don't leave holes ---
+		// If we're resident (current or old epoch), stay resident until our replacements are also resident.
+		if (R.State == EVoxelChunkState::Resident)
+		{
+			bool bAnyOverlappingDesiredNotResident = false;
+			bool bHasAnyOverlappingDesired = false;
+
+			for (const FVoxelChunkKey& DesiredKey : Desired)
+			{
+				const FVoxelChunkRecord* DesiredRec = Chunks.Find(DesiredKey);
+				if (!DesiredRec) continue;
+
+				if (RecordsOverlapWS(R, *DesiredRec))
+				{
+					bHasAnyOverlappingDesired = true;
+					if (DesiredRec->State != EVoxelChunkState::Resident || (Now - DesiredRec->LastBecameVisibleSec) < 0.1)
+					{
+						bAnyOverlappingDesiredNotResident = true;
+						break;
+					}
+				}
+			}
+
+			if (bHasAnyOverlappingDesired && bAnyOverlappingDesiredNotResident)
+			{
+				continue; // KEEP as fallback
+			}
+		}
+
+		// 2) stamp when it first became unwanted
+		if (R.LastBecameUnwantedSec <= 0.0)
+			R.LastBecameUnwantedSec = Now;
+
+		// 3) keep recently desired tiles around briefly even if they fall out this tick
+		if ((Now - R.LastBecameDesiredSec) < DesiredGraceSec)
+			continue;
+		
+		// 4) keep recently visible tiles around a bit (stops flicker near boundaries)
+		if (R.State == EVoxelChunkState::Resident && (Now - R.LastBecameVisibleSec) < VisibleGraceSec)
+			continue;
+
+		// 5) don’t evict something that *just* became visible
 		if (R.LastBecameVisibleSec > 0.0 && (Now - R.LastBecameVisibleSec) < MinVisibleSec)
 			continue;
 
-		// 4) mark state evicting, but only remove after per-LOD delay
+		// 6) mark state evicting, but only remove after per-LOD delay
 		if (R.State != EVoxelChunkState::Evicting)
 		{
 			R.State = EVoxelChunkState::Evicting;
