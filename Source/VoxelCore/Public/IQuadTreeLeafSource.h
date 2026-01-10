@@ -24,6 +24,8 @@ namespace Voxel
 			const FVoxelSpatialPolicyParams& Params,
 			const TArray<FVector>& CamerasWS,
 			TArray<FQuadTreeLeaf>& OutLeaves) const = 0;
+		
+		virtual FVector GetDomainMinWS_DebugOnlyOrAPI() const = 0;
 	};
 }
 

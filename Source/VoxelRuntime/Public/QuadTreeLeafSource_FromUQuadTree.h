@@ -20,6 +20,9 @@ namespace VoxelRuntime
 		{
 			Tree.Init(InWorldMinWS, InWorldSizeWS, InSettings);
 		}
+		
+		virtual ~FQuadTreeLeafSource_FromQuadTree() = default;
+		virtual FVector GetDomainMinWS_DebugOnlyOrAPI() const override { return DomainMinWS; }
 
 		void UpdateSettings(const FQuadTreeSettings& InSettings)
 		{
