@@ -25,6 +25,7 @@ namespace VoxelRuntime
 		// Invariants (surface tiles, not MC chunks)
 		virtual float   ChunkSizeWS  (const FVoxelWorldSettings& World, int32 LOD) const override;
 		virtual FVector ChunkOriginWS(const FVoxelWorldSettings& World, const FVoxelChunkKey& Key) const override;
+		virtual FVector ChunkOriginWS_WithEpoch(const FVoxelWorldSettings& World, const FVoxelChunkKey& Key, uint64 Epoch) const override;
 		static int32 ComputeLODFromLeafSize_ClampToLeaf(double LeafSizeWS, double BaseTileWS, int32 MaxLOD);
 
 		// Surface policy should build SurfaceGrid, not MarchingCubes

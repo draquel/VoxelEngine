@@ -21,6 +21,11 @@ namespace Voxel
 		// Invariants (policy owns key->space mapping)
 		virtual float   ChunkSizeWS  (const FVoxelWorldSettings& World, int32 LOD) const = 0;
 		virtual FVector ChunkOriginWS(const FVoxelWorldSettings& World, const FVoxelChunkKey& Key) const = 0;
+		virtual FVector ChunkOriginWS_WithEpoch(const FVoxelWorldSettings& World, const FVoxelChunkKey& Key, uint64 Epoch) const
+		{
+			// default implementation ignores epoch (fine for ClipMap)
+			return ChunkOriginWS(World, Key);
+		}
 
 		// Optional convenience (can default)
 		virtual FVector ChunkCenterWS(const FVoxelWorldSettings& World, const FVoxelChunkKey& Key) const

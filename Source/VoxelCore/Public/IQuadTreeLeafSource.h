@@ -26,6 +26,8 @@ namespace Voxel
 			TArray<FQuadTreeLeaf>& OutLeaves) const = 0;
 		
 		virtual FVector GetDomainMinWS_DebugOnlyOrAPI() const = 0;
+		virtual FVector GetDomainMinWS_ForEpoch(uint64 Epoch) const = 0;
+		virtual uint64 GetDomainEpoch() const = 0;
 	};
 }
 

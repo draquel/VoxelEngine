@@ -96,6 +96,7 @@ namespace VoxelRuntime
 	    	FVoxelChunkKey Key;
 	    	Key.LOD   = LOD;
 	    	Key.Coord = FIntVector(X, Y, 0);
+	    	Key.DomainEpoch = (int64)LeafSource->GetDomainEpoch();
 
 	        if (Seen.Contains(Key))
 	            continue;
@@ -167,10 +168,15 @@ namespace VoxelRuntime
 
 	FVector FVoxelSpatialPolicy_QuadTree2p5D::ChunkOriginWS(const FVoxelWorldSettings& World, const FVoxelChunkKey& Key) const
 	{
+		return ChunkOriginWS_WithEpoch(World, Key, (uint64)Key.DomainEpoch);
+	}
+
+	FVector FVoxelSpatialPolicy_QuadTree2p5D::ChunkOriginWS_WithEpoch(const FVoxelWorldSettings& World, const FVoxelChunkKey& Key, uint64 Epoch) const
+	{
 		const double TileSize = TileSizeWSAtLOD(World, Key.LOD);
 
-		// IMPORTANT: anchor to current domain min, not world origin
-		const FVector DomainMinWS = LeafSource->GetDomainMinWS_DebugOnlyOrAPI();
+		// IMPORTANT: anchor to domain min of that epoch
+		const FVector DomainMinWS = LeafSource->GetDomainMinWS_ForEpoch(Epoch);
 
 		return FVector(
 			DomainMinWS.X + (double)Key.Coord.X * TileSize,
