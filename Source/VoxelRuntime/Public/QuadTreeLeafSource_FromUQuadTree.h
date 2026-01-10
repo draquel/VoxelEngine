@@ -23,6 +23,20 @@ namespace VoxelRuntime
 		
 		virtual ~FQuadTreeLeafSource_FromQuadTree() = default;
 		virtual FVector GetDomainMinWS_DebugOnlyOrAPI() const override { return DomainMinWS; }
+		virtual FVector GetDomainMinWS_ForEpoch(uint64 Epoch) const override
+		{
+			if (const FVector* Found = DomainHistory.Find(Epoch))
+				return *Found;
+			
+			// Fallback: if it's the current one
+			if (Epoch == DomainEpoch)
+				return DomainMinWS;
+
+			// If too old, we can't reconstruct. 
+			// Return current as a weak fallback or a very far origin?
+			// Best to return current and hope the overlap fails safely.
+			return DomainMinWS;
+		}
 
 		void UpdateSettings(const FQuadTreeSettings& InSettings)
 		{
@@ -35,6 +49,8 @@ namespace VoxelRuntime
 			return FMath::CeilToInt(FMath::Log2((float)V));
 		}
 
+		virtual uint64 GetDomainEpoch() const override { return DomainEpoch; }
+		
 		virtual void GetLeaves(
 			const FVoxelWorldSettings& World,
 			const FVoxelSpatialPolicyParams& Params,
@@ -136,7 +152,7 @@ namespace VoxelRuntime
 
 			const int32 EdgeTiles = FMath::Max(0, Params.RecenterEdgeTiles);
 			LastMarginWS          = float(EdgeTiles) * BaseTile;
-
+	
 			// camera tile coord in BaseTile units (robust for negatives)
 			const FIntPoint CamTile(
 				FloorDiv_Int(CamWS.X, BaseTile),
@@ -160,6 +176,8 @@ namespace VoxelRuntime
 				DomainMinWS  = FVector(float(DomainMinTile.X) * BaseTile, float(DomainMinTile.Y) * BaseTile, 0.f);
 				DomainSizeWS = TrueSizeWS;
 				bHasDomain   = true;
+				DomainEpoch  = 0;
+				DomainHistory.Add(DomainEpoch, DomainMinWS);
 				return;
 			}
 
@@ -192,27 +210,41 @@ namespace VoxelRuntime
 			// inside safe region => no shift
 			if (ShiftTilesX == 0 && ShiftTilesY == 0)
 			{
-				DomainMinWS  = FVector(float(DomainMinTile.X) * BaseTile, float(DomainMinTile.Y) * BaseTile, 0.f);
-				DomainSizeWS = TrueSizeWS;
 				return;
 			}
-
+			
 			// Make updates “chunkier” (shift by multiples of StepTiles, away from zero)
 			const int32 StepTiles = FMath::Max(1, Params.RecenterSnapStepTiles);
+			const int32 MaxShift = (Params.MaxShiftTilesPerUpdate > 0) ? Params.MaxShiftTilesPerUpdate : 999999;
+			
+			// Snap shift
 			ShiftTilesX = RoundUpToMultiple(ShiftTilesX, StepTiles);
 			ShiftTilesY = RoundUpToMultiple(ShiftTilesY, StepTiles);
 
-			// Clamp per update
-			const int32 MaxShift = (Params.MaxShiftTilesPerUpdate > 0) ? Params.MaxShiftTilesPerUpdate : 999999;
+			// Clamp
 			ShiftTilesX = FMath::Clamp(ShiftTilesX, -MaxShift, +MaxShift);
 			ShiftTilesY = FMath::Clamp(ShiftTilesY, -MaxShift, +MaxShift);
 
+			// Apply ONCE
 			DomainMinTile.X += ShiftTilesX;
 			DomainMinTile.Y += ShiftTilesY;
 
-			// Convert back to WS exactly on BaseTile grid
-			DomainMinWS  = FVector(float(DomainMinTile.X) * BaseTile, float(DomainMinTile.Y) * BaseTile, 0.f);
+			// Convert to WS
+			DomainMinWS  = FVector(
+				float(DomainMinTile.X) * BaseTile,
+				float(DomainMinTile.Y) * BaseTile,
+				0.f
+			);
+
 			DomainSizeWS = TrueSizeWS;
+			++DomainEpoch;
+			
+			DomainHistory.Add(DomainEpoch, DomainMinWS);
+			if (DomainHistory.Num() > 256)
+			{
+				uint64 Oldest = DomainEpoch - 256;
+				DomainHistory.Remove(Oldest);
+			}
 		}
 
 
@@ -290,5 +322,8 @@ namespace VoxelRuntime
 
 		mutable FIntPoint DomainMinTile = FIntPoint::ZeroValue; // min corner in BaseTile units
 		mutable int32     DomainTilesPerSide = 0;
+		mutable uint64 DomainEpoch = 0;
+		mutable TMap<uint64, FVector> DomainHistory;
+
 	};
 }
