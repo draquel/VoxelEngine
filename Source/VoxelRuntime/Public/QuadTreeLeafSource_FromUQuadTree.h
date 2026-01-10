@@ -46,7 +46,8 @@ namespace VoxelRuntime
 
 			const float BaseTile = World.SurfaceSettings.BaseTileSizeWS;
 			const int32 ExtTiles     = FMath::Max(1, Params.SurfaceExtentTiles0);
-			const int32 GuardTiles = FMath::Max(2, Params.MarginTiles);
+			const int32 GuardTiles = FMath::Max(2, Params.GuardTiles);
+			
 			const int32 RequestedTilesPerSide = 2 * (ExtTiles + GuardTiles) + 1;
 			const int32 TilesPerSide = 1 << CeilLog2_Int(RequestedTilesPerSide);
 			const float SizeWS       = float(TilesPerSide) * BaseTile;
@@ -78,7 +79,6 @@ namespace VoxelRuntime
 			LastDomainSizeWS = SizeWS;
 			LastRadiusWS     = RadiusWS;
 			LastBaseTileWS   = BaseTile;
-			LastMarginWS     = BaseTile * Params.MarginTiles; // must match UpdateDomainIfNeeded
 		}
 
 		// Tunables (put these in Params or SurfaceSettings later)
@@ -97,87 +97,79 @@ namespace VoxelRuntime
 		}
 		
 		void UpdateDomainIfNeeded(
-			const FVector& CamWS,
-			float BaseTile,
-			float SizeWS,
-			const FVoxelSpatialPolicyParams& Params 
+		    const FVector& CamWS,
+		    float BaseTile,
+		    float SizeWS,
+		    const FVoxelSpatialPolicyParams& Params
 		) const
 		{
-			const float RadiusWS = SizeWS * 0.5f;
+		    const float RadiusWS = SizeWS * 0.5f;
 
-			// ---- Debug bookkeeping ----
-			LastBaseTileWS = BaseTile;
-			LastRadiusWS   = RadiusWS;
-			
-			const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
-			const float CoarsestTileWS = BaseTile * float(1 << MaxLOD);
+		    // Debug bookkeeping
+		    LastBaseTileWS = BaseTile;
+		    LastRadiusWS   = RadiusWS;
 
-			// Margin as *tiles* (more controllable than "BaseTile*2")
-			const int32 MarginTiles = Params.MarginTiles > 0 ? Params.MarginTiles : DefaultMarginTiles(Params.SurfaceExtentTiles0);
-			const float MarginWS    = float(MarginTiles) * BaseTile;
-			LastMarginWS = MarginWS;
+		    // How close to the domain edge we allow the camera to get
+		    const int32 EdgeTiles = FMath::Max(0, Params.RecenterEdgeTiles);
+		    const float EdgeWS    = float(EdgeTiles) * BaseTile;
+		    LastMarginWS          = EdgeWS;
 
-			// First time / size changed: center the domain on camera
-			if (!bHasDomain || !FMath::IsNearlyEqual(DomainSizeWS, SizeWS))
-			{
-				const FVector DesiredMin(CamWS.X - RadiusWS, CamWS.Y - RadiusWS, 0.f);
-				DomainMinWS  = SnapDownXY(DesiredMin, CoarsestTileWS);
-				DomainSizeWS = SizeWS;
-				bHasDomain   = true;
-				return;
-			}
+		    // First time / size change => center on camera
+		    if (!bHasDomain || !FMath::IsNearlyEqual(DomainSizeWS, SizeWS))
+		    {
+		        const FVector DesiredMin(CamWS.X - RadiusWS, CamWS.Y - RadiusWS, 0.f);
+		        DomainMinWS  = SnapDownXY(DesiredMin, BaseTile);
+		        DomainSizeWS = SizeWS;
+		        bHasDomain   = true;
+		        return;
+		    }
 
-			// Camera relative to current domain
-			const float CamLocalX = CamWS.X - DomainMinWS.X;
-			const float CamLocalY = CamWS.Y - DomainMinWS.Y;
+		    // Camera relative to current domain min
+		    const float CamLocalX = CamWS.X - DomainMinWS.X;
+		    const float CamLocalY = CamWS.Y - DomainMinWS.Y;
 
-			const float MinSafe = MarginWS;
-			const float MaxSafe = SizeWS - MarginWS;
+		    // Safe region inside the outer domain
+		    const float MinSafe = EdgeWS;
+		    const float MaxSafe = SizeWS - EdgeWS;
 
-			// If safe region is degenerate, bail (shouldn't happen unless margin too big)
-			if (MaxSafe <= MinSafe)
-				return;
+		    if (MaxSafe <= MinSafe)
+		        return; // edge too large (degenerate safe region)
 
-			int32 ShiftTilesX = 0;
-			int32 ShiftTilesY = 0;
+		    int32 ShiftTilesX = 0;
+		    int32 ShiftTilesY = 0;
 
-			// Compute the minimal shift (in tiles) to bring camera back into [MinSafe, MaxSafe]
-			if (CamLocalX < MinSafe)
-			{
-				const float Delta = (MinSafe - CamLocalX);
-				ShiftTilesX = -FMath::CeilToInt(Delta / BaseTile);
-			}
-			else if (CamLocalX > MaxSafe)
-			{
-				const float Delta = (CamLocalX - MaxSafe);
-				ShiftTilesX = +FMath::CeilToInt(Delta / BaseTile);
-			}
+		    // Minimal shift to get back inside safe region
+		    if (CamLocalX < MinSafe) ShiftTilesX = -FMath::CeilToInt((MinSafe - CamLocalX) / BaseTile);
+		    if (CamLocalX > MaxSafe) ShiftTilesX = +FMath::CeilToInt((CamLocalX - MaxSafe) / BaseTile);
 
-			if (CamLocalY < MinSafe)
-			{
-				const float Delta = (MinSafe - CamLocalY);
-				ShiftTilesY = -FMath::CeilToInt(Delta / BaseTile);
-			}
-			else if (CamLocalY > MaxSafe)
-			{
-				const float Delta = (CamLocalY - MaxSafe);
-				ShiftTilesY = +FMath::CeilToInt(Delta / BaseTile);
-			}
+		    if (CamLocalY < MinSafe) ShiftTilesY = -FMath::CeilToInt((MinSafe - CamLocalY) / BaseTile);
+		    if (CamLocalY > MaxSafe) ShiftTilesY = +FMath::CeilToInt((CamLocalY - MaxSafe) / BaseTile);
 
-			// Still inside safe region?
-			if (ShiftTilesX == 0 && ShiftTilesY == 0)
-				return;
+		    if (ShiftTilesX == 0 && ShiftTilesY == 0)
+		        return;
 
-			// Optional: clamp how much we can shift per update (reduces sudden jumps / thrash)
-			const int32 MaxShiftTiles = Params.MaxShiftTilesPerUpdate > 0 ? Params.MaxShiftTilesPerUpdate : DefaultMaxShiftTilesPerUpdate(FMath::Max(1, Params.SurfaceExtentTiles0));
-			ShiftTilesX = FMath::Clamp(ShiftTilesX, -MaxShiftTiles, +MaxShiftTiles);
-			ShiftTilesY = FMath::Clamp(ShiftTilesY, -MaxShiftTiles, +MaxShiftTiles);
+		    // Optional: make updates chunkier so you don't move every ~1 tile
+		    const int32 StepTiles = FMath::Max(1, Params.RecenterSnapStepTiles);
+		    auto SnapShiftToStep = [&](int32 S)
+		    {
+		        if (S == 0) return 0;
+		        const int32 Sign = (S > 0) ? 1 : -1;
+		        const int32 AbsS = FMath::Abs(S);
+		        const int32 Snapped = ((AbsS + StepTiles - 1) / StepTiles) * StepTiles; // ceil to step
+		        return Sign * Snapped;
+		    };
+		    ShiftTilesX = SnapShiftToStep(ShiftTilesX);
+		    ShiftTilesY = SnapShiftToStep(ShiftTilesY);
 
-			DomainMinWS.X += float(ShiftTilesX) * BaseTile;
-			DomainMinWS.Y += float(ShiftTilesY) * BaseTile;
+		    // Clamp per-update motion
+		    const int32 MaxShift = Params.MaxShiftTilesPerUpdate > 0 ? Params.MaxShiftTilesPerUpdate : 999999;
+		    ShiftTilesX = FMath::Clamp(ShiftTilesX, -MaxShift, +MaxShift);
+		    ShiftTilesY = FMath::Clamp(ShiftTilesY, -MaxShift, +MaxShift);
 
-			// Maintain snap (should already be snapped due to tile shifts, but keep it robust)
-			DomainMinWS = SnapDownXY(DomainMinWS, BaseTile);
+		    DomainMinWS.X += float(ShiftTilesX) * BaseTile;
+		    DomainMinWS.Y += float(ShiftTilesY) * BaseTile;
+
+		    DomainMinWS = SnapDownXY(DomainMinWS, BaseTile);
 		}
 	
 		void DebugDrawQuadTree(UWorld* World)
@@ -191,17 +183,17 @@ namespace VoxelRuntime
 			if (!World || !bHasLastDebug)
 				return;
 
-			const float Z = 750.f; // lift slightly above surface
+			const float Z = 1000.f; // lift slightly above surface
 			const FVector Min = FVector(LastDomainMinWS.X, LastDomainMinWS.Y, Z);
 			const FVector Max = FVector(LastDomainMinWS.X + LastDomainSizeWS, LastDomainMinWS.Y + LastDomainSizeWS, Z);
-
+			
 			auto DrawRect = [&](const FVector& RMin, const FVector& RMax, const FColor& C)
 			{
 				const FVector A(RMin.X, RMin.Y, Z);
 				const FVector B(RMax.X, RMin.Y, Z);
 				const FVector D(RMin.X, RMax.Y, Z);
 				const FVector Cc(RMax.X, RMax.Y, Z);
-				float thickness = 40.f;
+				float thickness = 50.f;
 
 				DrawDebugLine(World, A, B, C, bPersistentLines, Lifetime, 0, thickness);
 				DrawDebugLine(World, B, Cc, C, bPersistentLines, Lifetime, 0, thickness);
@@ -216,6 +208,7 @@ namespace VoxelRuntime
 			const float M = FMath::Clamp(LastMarginWS, 0.f, LastDomainSizeWS * 0.49f);
 			const FVector InnerMin = FVector(Min.X + M, Min.Y + M, Z);
 			const FVector InnerMax = FVector(Max.X - M, Max.Y - M, Z);
+
 			DrawRect(InnerMin, InnerMax, FColor::Yellow);
 
 			// Camera marker

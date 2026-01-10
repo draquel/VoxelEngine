@@ -59,17 +59,17 @@ struct VOXELCORE_API FVoxelSpatialPolicyParams
 	
 	UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") int32 SplitRadiusMultiplierPerLevel = 4;
 	
-	// How close to the edge (in base tiles) before we consider recentering.
-	// UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") int32 DomainMarginTiles = 4;          // was effectively 2 (BaseTile*2)
+	// Coverage guard band (prevents holes at LOD borders / during motion)
+	UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") int32 GuardTiles = 2;              // recommended 2..6
 
-	// When we recenter, move the domain in increments of this many base tiles.
-	// Bigger = fewer updates.
-	// UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") int32 DomainRecenterStepTiles = 8;    // move domain in 8-tile chunks
+	// Domain recenter hysteresis (how close to edge before recenter)
+	UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") int32 RecenterEdgeTiles = 4;       // recommended 3..8 (independent of GuardTiles)
 
-	// Extra tiles beyond your requested extent to prevent holes during transitions.
-	UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") int32 MarginTiles = 2;               // 1–3 is typical
-	UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") int32 MaxShiftTilesPerUpdate = 2;    // 1–3 is typical
+	// How far the domain is allowed to move per update (tile units)
+	UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") int32 MaxShiftTilesPerUpdate = 8;  // you already have this
 
+	// Optional: make shifts chunkier to reduce “move every 1 tile” behavior
+	UPROPERTY(EditAnywhere, Category="Quadtree|2.5D") int32 RecenterSnapStepTiles = 4;   // 1 = minimal shift, 4/8 = fewer updates
 };
 
 // Adapter: Quadtree leaf set -> streaming demands (Engine convention: LOD 0 = finest)
