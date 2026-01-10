@@ -1,30 +1,29 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "QuadTree/QuadTreeTest.h"
+#include "OcTree/OcTreeTest.h"
 
-#include "QuadTree/QuadTree.h"
 #include "Util/ColorUtils.h"
 
 
 // Sets default values
-AQuadTreeTest::AQuadTreeTest()
+AOcTreeTest::AOcTreeTest()
 {
 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 }
 
 // Called when the game starts or when spawned
-void AQuadTreeTest::BeginPlay()
+void AOcTreeTest::BeginPlay()
 {
 	Super::BeginPlay();
-	
-	Tree.Init(FVector::ZeroVector, Settings.MinSize*FVector(TileRadius*2,TileRadius*2,0), Settings);
+
+	Tree.Init(FVector::ZeroVector, FVector::One() * (Settings.MinSize*CellRadius*2), Settings);
 	DepthColors = Voxel::FColorUtils::GenerateDistinctColors(Settings.MaxDepth, FPlatformTime::Seconds());
 }
 
 // Called every frame
-void AQuadTreeTest::Tick(float DeltaTime)
+void AOcTreeTest::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	
@@ -39,7 +38,7 @@ void AQuadTreeTest::Tick(float DeltaTime)
 	}
 	
 	Tree.GenerateTree(CameraWS);
-	Tree.Visualize(GetWorld(),DepthColors, 0, UpdateInterval+0.05);
+	Tree.Visualize(GetWorld(),DepthColors, UpdateInterval + 0.03);
 	LastUpdateSeconds = FPlatformTime::Seconds();
 }
 

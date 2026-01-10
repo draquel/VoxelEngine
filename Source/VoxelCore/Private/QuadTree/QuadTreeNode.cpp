@@ -132,7 +132,6 @@ namespace Voxel
 	void QuadTreeNode::Visualize(UWorld* World, TArray<FColor> Colors, int32 Height, float Duration)
 	{
 		TArray<FColor> ColorArray;
-		UE_LOG(LogTemp,Warning,TEXT("Visualize Colors: %d MaxDepth: %d"),Colors.Num(),Settings->MaxDepth);
 		if(Colors.Num() < Settings->MaxDepth)
 		{
 			TArray<FColor> Generated = Voxel::FColorUtils::GenerateDistinctColors(Settings->MaxDepth, FPlatformTime::Seconds());
