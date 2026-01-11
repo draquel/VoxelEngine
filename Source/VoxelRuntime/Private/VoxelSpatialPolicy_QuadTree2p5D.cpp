@@ -61,16 +61,8 @@ namespace VoxelRuntime
 	    TSet<FVoxelChunkKey> Seen;
 	    Seen.Reserve(Leaves.Num() * 2);
 
-	    const int32 MaxLOD   = FMath::Max(0, Params.MaxLOD);
-	    const int32 MaxDepth = FMath::Max(0, World.SurfaceSettings.SpatialParams.QuadTreeMaxDepth);
-
-	    auto RoundToGridIndex = [](double Value, double Grid) -> int64
-	    {
-	        if (Grid <= 0.0) return 0;
-	        // If DomainMin is aligned, Value/Grid should be near an integer.
-	        // Round is more stable than Floor here for "half-step" drift cases.
-	        return (int64)FMath::RoundToDouble(Value / Grid);
-	    };
+	    const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
+	    const double BaseTileSize = EffectiveBaseTileSizeWS(World);
 
 	#if !(UE_BUILD_SHIPPING)
 	    int32 Bad = 0;
@@ -81,10 +73,10 @@ namespace VoxelRuntime
 
 	    for (const FQuadTreeLeaf& Leaf : Leaves)
 	    {
-	    	const int32 LeafDepth = FMath::Clamp((int32)Leaf.Depth, 0, MaxDepth);
-	    	const int32 LOD       = FMath::Clamp(MaxDepth - LeafDepth, 0, Params.MaxLOD);
-
-	    	const double TileSizeWS = (double)Leaf.Size.X;     // leaf size is authoritative
+	    	const double LeafSizeWS = (double)Leaf.Size.X;     // leaf size is authoritative
+	    	const int32 LOD = ComputeLODFromLeafSize_ClampToLeaf(LeafSizeWS, BaseTileSize, MaxLOD);
+	    	const double TileSizeWS = TileSizeWSAtLOD(World, LOD);
+	    	
 	    	const FVector LeafMinWS = Leaf.Position;           // leaf min is authoritative
 
 	    	// Key coords are in “TileSizeWS units”, but anchored at DomainMinWS
@@ -105,8 +97,8 @@ namespace VoxelRuntime
 	#if !(UE_BUILD_SHIPPING)
 	        // Validate the reconstruction is actually the same as the leaf min.
 	        const FVector ReconstructedMin(
-	            (double)Key.Coord.X * TileSizeWS,
-	            (double)Key.Coord.Y * TileSizeWS,
+	            DomainMinWS.X + (double)Key.Coord.X * TileSizeWS,
+	            DomainMinWS.Y + (double)Key.Coord.Y * TileSizeWS,
 	            0.0
 	        );
 
