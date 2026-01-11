@@ -14,6 +14,47 @@
 #include "VoxelCore/Public/VoxelChunkRenderPayload.h"
 #include "VoxelCore/Public/IVoxelChunkBuildService.h"
 
+namespace
+{
+	bool IsSurfacePolicy(const TSharedPtr<Voxel::IVoxelSpatialPolicy>& SpatialPolicy)
+	{
+		return SpatialPolicy.IsValid() && SpatialPolicy->MeshMode() == EVoxelMeshMode::SurfaceGrid;
+	}
+	
+	bool IsMarchingCubesPolicy(const TSharedPtr<Voxel::IVoxelSpatialPolicy>& SpatialPolicy)
+	{
+		return SpatialPolicy.IsValid() && SpatialPolicy->MeshMode() == EVoxelMeshMode::MarchingCubes;
+	}
+
+	float DistanceToCamera(const FVector& CenterWS, const FVector& CameraWS, bool bSurfacePolicy)
+	{
+		return bSurfacePolicy ? FVector::Dist2D(CenterWS, CameraWS) : FVector::Dist(CenterWS, CameraWS);
+	}
+
+	bool OverlapsPolicyAABB(
+		const FVector& MinA,
+		const FVector& MaxA,
+		const FVector& MinB,
+		const FVector& MaxB,
+		bool bSurfacePolicy)
+	{
+		auto Overlaps1D = [](float Min1, float Max1, float Min2, float Max2)
+		{
+			return (Min1 < Max2 - 1e-3f) && (Min2 < Max1 - 1e-3f);
+		};
+
+		const bool bOverlapXY = Overlaps1D(MinA.X, MaxA.X, MinB.X, MaxB.X) &&
+			Overlaps1D(MinA.Y, MaxA.Y, MinB.Y, MaxB.Y);
+
+		if (bSurfacePolicy)
+		{
+			return bOverlapXY;
+		}
+
+		return bOverlapXY && Overlaps1D(MinA.Z, MaxA.Z, MinB.Z, MaxB.Z);
+	}
+}
+
 
 void UVoxelChunkSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -73,6 +114,7 @@ uint8 UVoxelChunkSubsystem::ComputeSkirtMaskSameLOD(FVoxelChunkKey Key)
 void UVoxelChunkSubsystem::CancelCoarserOverlaps_DemandTime(const TArray<FVoxelChunkDemand>& Demands)
 {
 	const double Now = FPlatformTime::Seconds();
+	const bool bSurfacePolicy = IsSurfacePolicy(SpatialPolicy);
 
 	TArray<FVoxelChunkKey> FineKeys;
 	FineKeys.Reserve(Demands.Num());
@@ -107,18 +149,12 @@ void UVoxelChunkSubsystem::CancelCoarserOverlaps_DemandTime(const TArray<FVoxelC
 				const float SizeCoarse = SpatialPolicy->ChunkSizeWS(Settings, Coarse.LOD);
 				
 				const FVector MinFine = FineRec->ChunkOriginWS;
-				const FVector MaxFine = MinFine + FVector(SizeFine, SizeFine, 0.0f);
+				const FVector MaxFine = MinFine + (bSurfacePolicy ? FVector(SizeFine, SizeFine, 0.0f) : FVector(SizeFine));
 				
 				const FVector MinCoarse = CoarseRec.ChunkOriginWS;
-				const FVector MaxCoarse = MinCoarse + FVector(SizeCoarse, SizeCoarse, 0.0f);
+				const FVector MaxCoarse = MinCoarse + (bSurfacePolicy ? FVector(SizeCoarse, SizeCoarse, 0.0f) : FVector(SizeCoarse));
 				
-				auto Overlaps1D = [](float Min1, float Max1, float Min2, float Max2)
-				{
-					return (Min1 < Max2 - 1e-3f) && (Min2 < Max1 - 1e-3f);
-				};
-				
-				bOverlap = Overlaps1D(MinFine.X, MaxFine.X, MinCoarse.X, MaxCoarse.X) &&
-						   Overlaps1D(MinFine.Y, MaxFine.Y, MinCoarse.Y, MaxCoarse.Y);
+				bOverlap = OverlapsPolicyAABB(MinFine, MaxFine, MinCoarse, MaxCoarse, bSurfacePolicy);
 			}
 			else
 			{
@@ -181,6 +217,7 @@ void UVoxelChunkSubsystem::ApplyDemands(
 	const FVector& CameraWS)
 {
 	const double NowSec = FPlatformTime::Seconds();
+	const bool bSurfacePolicy = IsSurfacePolicy(SpatialPolicy);
 
 	for (const FVoxelChunkDemand& D : Demands)
 	{
@@ -204,7 +241,7 @@ void UVoxelChunkSubsystem::ApplyDemands(
 		}
 
 		// Keep LastDistanceToCamera as "true distance" for eviction sorting stability
-		R.LastDistanceToCamera = FVector::Dist2D(R.ChunkCenterWS, CameraWS);
+		R.LastDistanceToCamera = DistanceToCamera(R.ChunkCenterWS, CameraWS, bSurfacePolicy);
 
 		// Policy priority drives scheduling (do NOT overwrite later)
 		R.Priority = D.Priority;
@@ -235,6 +272,9 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 	if (IsEngineExitRequested() || !World)
 		return;
 
+	const bool bSurfacePolicy = IsSurfacePolicy(SpatialPolicy);
+	const bool bMarchingCubesPolicy = IsMarchingCubesPolicy(SpatialPolicy);
+	
 	// Optional: keep distances updated for ALL chunks (even undesired) for stable eviction ordering.
 	// If you keep this, ApplyDemands will still overwrite distance for desired keys (fine).
 	for (auto& KVP : Chunks)
@@ -253,7 +293,7 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 			R.ChunkCenterWS = GetChunkCenterWS(R.Key);
 		}
 		
-		R.LastDistanceToCamera = FVector::Dist2D(R.ChunkCenterWS, CameraWS);
+		R.LastDistanceToCamera = DistanceToCamera(R.ChunkCenterWS, CameraWS, bSurfacePolicy);
 	}
 
 	TArray<FVoxelChunkDemand> Demands;
@@ -296,8 +336,12 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 				{
 					const float SizeWS = GetChunkSizeWS(Demand.Key);
 					const FVector OriginWS = GetChunkOriginWS(Demand.Key);
-					const FVector CenterWS = OriginWS + FVector(SizeWS * 0.5f, SizeWS * 0.5f, 0.0f);
-					const FVector Extent(SizeWS * 0.5f, SizeWS * 0.5f, 50.0f);
+					const FVector CenterWS = bSurfacePolicy
+						? OriginWS + FVector(SizeWS * 0.5f, SizeWS * 0.5f, 0.0f)
+						: OriginWS + FVector(SizeWS * 0.5f);
+					const FVector Extent = bSurfacePolicy
+						? FVector(SizeWS * 0.5f, SizeWS * 0.5f, 50.0f)
+						: FVector(SizeWS * 0.5f);
 					const FColor Color = Voxel::FColorUtils::LODColors()[Demand.Key.LOD];
 					DrawDebugBox(World, CenterWS, Extent, Color, false, 0.f, 0, 10.f);
 				}
@@ -424,7 +468,6 @@ FVector UVoxelChunkSubsystem::ComputeChunkCenterWS(const FVoxelChunkKey& Key) co
 	const float Size = ChunkSizeWS(Settings, Key.LOD);
 	return ComputeChunkOriginWS(Key) + FVector(Size * 0.5f);
 }
-
 
 FORCEINLINE float UVoxelChunkSubsystem::GetChunkSizeWS(const FVoxelChunkKey& Key) const
 {
@@ -834,8 +877,8 @@ void UVoxelChunkSubsystem::AttachReadyToRender()
         	P.StepSizeWS    = R.LastBuildPayload.StepSizeWS;
         	P.CellsPerAxis  = R.LastBuildPayload.CellsPerAxis;
 
-            P.SkirtDepth   = Settings.BaseStepSize * 4.0f;
-            P.SkirtEdgeMask= ComputeSkirtMaskSameLOD(R.Key);
+            // P.SkirtDepth   = Settings.BaseStepSize * 4.0f;
+            // P.SkirtEdgeMask= ComputeSkirtMaskSameLOD(R.Key);
 
             RenderConsumer->EnqueueBuild(P);
 
@@ -851,6 +894,7 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 	EvictCandidates.Reserve(Chunks.Num());
 
 	const double Now = FPlatformTime::Seconds();
+	const bool bSurfacePolicy = IsSurfacePolicy(SpatialPolicy);
 	const double DesiredGraceSec = 0.35;   // prevents “stop-and-pop holes”
 	const double VisibleGraceSec = 0.75;   // keep recently visible tiles a bit longer
 
@@ -866,29 +910,19 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 		return BaseEvictDelaySec * FMath::Pow(1.5, (double)FMath::Max(0, LOD));
 	};
 	
-	VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D* QT = static_cast<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D*>(SpatialPolicy.Get());
-	VoxelRuntime::FQuadTreeLeafSource_FromQuadTree* LeafSource = static_cast<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree*>(QT->LeafSource.Get());
-	const uint64 CurrentEpoch = LeafSource->GetDomainEpoch();
-	
 	auto RecordsOverlapWS = [&](const FVoxelChunkRecord& A, const FVoxelChunkRecord& B) -> bool
 	{
-		// 2.5D overlap check in world space
+		// Overlap check in world space (2.5D for surface, 3D for volume)
 		const float SizeA = SpatialPolicy->ChunkSizeWS(Settings, A.Key.LOD);
 		const float SizeB = SpatialPolicy->ChunkSizeWS(Settings, B.Key.LOD);
 		
 		const FVector MinA = A.ChunkOriginWS;
-		const FVector MaxA = MinA + FVector(SizeA, SizeA, 0.0f);
+		const FVector MaxA = MinA + (bSurfacePolicy ? FVector(SizeA, SizeA, 0.0f) : FVector(SizeA));
 		
 		const FVector MinB = B.ChunkOriginWS;
-		const FVector MaxB = MinB + FVector(SizeB, SizeB, 0.0f);
-		
-		auto Overlaps1D = [](float Min1, float Max1, float Min2, float Max2)
-		{
-			return (Min1 < Max2 - 1e-3f) && (Min2 < Max1 - 1e-3f);
-		};
-		
-		return Overlaps1D(MinA.X, MaxA.X, MinB.X, MaxB.X) &&
-			   Overlaps1D(MinA.Y, MaxA.Y, MinB.Y, MaxB.Y);
+		const FVector MaxB = MinB + (bSurfacePolicy ? FVector(SizeB, SizeB, 0.0f) : FVector(SizeB));
+
+		return OverlapsPolicyAABB(MinA, MaxA, MinB, MaxB, bSurfacePolicy);
 	};
 
 	for (auto& KVP : Chunks)
@@ -1130,6 +1164,4 @@ void UVoxelChunkSubsystem::EmitTelemetry(float DeltaSeconds, int32 DesiredCount,
 
 		Telemetry_Requested = Telemetry_Dispatched = Telemetry_BecameReady = Telemetry_BecameResident = Telemetry_Evicted = Telemetry_Canceled = 0;
 	}
-	
 }
-
