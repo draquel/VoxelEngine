@@ -33,6 +33,18 @@ struct FVoxelSurfaceGridParams
 	bool  bEnableSkirts = true;
 };
 
+struct FVoxelMarchingGridParams
+{
+
+	int32 CellsPerAxis = 32;   
+	float BaseCellSizeWS = 200.f;  
+	float UVScale = 1.f / 1000.f;
+
+	// optional for later
+	float SkirtDepthWS = 200.f;
+	bool  bEnableSkirts = true;
+};
+
 struct FVoxelChunkBuildPayload
 {
 	FVoxelChunkKey Key;
@@ -49,6 +61,7 @@ struct FVoxelChunkBuildPayload
 	float IsoLevel = 0.f;
 	FVoxelNoiseParamsCPU NoiseParameters;
 	FVoxelSurfaceGridParams Surface;
+	FVoxelMarchingGridParams MarchingCubes;
 };
 
 struct FVoxelChunkBuildRequest

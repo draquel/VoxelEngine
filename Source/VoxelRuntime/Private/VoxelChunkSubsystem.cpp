@@ -712,13 +712,13 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		}
 		else
 		{
-			// fallback
-			Inputs.Key          = Rec->Key;
-			Inputs.Seed         = Settings.Seed;
-			Inputs.CellsPerAxis = FMath::Max<uint32>(Settings.CellsPerAxis, 8);
-			Inputs.StepSizeWS   = Settings.BaseStepSize * float(1 << Rec->Key.LOD);
-			Inputs.ChunkOriginWS= ComputeChunkOriginWS(Rec->Key);
-			Inputs.NoiseParameters = FVoxelNoiseParamsCPU();
+			// // fallback
+			// Inputs.Key          = Rec->Key;
+			// Inputs.Seed         = Settings.Seed;
+			// Inputs.CellsPerAxis = FMath::Max<uint32>(Settings.CellsPerAxis, 8);
+			// Inputs.StepSizeWS   = Settings.BaseStepSize * float(1 << Rec->Key.LOD);
+			// Inputs.ChunkOriginWS= ComputeChunkOriginWS(Rec->Key);
+			// Inputs.NoiseParameters = FVoxelNoiseParamsCPU();
 		}
 
 		Inputs.EditLayer = EditLayer;
