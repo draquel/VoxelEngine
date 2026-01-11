@@ -33,20 +33,17 @@ class VOXELRUNTIME_API AVoxelWorldActor : public AActor
 public:
 	AVoxelWorldActor();
 	
-	UFUNCTION(CallInEditor, meta=(Category="Voxel"))
-	void DebugGenerateOnce();
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
-	FVoxelWorldSettings Settings;
-
-	UPROPERTY(VisibleAnywhere, Category="Voxel")
-	TObjectPtr<UVoxelEditLayer> EditLayer;
-	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
 	TEnumAsByte<EVoxelWorldTerrainMode> TerrainMode = EVoxelWorldTerrainMode::Surface2D;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
 	TEnumAsByte<EVoxelWorldRenderMode> RenderMode = EVoxelWorldRenderMode::VertexFactory;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
+	FVoxelWorldSettings Settings;
+
+	UPROPERTY(VisibleAnywhere, Category="Voxel")
+	TObjectPtr<UVoxelEditLayer> EditLayer;
 
 protected:
 	virtual void BeginPlay() override;
