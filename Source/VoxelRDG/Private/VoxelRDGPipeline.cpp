@@ -12,7 +12,7 @@
 #include "MarchingCubes/MarchingCubesDispatch.h"
 #include "MarchingCubes/MC_CountPass.h"
 #include "MarchingCubes/MC_IndexPass.h"
-#include "MarchingCubes/MC_NormalsPass.h"
+#include "MarchingCubes/MC_GradientNormalsPass.h"
 #include "MarchingCubes/MC_ScanPass.h"
 #include "MarchingCubes/MC_ScatterPass.h"
 #include "MarchingCubes/MC_TangentPass.h"
@@ -281,8 +281,10 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		FDispatchArgsOutputs Args =
 				BuildDispatchArgsPass::Add(GraphBuilder, Scan.TotalTris);
 		FMCNormalsOutputs Normals =
-			FMC_NormalsPass::AddMC_NormalsPass_Indirect(
+			FMC_GradientNormalsPass::AddMC_GradientNormalsPass(
 				GraphBuilder,
+				ChunkParams,
+				Req.Payload.NoiseParameters,
 				Scatter.Vertices,
 				Indices,
 				Scan.TotalTris,

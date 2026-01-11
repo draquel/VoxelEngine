@@ -1,0 +1,51 @@
+﻿#include "/Engine/Private/Common.ush"
+#include "../Noise/VoxelDensity.ush"
+
+// /Plugin/Voxel/MarchingCubes/MC_GradientNormals.usf
+
+Buffer<float4> InPositions;
+StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
+
+float IsoLevel;
+float StepSizeWS;
+float3 ChunkOriginWS;
+uint MaxVerts;
+uint ChunkSeed;
+float NormalsGradientStepScale;
+
+RWBuffer<float4> OutNormals;
+
+[numthreads(64, 1, 1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	uint vertIndex = DTid.x;
+	if (vertIndex >= MaxVerts)
+		return;
+
+	float3 posWS = InPositions[vertIndex].xyz + ChunkOriginWS;
+	float delta = max(StepSizeWS * NormalsGradientStepScale, 1e-4f);
+	float _unusedIsoLevel = IsoLevel;
+
+	FVoxelNoiseParams NP = NoiseParamsBuf[0];
+	float3 dx = float3(delta, 0.0f, 0.0f);
+	float3 dy = float3(0.0f, delta, 0.0f);
+	float3 dz = float3(0.0f, 0.0f, delta);
+
+	float dpx = SampleDensity_Terrain_Noise(posWS + dx, NP, ChunkSeed);
+	float dnx = SampleDensity_Terrain_Noise(posWS - dx, NP, ChunkSeed);
+	float dpy = SampleDensity_Terrain_Noise(posWS + dy, NP, ChunkSeed);
+	float dny = SampleDensity_Terrain_Noise(posWS - dy, NP, ChunkSeed);
+	float dpz = SampleDensity_Terrain_Noise(posWS + dz, NP, ChunkSeed);
+	float dnz = SampleDensity_Terrain_Noise(posWS - dz, NP, ChunkSeed);
+
+	float invTwoDelta = 1.0f / (2.0f * delta);
+	float3 grad = float3(
+		(dpx - dnx) * invTwoDelta,
+		(dpy - dny) * invTwoDelta,
+		(dpz - dnz) * invTwoDelta);
+
+	float len2 = dot(grad, grad);
+	float3 n = (len2 > 1e-8f) ? (grad * rsqrt(len2)) : float3(0.0f, 0.0f, 1.0f);
+
+	OutNormals[vertIndex] = float4(n, 0.0f);
+}
