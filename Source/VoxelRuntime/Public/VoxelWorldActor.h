@@ -12,6 +12,20 @@ class UProceduralMeshComponent;
 class UVoxelChunkSubsystem;
 class UVoxelEditLayer;
 
+UENUM(BlueprintType)
+enum EVoxelWorldTerrainMode
+{
+	Surface2D, // Quadtree
+	Surface3D  // OcTree
+};
+
+UENUM(BlueprintType)
+enum EVoxelWorldRenderMode
+{
+	VertexFactory,
+	ProceduralMesh
+};
+
 UCLASS(BlueprintType, Blueprintable)
 class VOXELRUNTIME_API AVoxelWorldActor : public AActor
 {
@@ -27,9 +41,12 @@ public:
 
 	UPROPERTY(VisibleAnywhere, Category="Voxel")
 	TObjectPtr<UVoxelEditLayer> EditLayer;
-
-	// Optional: visualization / debug toggles
-	UPROPERTY(EditAnywhere, Category="Voxel|Debug") bool bDrawChunkBounds = false;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
+	TEnumAsByte<EVoxelWorldTerrainMode> TerrainMode = EVoxelWorldTerrainMode::Surface2D;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
+	TEnumAsByte<EVoxelWorldRenderMode> RenderMode = EVoxelWorldRenderMode::VertexFactory;
 
 protected:
 	virtual void BeginPlay() override;

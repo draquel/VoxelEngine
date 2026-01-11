@@ -99,40 +99,50 @@ void AVoxelWorldActor::BeginPlay()
 	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService = MakeShared<VoxelRender::FVoxelRDGChunkBuildService>();
 	ChunkSubsystem->SetBuildService(BuildService);
 	
-	//QuadTree 2.5D
-	// TSharedPtr<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree> LeafSource = MakeShared<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree>();
-	// TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D>(LeafSource);
-	
-	//OcTree 3D
-	TSharedPtr<VoxelRuntime::FOcTreeLeafSource_FromOcTree> LeafSource =	MakeShared<VoxelRuntime::FOcTreeLeafSource_FromOcTree>();
-	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_OcTree3D>(LeafSource);	
-	
+	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy;
+	if (TerrainMode == EVoxelWorldTerrainMode::Surface2D)
+	{
+		//QuadTree 2.5D
+		TSharedPtr<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree> LeafSource = MakeShared<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree>();
+		SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D>(LeafSource);
+	}
+	if (TerrainMode == EVoxelWorldTerrainMode::Surface3D)
+	{
+		//OcTree 3D
+		TSharedPtr<VoxelRuntime::FOcTreeLeafSource_FromOcTree> LeafSource =	MakeShared<VoxelRuntime::FOcTreeLeafSource_FromOcTree>();
+		SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_OcTree3D>(LeafSource);	
+	}	
 	ChunkSubsystem->SetSpatialPolicy(SpatialPolicy);
 	
-	//PMC DEBUG CONSUMER
-    // TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer =
-    //     MakeShared<VoxelRender::FPMCDebugChunkRenderConsumer>(
-    //         DebugPMC,
-    //         [this](const FVoxelChunkKey& Key, uint64 BuiltBuildId)
-    //         {
-    //             if (ChunkSubsystem) ChunkSubsystem->OnConsumerBuilt(Key, BuiltBuildId);
-    //         },
-    //         [this](const FVoxelChunkKey& Key)
-    //         {
-    //             if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key);
-    //         }
-    //     );
-	// VoxelMesh->SetVisibility(false, true);
 	
-	//Vertex Factory CONSUMER
-	TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer =
-		MakeShared<VoxelRender::FVFChunkRenderConsumer>(
-			VoxelMesh,
-			[this](const FVoxelChunkKey& Key, uint64 BuiltBuildId){ if (ChunkSubsystem) ChunkSubsystem->OnConsumerBuilt(Key, BuiltBuildId); },
-			[this](const FVoxelChunkKey& Key){ if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key); }
-		);
-	DebugPMC->SetVisibility(false, true);
+	TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer;
+	if (RenderMode == EVoxelWorldRenderMode::VertexFactory)
+	{
+		//Vertex Factory CONSUMER
+		Consumer = MakeShared<VoxelRender::FVFChunkRenderConsumer>(
+				VoxelMesh,
+				[this](const FVoxelChunkKey& Key, uint64 BuiltBuildId){ if (ChunkSubsystem) ChunkSubsystem->OnConsumerBuilt(Key, BuiltBuildId); },
+				[this](const FVoxelChunkKey& Key){ if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key); }
+			);
+		DebugPMC->SetVisibility(false, true);	
+	}
 
+	if (RenderMode == EVoxelWorldRenderMode::ProceduralMesh)
+	{
+		//PMC DEBUG CONSUMER
+		Consumer = MakeShared<VoxelRender::FPMCDebugChunkRenderConsumer>(
+		        DebugPMC,
+		        [this](const FVoxelChunkKey& Key, uint64 BuiltBuildId)
+		        {
+		            if (ChunkSubsystem) ChunkSubsystem->OnConsumerBuilt(Key, BuiltBuildId);
+		        },
+		        [this](const FVoxelChunkKey& Key)
+		        {
+		            if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key);
+		        }
+		    );
+		VoxelMesh->SetVisibility(false, true);
+	}
     ChunkSubsystem->SetRenderConsumer(Consumer);
 }
 
