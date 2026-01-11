@@ -142,6 +142,6 @@ namespace Voxel
 
 		FVector Extent = Size / 2.0;
 		FRotator Rotation = FRotator(0.0f, 0.0f, 0.0f);
-		DrawDebugBox(World, Center, Extent, Rotation.Quaternion(), ColorArray[Settings->MaxDepth - Depth], false, Duration, 0, 25.0f);
+		DrawDebugBox(World, Center, Extent, Rotation.Quaternion(), ColorArray[Settings->MaxDepth - Depth], false, Duration, 0, 100.0f);
 	}
 }

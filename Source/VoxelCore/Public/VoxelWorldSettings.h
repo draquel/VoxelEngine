@@ -71,6 +71,7 @@ struct FVoxelWorldSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableQuadTreeDebug = false;	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableDomainDebug = false;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableDemandDebug = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableOcTreeDebug = false;
 };
 
 

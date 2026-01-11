@@ -65,6 +65,7 @@ private:
 	bool bDrawDomainDebug = false;
 	bool bDrawDemandDebug = false;
 	bool bQuadTreeDebug = false;
+	bool bOcTreeDebug = false;
 
 	void BuildDemands_Clipmap2p5D(const FVector& CameraWS, TArray<FVoxelChunkDemand>& OutDemands, TSet<FVoxelChunkKey>& OutDesired) const;
 	void ApplyDemands(const TArray<FVoxelChunkDemand>& Demands, const FVector& CameraWS);

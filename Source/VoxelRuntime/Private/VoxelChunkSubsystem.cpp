@@ -76,6 +76,7 @@ void UVoxelChunkSubsystem::InitializeVoxel(const FVoxelWorldSettings& InSettings
 	bDrawDemandDebug = InSettings.bEnableDemandDebug;
 	bDrawDomainDebug = InSettings.bEnableDomainDebug;
 	bQuadTreeDebug = InSettings.bEnableQuadTreeDebug;
+	bOcTreeDebug = InSettings.bEnableOcTreeDebug;
 	
 	// LODParams.CellsPerAxis = Settings.CellsPerAxis;
 	// LODParams.BaseCellSizeWS = Settings.BaseStepSize;  // your “cell size” == step
@@ -308,23 +309,47 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 			
 		
 #if !(UE_BUILD_SHIPPING)
-		if (World && (bDrawDomainDebug || bDrawDemandDebug || bQuadTreeDebug))
+		if (World && (bDrawDomainDebug || bDrawDemandDebug || bQuadTreeDebug || bOcTreeDebug))
 		{
-			if (VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D* QT =
-				static_cast<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D*>(SpatialPolicy.Get()))
+			if (bSurfacePolicy)
 			{
-				if (QT->LeafSource.IsValid())
+				if (VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D* QT =
+					static_cast<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D*>(SpatialPolicy.Get()))
 				{
-					if (VoxelRuntime::FQuadTreeLeafSource_FromQuadTree* LS =
-						static_cast<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree*>(QT->LeafSource.Get()))
+					if (QT->LeafSource.IsValid())
 					{
-						if (bDrawDomainDebug)
+						if (VoxelRuntime::FQuadTreeLeafSource_FromQuadTree* LS =
+							static_cast<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree*>(QT->LeafSource.Get()))
 						{
-							LS->DebugDrawDomain(World, 0.f, false);
+							if (bDrawDomainDebug)
+							{
+								LS->DebugDrawDomain(World, 0.f, false);
+							}
+							if (bQuadTreeDebug)
+							{
+								LS->DebugDrawQuadTree(World);
+							}
 						}
-						if (bQuadTreeDebug)
+					}
+				}
+			}
+
+			if (bMarchingCubesPolicy)
+			{
+				if (VoxelRuntime::FVoxelSpatialPolicy_OcTree3D* OT = static_cast<VoxelRuntime::FVoxelSpatialPolicy_OcTree3D*>(SpatialPolicy.Get()))
+				{
+					if (OT->LeafSource.IsValid())
+					{
+						if (VoxelRuntime::FOcTreeLeafSource_FromOcTree* LS = static_cast<VoxelRuntime::FOcTreeLeafSource_FromOcTree*>(OT->LeafSource.Get()))
 						{
-							LS->DebugDrawQuadTree(World);
+							if (bDrawDomainDebug)
+							{
+								LS->DebugDrawDomain(World);
+							}
+							if (bOcTreeDebug)
+							{
+								LS->DebugDrawOcTree(World);	
+							}
 						}
 					}
 				}
