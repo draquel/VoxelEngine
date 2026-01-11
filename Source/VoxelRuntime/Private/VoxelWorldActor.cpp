@@ -9,12 +9,10 @@
 #include "VoxelDensityDebugComponent.h"
 #include "VoxelEditLayer.h"
 #include "VoxelMCDebugComponent.h"
-#include "IQuadTreeLeafSource.h"
 #include "OcTreeLeafSource_FromOcTree.h"
 #include "VoxelSpatialPolicy_OcTree3D.h"
 #include "VoxelSpatialPolicy_QuadTree2p5D.h"
 #include "Engine/World.h"
-#include "OcTree/OcTreeSettings.h"
 
 AVoxelWorldActor::AVoxelWorldActor()
 {

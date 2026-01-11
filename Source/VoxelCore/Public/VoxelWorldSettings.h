@@ -4,6 +4,21 @@
 #include "VoxelSpatialPolicyTypes.h"
 #include "VoxelWorldSettings.generated.h"
 
+
+UENUM(BlueprintType)
+enum EVoxelWorldTerrainMode
+{
+	Surface2D, // Quadtree
+	Surface3D  // OcTree
+};
+
+UENUM(BlueprintType)
+enum EVoxelWorldRenderMode
+{
+	VertexFactory, //Prod
+	ProceduralMesh //Debug
+};
+
 USTRUCT(BlueprintType)
 struct FVoxelSurface2p5DSettings
 {

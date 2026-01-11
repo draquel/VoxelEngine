@@ -12,20 +12,6 @@ class UProceduralMeshComponent;
 class UVoxelChunkSubsystem;
 class UVoxelEditLayer;
 
-UENUM(BlueprintType)
-enum EVoxelWorldTerrainMode
-{
-	Surface2D, // Quadtree
-	Surface3D  // OcTree
-};
-
-UENUM(BlueprintType)
-enum EVoxelWorldRenderMode
-{
-	VertexFactory,
-	ProceduralMesh
-};
-
 UCLASS(BlueprintType, Blueprintable)
 class VOXELRUNTIME_API AVoxelWorldActor : public AActor
 {
