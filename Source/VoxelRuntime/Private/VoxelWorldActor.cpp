@@ -11,8 +11,11 @@
 #include "VoxelEditLayer.h"
 #include "VoxelMCDebugComponent.h"
 #include "IQuadTreeLeafSource.h"
+#include "OcTreeLeafSource_FromOcTree.h"
+#include "VoxelSpatialPolicy_OcTree3D.h"
 #include "VoxelSpatialPolicy_QuadTree2p5D.h"
 #include "Engine/World.h"
+#include "OcTree/OcTreeSettings.h"
 
 AVoxelWorldActor::AVoxelWorldActor()
 {
@@ -97,15 +100,13 @@ void AVoxelWorldActor::BeginPlay()
 	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService = MakeShared<VoxelRender::FVoxelRDGChunkBuildService>();
 	ChunkSubsystem->SetBuildService(BuildService);
 	
-	// TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_ClipMap2p5D>();
+	//QuadTree 2.5D
+	// TSharedPtr<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree> LeafSource = MakeShared<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree>();
+	// TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D>(LeafSource);
 	
-	TSharedPtr<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree> LeafSource =
-	MakeShared<VoxelRuntime::FQuadTreeLeafSource_FromQuadTree>(
-		/*dummy*/ FVector::ZeroVector,
-		/*dummy*/ FVector(1,1,0),
-		FQuadTreeSettings());
-
-	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_QuadTree2p5D>(LeafSource);
+	//OcTree 3D
+	TSharedPtr<VoxelRuntime::FOcTreeLeafSource_FromOcTree> LeafSource =	MakeShared<VoxelRuntime::FOcTreeLeafSource_FromOcTree>();
+	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_OcTree3D>(LeafSource);	
 	
 	ChunkSubsystem->SetSpatialPolicy(SpatialPolicy);
 	
@@ -123,6 +124,8 @@ void AVoxelWorldActor::BeginPlay()
     //         }
     //     );
 	// VoxelMesh->SetVisibility(false, true);
+	
+	//Vertex Factory CONSUMER
 	TSharedPtr<Voxel::IVoxelChunkRenderConsumer> Consumer =
 		MakeShared<VoxelRender::FVFChunkRenderConsumer>(
 			VoxelMesh,

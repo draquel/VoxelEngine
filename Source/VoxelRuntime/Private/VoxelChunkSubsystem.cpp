@@ -1,5 +1,6 @@
 ﻿#include "VoxelRuntime/Public/VoxelChunkSubsystem.h"
 
+#include "OcTreeLeafSource_FromOcTree.h"
 #include "Async/Async.h"
 #include "Engine/Engine.h"
 #include "PMCDebugChunkRenderConsumer.h"
@@ -8,6 +9,7 @@
 #include "RendererInterface.h"
 #include "VoxelChunkGPUResources.h"
 #include "VoxelChunkRecord.h"
+#include "VoxelSpatialPolicy_OcTree3D.h"
 #include "VoxelSpatialPolicy_QuadTree2p5D.h"
 #include "VoxelCore/Public/VoxelChunkRenderPayload.h"
 #include "VoxelCore/Public/IVoxelChunkBuildService.h"
