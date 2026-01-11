@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "CoreMinimal.h"
 #include "VoxelSpacialPolicyTypes.h"
+#include "VoxelSpatialPolicyTypes.h"
 #include "VoxelWorldSettings.generated.h"
 
 USTRUCT(BlueprintType)
@@ -19,8 +20,33 @@ struct FVoxelSurface2p5DSettings
 	// Streaming / refinement behavior
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|Surface2p5D")
 	bool bKeepParentUntilChildrenReady = true;
-};
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|Surface2p5D")
+	FVoxelQuadTreeSpatialParams SpatialParams;
+};
+USTRUCT(BlueprintType)
+struct FVoxelMarching3DSettings
+{
+	GENERATED_BODY()
+
+	// Finest mesh tile size (world units)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|Surface3D", meta=(ClampMin="100.0"))
+	float BaseCellSizeWS = 3200.f;
+
+	// Grid resolution per tile
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|Surface3D", meta=(ClampMin="9"))
+	int32 CellsPerAxis = 32;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|Surface3D")
+	int32 BaseStepSize = 200;
+
+	// Streaming / refinement behavior
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|Surface3D")
+	bool bKeepParentUntilChildrenReady = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel|Surface3D")
+	FVoxelOcTreeSpatialParams SpatialParams;
+};
 
 USTRUCT(BlueprintType)
 struct FVoxelWorldSettings
@@ -37,18 +63,9 @@ struct FVoxelWorldSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") FVoxelSurface2p5DSettings SurfaceSettings;
 	
 	
-	// 3D MC Pipeline
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") int32 CellsPerAxis = 32; // marching cubes cells per chunk edge
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") float BaseStepSize = 50.f; // cm per cell at LOD0 (0.5m)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") FVoxelMarching3DSettings MarchingSettings;	
 
-	// LOD
-	// UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") int32 MaxLOD = 6;
-	// UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") float LOD0ViewDistance = 8000.f; // cm
-	// UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") float LODDistanceScale = 2.0f; // per lod
-
-	// Rendering modes (keep both even if you implement one first)
-	// UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableSmooth = true; // marching cubes
-	// UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableCubic  = false; // block mesher
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") FVoxelNoiseParamsCPU NoiseParams;
 	
 	//Debug
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableQuadTreeDebug = false;	

@@ -45,8 +45,8 @@ namespace Voxel
 			OutPayload.Key          = Key;
 			OutPayload.Seed         = World.Seed;
 			OutPayload.EditLayer    = nullptr; // subsystem sets
-			OutPayload.CellsPerAxis = FMath::Max<uint32>(World.CellsPerAxis, 8);
-			OutPayload.StepSizeWS   = World.BaseStepSize * float(1 << Key.LOD);
+			// OutPayload.CellsPerAxis = FMath::Max<uint32>(World.CellsPerAxis, 8);
+			// OutPayload.StepSizeWS   = World.BaseStepSize * float(1 << Key.LOD);
 			OutPayload.ChunkSizeWS  = ChunkSizeWS(World, Key.LOD);
 			OutPayload.ChunkOriginWS= ChunkOriginWS(World, Key);
 			OutPayload.NoiseParameters = FVoxelNoiseParamsCPU();

@@ -54,7 +54,7 @@ namespace VoxelRuntime
 	        return;
 
 	    TArray<FQuadTreeLeaf> Leaves;
-	    LeafSource->GetLeaves(World, Params, CamerasWS, Leaves);
+	    LeafSource->GetLeaves(World, Params, World.SurfaceSettings.SpatialParams, CamerasWS, Leaves);
 	    if (Leaves.Num() == 0)
 	        return;
 
@@ -62,7 +62,7 @@ namespace VoxelRuntime
 	    Seen.Reserve(Leaves.Num() * 2);
 
 	    const int32 MaxLOD   = FMath::Max(0, Params.MaxLOD);
-	    const int32 MaxDepth = FMath::Max(0, World.LODParams.QuadTreeMaxDepth);
+	    const int32 MaxDepth = FMath::Max(0, World.SurfaceSettings.SpatialParams.QuadTreeMaxDepth);
 
 	    auto RoundToGridIndex = [](double Value, double Grid) -> int64
 	    {
@@ -242,6 +242,6 @@ namespace VoxelRuntime
 
 		OutPayload.CellsPerAxis = (uint32)VertsPerSide;        // reinterpret for SurfaceGrid
 		OutPayload.StepSizeWS   = VertexSpacingWS;             // spacing between grid verts
-		OutPayload.NoiseParameters = FVoxelNoiseParamsCPU();   // subsystem can override if needed
+		OutPayload.NoiseParameters = World.NoiseParams;   // subsystem can override if needed
 	}
 }

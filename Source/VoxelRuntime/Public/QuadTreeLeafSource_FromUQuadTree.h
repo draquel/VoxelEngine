@@ -16,10 +16,7 @@ namespace VoxelRuntime
 	{
 	public:
 		
-		FQuadTreeLeafSource_FromQuadTree(const FVector& InWorldMinWS, const FVector& InWorldSizeWS, const FQuadTreeSettings& InSettings)
-		{
-			Tree.Init(InWorldMinWS, InWorldSizeWS, InSettings);
-		}
+		FQuadTreeLeafSource_FromQuadTree() = default;
 		
 		virtual ~FQuadTreeLeafSource_FromQuadTree() = default;
 		virtual FVector GetDomainMinWS_DebugOnlyOrAPI() const override { return DomainMinWS; }
@@ -54,6 +51,7 @@ namespace VoxelRuntime
 		virtual void GetLeaves(
 			const FVoxelWorldSettings& World,
 			const FVoxelSpatialPolicyParams& Params,
+			const FVoxelQuadTreeSpatialParams& QuadTreeParams,
 			const TArray<FVector>& CamerasWS,
 			TArray<FQuadTreeLeaf>& OutLeaves) const override
 		{
@@ -64,7 +62,7 @@ namespace VoxelRuntime
 			const FVector CamWS = CamerasWS[0];
 
 			const float BaseTile = World.SurfaceSettings.BaseTileSizeWS;
-			const int32 ExtTiles     = FMath::Max(1, Params.SurfaceExtentTiles0);
+			const int32 ExtTiles     = FMath::Max(1, QuadTreeParams.SurfaceExtentTiles0);
 			const int32 GuardTiles = FMath::Max(2, Params.GuardTiles);
 			
 			const int32 RequestedTilesPerSide = 2 * (ExtTiles + GuardTiles) + 1;
@@ -79,8 +77,8 @@ namespace VoxelRuntime
 
 			FQuadTreeSettings Settings;
 			Settings.MinSize          = FMath::RoundToInt(BaseTile);                 // stop splitting at base tile
-			Settings.MaxDepth         = World.LODParams.QuadTreeMaxDepth;
-			Settings.DistanceModifier = FMath::Max(1, Params.SplitRadiusMultiplierPerLevel);
+			Settings.MaxDepth         = QuadTreeParams.QuadTreeMaxDepth;
+			Settings.DistanceModifier = FMath::Max(1, QuadTreeParams.QuadTreeSplitRadiusMultiplierPerLevel);
 
 			Tree.Init(DomainMin, DomainSize, Settings);
 			Tree.GenerateTree(CamWS);

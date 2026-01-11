@@ -454,7 +454,7 @@ FVoxelChunkRecord& UVoxelChunkSubsystem::GetOrCreateChunk(const FVoxelChunkKey& 
 float UVoxelChunkSubsystem::ChunkSizeWS(const FVoxelWorldSettings& S, int32 LOD)
 {
 	// Keep as fallback if policy missing
-	return (S.BaseStepSize * float(1 << LOD)) * float(S.CellsPerAxis);
+	return (S.MarchingSettings.BaseCellSizeWS * float(1 << LOD)) * float(S.MarchingSettings.CellsPerAxis);
 }
 
 FVector UVoxelChunkSubsystem::ComputeChunkOriginWS(const FVoxelChunkKey& Key) const
@@ -514,7 +514,7 @@ void UVoxelChunkSubsystem::BuildDesiredSet(const FVector& CameraWS, TSet<FVoxelC
 
 	for (int32 LOD = 0; LOD <= MaxLOD; ++LOD)
 	{
-		const float Size = ChunkSizeWS(Settings, LOD);
+		const float Size = SpatialPolicy->ChunkSizeWS(Settings, LOD);
 
 		// Absolute Z slab in *chunk coords* for this LOD
 		const int32 MinZChunk = FMath::FloorToInt(ZMinWS / Size);
