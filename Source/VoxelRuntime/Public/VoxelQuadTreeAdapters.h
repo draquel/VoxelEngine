@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "VoxelChunkKey.h"
-#include "VoxelSpacialPolicyTypes.h"   // FVoxelChunkDemand, EVoxelChunkWantedState
+#include "VoxelSpatialPolicyTypes.h"   // FVoxelChunkDemand, EVoxelChunkWantedState
 #include "QuadTree/QuadTreeNode.h"
 
 // Adapter: Quadtree leaf set -> streaming demands (Engine convention: LOD 0 = finest)

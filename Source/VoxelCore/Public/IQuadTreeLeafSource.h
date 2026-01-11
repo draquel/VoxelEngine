@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "VoxelWorldSettings.h"
-#include "VoxelSpacialPolicyTypes.h"
+#include "VoxelSpatialPolicyTypes.h"
 
 
 
@@ -19,11 +19,12 @@ namespace Voxel
 		virtual ~IQuadTreeLeafSource() = default;
 
 		// Must return leaves for the current camera (or cameras) in world space.
-		virtual void GetLeaves(
-			const FVoxelWorldSettings& World,
-			const FVoxelSpatialPolicyParams& Params,
-			const TArray<FVector>& CamerasWS,
-			TArray<FQuadTreeLeaf>& OutLeaves) const = 0;
+ 	virtual void GetLeaves(
+ 		const FVoxelWorldSettings& World,
+ 		const FVoxelSpatialPolicyParams& Params,
+ 		const FVoxelQuadTreeSpatialParams& QuadTreeParams,
+ 		const TArray<FVector>& CamerasWS,
+ 		TArray<FQuadTreeLeaf>& OutLeaves) const = 0;
 		
 		virtual FVector GetDomainMinWS_DebugOnlyOrAPI() const = 0;
 		virtual FVector GetDomainMinWS_ForEpoch(uint64 Epoch) const = 0;

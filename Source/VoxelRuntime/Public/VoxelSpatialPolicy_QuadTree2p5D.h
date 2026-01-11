@@ -4,7 +4,7 @@
 #include "IVoxelSpatialPolicy.h"
 #include "VoxelChunkBuildPayload.h"
 #include "VoxelChunkKey.h"
-#include "VoxelSpacialPolicyTypes.h"
+#include "VoxelSpatialPolicyTypes.h"
 #include "VoxelWorldSettings.h"
 
 

@@ -1,6 +1,6 @@
 ﻿#pragma once
 #include "CoreMinimal.h"
-#include "VoxelSpacialPolicyTypes.h"
+#include "VoxelNoiseParams.h"
 #include "VoxelSpatialPolicyTypes.h"
 #include "VoxelWorldSettings.generated.h"
 

@@ -1,6 +1,6 @@
 ﻿#pragma once
 #include "VoxelChunkBuildPayload.h"
-#include "VoxelSpacialPolicyTypes.h"
+#include "VoxelSpatialPolicyTypes.h"
 #include "VoxelWorldSettings.h"
 
 struct FVoxelWorldSettings;

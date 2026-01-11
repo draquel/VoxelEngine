@@ -7,7 +7,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "VoxelChunkKey.h"
 #include "VoxelChunkRecord.h"
-#include "VoxelSpacialPolicyTypes.h"
+#include "VoxelSpatialPolicyTypes.h"
 #include "VoxelWorldSettings.h"
 #include "VoxelChunkSubsystem.generated.h"
 
