@@ -2,7 +2,6 @@
 
 #include "VoxelRender/Public/PMCDebugChunkRenderConsumer.h"
 #include "VoxelRDG/Public/VoxelRDGChunkBuildService.h"
-#include "VoxelSpatialPolicy_ClipMap2p5D.h"
 #include "VoxelChunkSubsystem.h"
 #include "ProceduralMeshComponent.h"
 #include "QuadTreeLeafSource_FromUQuadTree.h"
