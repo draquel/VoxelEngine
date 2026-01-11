@@ -119,7 +119,7 @@ float SampleDensityWS_SphereInChunk_Noise(float3 Pws, float3 ChunkOriginWS, floa
 float SampleDensity_Terrain_Noise(float3 Pws, const FVoxelNoiseParams NP, uint seed)
 {
     float d = Density_HeightField(Pws, NP, seed);
-    // d += Density_OverhangPerturb(Pws, NP, seed);
-    // d += Density_CavesCarve(Pws, NP, seed);
+    d += Density_OverhangPerturb(Pws, NP, seed);
+    d += Density_CavesCarve(Pws, NP, seed);
     return d;
 }
