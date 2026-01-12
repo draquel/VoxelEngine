@@ -13,13 +13,18 @@ class FGreedyBuildCS : public FGlobalShader
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER(FVector3f, ChunkOriginWS)
 		SHADER_PARAMETER(float, ChunkSizeWS)
+		SHADER_PARAMETER(float, StepSizeWS)
+		SHADER_PARAMETER(uint32, CellsPerAxis)
 		SHADER_PARAMETER(float, IsoLevel)
 		SHADER_PARAMETER(uint32, ChunkSeed)
+		SHADER_PARAMETER(uint32, MaxVertices)
+		SHADER_PARAMETER(uint32, MaxIndices)
 
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelNoiseParams>, NoiseParamsBuf)
 
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<FVector4f>, OutVertices)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutIndices)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<FVector4f>, OutNormals)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutVertexCount)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutIndexCount)
 	END_SHADER_PARAMETER_STRUCT()
@@ -35,6 +40,7 @@ namespace GM_BuildPass
 	{
 		check(Inputs.VertexBuffer);
 		check(Inputs.IndexBuffer);
+		check(Inputs.NormalsBuffer);
 		check(Inputs.VertexCountBuffer);
 		check(Inputs.IndexCountBuffer);
 		check(Inputs.NoiseParamsSRV);
@@ -42,11 +48,16 @@ namespace GM_BuildPass
 		auto* Params = GraphBuilder.AllocParameters<FGreedyBuildCS::FParameters>();
 		Params->ChunkOriginWS = FVector3f(Inputs.ChunkParams.ChunkOriginWS);
 		Params->ChunkSizeWS = Inputs.ChunkParams.ChunkSizeWS;
+		Params->StepSizeWS = Inputs.ChunkParams.StepSizeWS;
+		Params->CellsPerAxis = Inputs.ChunkParams.CellsPerAxis;
 		Params->IsoLevel = Inputs.ChunkParams.IsoLevel;
 		Params->ChunkSeed = Inputs.ChunkParams.ChunkSeed;
+		Params->MaxVertices = Inputs.ChunkParams.MaxVertices;
+		Params->MaxIndices = Inputs.ChunkParams.MaxIndices;
 		Params->NoiseParamsBuf = Inputs.NoiseParamsSRV;
 		Params->OutVertices = GraphBuilder.CreateUAV(Inputs.VertexBuffer, PF_A32B32G32R32F);
 		Params->OutIndices = GraphBuilder.CreateUAV(Inputs.IndexBuffer, PF_R32_UINT);
+		Params->OutNormals = GraphBuilder.CreateUAV(Inputs.NormalsBuffer, PF_A32B32G32R32F);
 		Params->OutVertexCount = GraphBuilder.CreateUAV(Inputs.VertexCountBuffer);
 		Params->OutIndexCount = GraphBuilder.CreateUAV(Inputs.IndexCountBuffer);
 
@@ -56,7 +67,10 @@ namespace GM_BuildPass
 			RDG_EVENT_NAME("Voxel.Greedy.Build"),
 			CS,
 			Params,
-			FIntVector(1, 1, 1));
+			FIntVector(
+				FMath::DivideAndRoundUp((int32)Inputs.ChunkParams.CellsPerAxis, 4),
+				FMath::DivideAndRoundUp((int32)Inputs.ChunkParams.CellsPerAxis, 4),
+				FMath::DivideAndRoundUp((int32)Inputs.ChunkParams.CellsPerAxis, 4)));
 
 		FGreedyMesherBuildOutputs Outputs;
 		Outputs.VertexBuffer = Inputs.VertexBuffer;

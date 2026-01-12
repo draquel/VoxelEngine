@@ -204,11 +204,14 @@ void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, co
 			
 				OutNorms->SetNum((int32)VCount);
 				OutNorms->Init(FVector::UpVector, (int32)VCount);
-				if (G.NormalsReadback->IsReady()) NPtr = (const FFloat3*)G.NormalsReadback->Lock(VCount * sizeof(FFloat3));
-				if (NPtr)
+				if (G.NormalsReadback->IsReady())
 				{
-					for (uint32 i = 0; i < VCount; i++) (*OutNorms)[i] = FVector(NPtr[i].X, NPtr[i].Y, NPtr[i].Z);
-					G.NormalsReadback->Unlock();
+					const FFloat4* NPtr4 = (const FFloat4*)G.NormalsReadback->Lock(VCount * sizeof(FFloat4));
+					if (NPtr4)
+					{
+						for (uint32 i = 0; i < VCount; i++) (*OutNorms)[i] = FVector(NPtr4[i].X, NPtr4[i].Y, NPtr4[i].Z);
+						G.NormalsReadback->Unlock();
+					}
 				}
 
 				G.VertexReadback->Unlock();

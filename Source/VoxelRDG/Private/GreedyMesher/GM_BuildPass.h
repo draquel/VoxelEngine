@@ -9,6 +9,7 @@ struct FGreedyMesherBuildPassInputs
 	FRDGBufferSRVRef NoiseParamsSRV = nullptr;
 	FRDGBufferRef VertexBuffer = nullptr;
 	FRDGBufferRef IndexBuffer = nullptr;
+	FRDGBufferRef NormalsBuffer = nullptr;
 	FRDGBufferRef VertexCountBuffer = nullptr;
 	FRDGBufferRef IndexCountBuffer = nullptr;
 };

@@ -215,8 +215,17 @@ static void AllocateChunkBuffers(
 
 	if (Req.Mode == EVoxelMeshMode::GreedyMesher)
 	{
-		const uint32 MaxVerts = 8;
-		const uint32 MaxIndices = 36;
+		const uint32 CellsPerAxis = Req.Payload.CellsPerAxis;
+		// Estimate max vertices based on surface area + noise.
+		// For a cube, surface faces = 6 * N^2.
+		// We'll use a safer multiplier (12) to account for some noise/roughness.
+		const uint32 EstimatedFaces = FMath::Max<uint32>(CellsPerAxis * CellsPerAxis * 12, 1024);
+		
+		// Cap to avoid unreasonable allocations if LODs go too high
+		const uint32 MaxFaces = FMath::Min<uint32>(EstimatedFaces, 1000000); 
+		
+		const uint32 MaxVerts = MaxFaces * 4;
+		const uint32 MaxIndices = MaxFaces * 6;
 
 		FRDGBufferDesc VBDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(FVector4f), MaxVerts);
 		VBDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
@@ -348,7 +357,10 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		check(InOutResources->IndexBufferRDG);
 		check(InOutResources->NormalsBufferRDG);
 
-		const uint32 MaxVerts = 8;
+		const uint32 CellsPerAxis = Req.Payload.CellsPerAxis;
+		const uint32 EstimatedFaces = FMath::Max<uint32>(CellsPerAxis * CellsPerAxis * 12, 1024);
+		const uint32 MaxFaces = FMath::Min<uint32>(EstimatedFaces, 1000000);
+		const uint32 MaxVerts = MaxFaces * 4;
 
 		const FVoxelNoiseParams NoiseParamsGPU = MakeVoxelNoiseParams(Req.Payload.NoiseParameters);
 		FRDGBufferRef NoiseParamsBuffer =
@@ -364,24 +376,20 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		FGreedyMesherBuildPassInputs Inputs;
 		Inputs.ChunkParams.ChunkOriginWS = Req.Payload.ChunkOriginWS;
 		Inputs.ChunkParams.ChunkSizeWS = Req.Payload.ChunkSizeWS;
+		Inputs.ChunkParams.StepSizeWS = Req.Payload.StepSizeWS;
+		Inputs.ChunkParams.CellsPerAxis = Req.Payload.CellsPerAxis;
 		Inputs.ChunkParams.IsoLevel = Req.Payload.IsoLevel;
 		Inputs.ChunkParams.ChunkSeed = (uint32)Req.Payload.Seed;
+		Inputs.ChunkParams.MaxVertices = MaxVerts;
+		Inputs.ChunkParams.MaxIndices = MaxFaces * 6;
 		Inputs.NoiseParamsSRV = NoiseSRV;
 		Inputs.VertexBuffer = InOutResources->VertexBufferRDG;
 		Inputs.IndexBuffer = InOutResources->IndexBufferRDG;
+		Inputs.NormalsBuffer = InOutResources->NormalsBufferRDG;
 		Inputs.VertexCountBuffer = InOutResources->VertexCountRDG;
 		Inputs.IndexCountBuffer = InOutResources->IndexCountRDG;
 
 		GM_BuildPass::AddGM_BuildPass(GraphBuilder, Inputs);
-
-		FGreedyMesherNormalsPassInputs NormalsInputs;
-		NormalsInputs.ChunkSizeWS = Req.Payload.ChunkSizeWS;
-		NormalsInputs.VertexBuffer = InOutResources->VertexBufferRDG;
-		NormalsInputs.VertexCountBuffer = InOutResources->VertexCountRDG;
-		NormalsInputs.NormalsBuffer = InOutResources->NormalsBufferRDG;
-		NormalsInputs.MaxVerts = MaxVerts;
-
-		GM_NormalsPass::AddGM_NormalsPass(GraphBuilder, NormalsInputs);
 		
 		InOutResources->TangentBasisBufferRDG = FMC_TangentPass::AddMC_TangentPass(
 			GraphBuilder,

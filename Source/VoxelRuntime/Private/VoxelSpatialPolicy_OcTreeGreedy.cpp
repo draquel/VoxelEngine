@@ -150,9 +150,11 @@ namespace VoxelRuntime
 		OutPayload.ChunkOriginWS= ChunkOriginWS(World, Key);
 		OutPayload.ChunkSizeWS  = ChunkSizeWS(World, Key.LOD);
 
-		const float VertexSpacingWS = World.GreedySettings.BaseCellSizeWS * float(1 << Key.LOD);
+		const int32 BaseCellsPerAxis = FMath::Max(1, World.GreedySettings.CellsPerAxis);
+		const int32 CellsPerAxis = BaseCellsPerAxis * (1 << Key.LOD);
+		const float VertexSpacingWS = OutPayload.ChunkSizeWS / (float)CellsPerAxis;
 
-		OutPayload.CellsPerAxis = World.GreedySettings.CellsPerAxis;
+		OutPayload.CellsPerAxis = CellsPerAxis;
 		OutPayload.StepSizeWS   = VertexSpacingWS;
 		OutPayload.NoiseParameters = World.NoiseParams;
 	}

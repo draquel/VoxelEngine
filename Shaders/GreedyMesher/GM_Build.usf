@@ -5,89 +5,128 @@
 
 float3 ChunkOriginWS;
 float  ChunkSizeWS;
+float  StepSizeWS;
+uint   CellsPerAxis;
 float  IsoLevel;
 uint   ChunkSeed;
+uint   MaxVertices;
+uint   MaxIndices;
 
 StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
 
 RWBuffer<float4> OutVertices;
 RWBuffer<uint>   OutIndices;
+RWBuffer<float4> OutNormals;
 RWStructuredBuffer<uint> OutVertexCount;
 RWStructuredBuffer<uint> OutIndexCount;
 
-bool ChunkIsSolid()
+float GetDensity(int3 c)
 {
-	float3 corners[8];
-	corners[0] = ChunkOriginWS;
-	corners[1] = ChunkOriginWS + float3(ChunkSizeWS, 0, 0);
-	corners[2] = ChunkOriginWS + float3(ChunkSizeWS, ChunkSizeWS, 0);
-	corners[3] = ChunkOriginWS + float3(0, ChunkSizeWS, 0);
-	corners[4] = ChunkOriginWS + float3(0, 0, ChunkSizeWS);
-	corners[5] = ChunkOriginWS + float3(ChunkSizeWS, 0, ChunkSizeWS);
-	corners[6] = ChunkOriginWS + float3(ChunkSizeWS, ChunkSizeWS, ChunkSizeWS);
-	corners[7] = ChunkOriginWS + float3(0, ChunkSizeWS, ChunkSizeWS);
-
-	FVoxelNoiseParams NP = NoiseParamsBuf[0];
-	[unroll]
-	for (uint i = 0; i < 8; ++i)
+	if (any(c < 0) || any(c >= (int)CellsPerAxis))
 	{
-		float d = SampleDensity_Terrain_Noise(corners[i], NP, ChunkSeed);
-		if (d >= IsoLevel)
-		{
-			return false;
-		}
+		// Treat outside as empty for internal face culling, 
+		// but we need to decide if we want to cap the chunk.
+		// Usually we want to cap if the neighbor chunk isn't solid.
+		// For simplicity, let's sample.
 	}
-
-	return true;
+	float3 posWS = ChunkOriginWS + (float3(c) + 0.5f) * StepSizeWS;
+	FVoxelNoiseParams NP = NoiseParamsBuf[0];
+	return SampleDensity_Terrain_Noise(posWS, NP, ChunkSeed,StepSizeWS);
 }
 
-[numthreads(1, 1, 1)]
-void Main(uint3 DTid : SV_DispatchThreadID)
+// 0: -x, 1: +x, 2: -y, 3: +y, 4: -z, 5: +z
+static const int3 NeighborOfs[6] = {
+	int3(-1, 0, 0), int3(1, 0, 0),
+	int3(0, -1, 0), int3(0, 1, 0),
+	int3(0, 0, -1), int3(0, 0, 1)
+};
+
+static const float3 Normals[6] = {
+	float3(1, 0, 0), float3(-1, 0, 0),
+	float3(0, 1, 0), float3(0, -1, 0),
+	float3(0, 0, 1), float3(0, 0, -1)
+};
+
+void EmitFace(int3 c, uint faceIdx)
 {
-	if (!ChunkIsSolid())
+	uint vBase;
+	InterlockedAdd(OutVertexCount[0], 4, vBase);
+	uint iBase;
+	InterlockedAdd(OutIndexCount[0], 6, iBase);
+
+	if (vBase + 4 > MaxVertices || iBase + 6 > MaxIndices)
 	{
 		return;
 	}
 
-	float3 v0 = float3(0, 0, 0);
-	float3 v1 = float3(ChunkSizeWS, 0, 0);
-	float3 v2 = float3(ChunkSizeWS, ChunkSizeWS, 0);
-	float3 v3 = float3(0, ChunkSizeWS, 0);
-	float3 v4 = float3(0, 0, ChunkSizeWS);
-	float3 v5 = float3(ChunkSizeWS, 0, ChunkSizeWS);
-	float3 v6 = float3(ChunkSizeWS, ChunkSizeWS, ChunkSizeWS);
-	float3 v7 = float3(0, ChunkSizeWS, ChunkSizeWS);
+	float3 p0 = float3(c) * StepSizeWS;
+	float3 p1 = p0 + StepSizeWS;
 
-	OutVertices[0] = float4(v0, 1.0f);
-	OutVertices[1] = float4(v1, 1.0f);
-	OutVertices[2] = float4(v2, 1.0f);
-	OutVertices[3] = float4(v3, 1.0f);
-	OutVertices[4] = float4(v4, 1.0f);
-	OutVertices[5] = float4(v5, 1.0f);
-	OutVertices[6] = float4(v6, 1.0f);
-	OutVertices[7] = float4(v7, 1.0f);
-
-	uint indices[36] = {
-		0, 1, 2,
-		0, 2, 3,
-		4, 6, 5,
-		4, 7, 6,
-		0, 3, 7,
-		0, 7, 4,
-		1, 6, 2,
-		1, 5, 6,
-		0, 5, 1,
-		0, 4, 5,
-		3, 2, 6,
-		3, 6, 7
-	};
-
-	[unroll]
-	for (uint i = 0; i < 36; ++i)
-	{
-		OutIndices[i] = indices[i];
+	float3 v[4];
+	if (faceIdx == 0) { // -x
+		v[0] = float3(p0.x, p0.y, p0.z);
+		v[1] = float3(p0.x, p0.y, p1.z);
+		v[2] = float3(p0.x, p1.y, p1.z);
+		v[3] = float3(p0.x, p1.y, p0.z);
+	} else if (faceIdx == 1) { // +x
+		v[0] = float3(p1.x, p0.y, p0.z);
+		v[1] = float3(p1.x, p1.y, p0.z);
+		v[2] = float3(p1.x, p1.y, p1.z);
+		v[3] = float3(p1.x, p0.y, p1.z);
+	} else if (faceIdx == 2) { // -y
+		v[0] = float3(p0.x, p0.y, p0.z);
+		v[1] = float3(p1.x, p0.y, p0.z);
+		v[2] = float3(p1.x, p0.y, p1.z);
+		v[3] = float3(p0.x, p0.y, p1.z);
+	} else if (faceIdx == 3) { // +y
+		v[0] = float3(p0.x, p1.y, p0.z);
+		v[1] = float3(p0.x, p1.y, p1.z);
+		v[2] = float3(p1.x, p1.y, p1.z);
+		v[3] = float3(p1.x, p1.y, p0.z);
+	} else if (faceIdx == 4) { // -z
+		v[0] = float3(p0.x, p0.y, p0.z);
+		v[1] = float3(p0.x, p1.y, p0.z);
+		v[2] = float3(p1.x, p1.y, p0.z);
+		v[3] = float3(p1.x, p0.y, p0.z);
+	} else { // +z
+		v[0] = float3(p0.x, p0.y, p1.z);
+		v[1] = float3(p1.x, p0.y, p1.z);
+		v[2] = float3(p1.x, p1.y, p1.z);
+		v[3] = float3(p0.x, p1.y, p1.z);
 	}
 
-	OutVertexCount[0] = 8;
-	OutIndexCount[0] = 36;
+	float3 n = Normals[faceIdx];
+
+	for (uint i = 0; i < 4; ++i)
+	{
+		OutVertices[vBase + i] = float4(v[i], 1.0f);
+		OutNormals[vBase + i]  = float4(n, 0.0f);
+	}
+
+	OutIndices[iBase + 0] = vBase + 0;
+	OutIndices[iBase + 1] = vBase + 1;
+	OutIndices[iBase + 2] = vBase + 2;
+	OutIndices[iBase + 3] = vBase + 0;
+	OutIndices[iBase + 4] = vBase + 2;
+	OutIndices[iBase + 5] = vBase + 3;
+}
+
+[numthreads(4, 4, 4)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	if (any(DTid >= CellsPerAxis)) return;
+
+	int3 c = int3(DTid);
+	float d = GetDensity(c);
+
+	if (d < IsoLevel) return; // Empty
+
+	[unroll]
+	for (uint i = 0; i < 6; ++i)
+	{
+		if (GetDensity(c + NeighborOfs[i]) < IsoLevel)
+		{
+			EmitFace(c, i);
+		}
+	}
 }
