@@ -10,9 +10,11 @@
 	float  OverhangFreq;
 	float  OverhangAmp;
 	uint   OverhangOctaves;
+	float  OverhangSurfaceBand;
 
 	float  CaveFreq;
 	float  CaveAmp;
+	float  CaveWarpAmp;
 	float  CaveThreshold;
 	float  CaveSoftness;
 

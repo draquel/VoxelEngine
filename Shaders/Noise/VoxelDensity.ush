@@ -35,13 +35,34 @@ float Density_HeightField(float3 Pws, const FVoxelNoiseParams NP, uint seed)
 }
 
 // Overhang perturbation: add 3D ridged noise into density to create lateral features.
-float Density_OverhangPerturb(float3 Pws, const FVoxelNoiseParams NP, uint seed)
+float Density_OverhangPerturb(float3 Pws, const FVoxelNoiseParams NP, uint seed, float baseHeightDensity)
 {
     float3 pN = Pws * NP.WorldScale;
+
+    // 1 near surface, 0 away from surface.
+    float surfaceMask = 1.0 - saturate(abs(baseHeightDensity) / max(1e-4f, NP.OverhangSurfaceBand));
+
     float o = RidgedFBM3_Seeded(pN * NP.OverhangFreq, (int)NP.OverhangOctaves, 2.0f, 0.5f, seed ^ 0xBADC0DEu);
-    // Center around 0-ish
     o = (o * 2.0f - 1.0f);
-    return o * NP.OverhangAmp;
+
+    return o * NP.OverhangAmp * surfaceMask;
+}
+
+// Carve tunnels where noise is near 0.
+// width: ~0.05..0.25 (smaller => thinner tunnels)
+// softness: controls smooth edges
+float CaveMask_Tunnels(float n, float width, float softness)
+{
+    float a = abs(n); // 0 at centerline
+    // 1 when abs(n) < width, fades to 0 by width+softness
+    return 1.0 - smoothstep(width, width + max(1e-4f, softness), a);
+}
+
+float CaveMask_VerticalBand(float z, float minZ, float maxZ, float softness)
+{
+    float a = smoothstep(minZ, minZ + softness, z);
+    float b = 1.0 - smoothstep(maxZ - softness, maxZ, z);
+    return saturate(a * b);
 }
 
 // Caves: carve out voids using a thresholded 3D noise mask.
@@ -49,18 +70,26 @@ float Density_OverhangPerturb(float3 Pws, const FVoxelNoiseParams NP, uint seed)
 float Density_CavesCarve(float3 Pws, const FVoxelNoiseParams NP, uint seed)
 {
     float3 pN = Pws * NP.WorldScale;
-    float n = FBM3_Seeded(pN * NP.CaveFreq, 4, 2.0f, 0.5f, seed ^ 0xCA7E123u); // keep cheap
 
-    // Map [-1,1] -> [0,1]
-    float m = saturate(n * 0.5f + 0.5f);
+    // Domain warp helps caves look less grid-aligned / less FBM-ish
+    float3 warp = float3(
+        FBM3_Seeded(pN * (NP.CaveFreq * 0.5f) + 17.1f, 3, 2.0f, 0.5f, seed ^ 0xA1u),
+        FBM3_Seeded(pN * (NP.CaveFreq * 0.5f) + 93.7f, 3, 2.0f, 0.5f, seed ^ 0xB2u),
+        FBM3_Seeded(pN * (NP.CaveFreq * 0.5f) + 41.3f, 3, 2.0f, 0.5f, seed ^ 0xC3u)
+    ) * NP.CaveAmp;
 
-    // Threshold with softness
-    // when m > CaveThreshold => carve
-    float t0 = NP.CaveThreshold;
-    float t1 = NP.CaveThreshold + max(1e-4f, NP.CaveSoftness);
-    float carveMask = smoothstep(t0, t1, m); // 0..1
+    float n = FBM3_Seeded((pN + warp) * NP.CaveFreq, 4, 2.0f, 0.5f, seed ^ 0xCA7E123u); // ~[-1,1]
+
+    float carveMask = CaveMask_Tunnels(n, NP.CaveThreshold /*reinterpret as width*/, NP.CaveSoftness);
 
     return carveMask * NP.CaveAmp;
+}
+
+// baseD is heightfield density (Pws.z - surfaceZ)
+float SurfaceBandMask(float baseD, float bandHalfThickness)
+{
+    // 1 near surface, 0 far away
+    return 1.0 - saturate(abs(baseD) / max(1e-4f, bandHalfThickness));
 }
 
 // ------------------------------------------------------------
@@ -95,7 +124,7 @@ float SampleDensity_Sphere_Noise(float3 Pws, float3 CenterWS, float RadiusWS, co
     float d = Density_SphereSDF(Pws, CenterWS, RadiusWS);
 
     // Overhangs: perturb the surface (adds/subtracts to d)
-    d += Density_OverhangPerturb(Pws, NP, seed);
+    d += Density_OverhangPerturb(Pws, NP, seed, d);
 
     // Caves: carve out empty space by pushing density positive in cave areas
     d += Density_CavesCarve(Pws, NP, seed);
@@ -118,8 +147,10 @@ float SampleDensityWS_SphereInChunk_Noise(float3 Pws, float3 ChunkOriginWS, floa
 // 3) Terrain heightfield + overhang + caves (useful later)
 float SampleDensity_Terrain_Noise(float3 Pws, const FVoxelNoiseParams NP, uint seed)
 {
-    float d = Density_HeightField(Pws, NP, seed);
-    d += Density_OverhangPerturb(Pws, NP, seed);
-    d += Density_CavesCarve(Pws, NP, seed);
+    float d0 = Density_HeightField(Pws, NP, seed);
+
+    float d = d0;
+    d += Density_OverhangPerturb(Pws, NP, seed, d0);
+    d += Density_CavesCarve(Pws, NP, seed); // optionally also mask by d0/surface
     return d;
 }
