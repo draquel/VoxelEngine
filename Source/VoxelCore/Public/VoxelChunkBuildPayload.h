@@ -10,6 +10,7 @@ enum class EVoxelMeshMode : uint8
 {
 	DebugGrid,
 	MarchingCubes,
+	GreedyMesher,
 	Blocky,
 	SurfaceGrid	
 };
