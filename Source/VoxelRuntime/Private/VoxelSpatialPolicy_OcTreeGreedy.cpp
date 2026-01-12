@@ -53,7 +53,7 @@ namespace VoxelRuntime
 		}
 
 		TArray<FOcTreeLeaf> Leaves;
-		LeafSource->GetLeaves(World, Params, World.GreedySettings.SpatialParams, CamerasWS, Leaves);
+		LeafSource->GetLeaves(World, Params, World.GreedySettings.SpatialParams, (float)BaseChunkWS, CamerasWS, Leaves);
 		if (Leaves.Num() == 0)
 		{
 			return;

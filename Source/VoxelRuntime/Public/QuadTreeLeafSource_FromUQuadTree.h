@@ -52,6 +52,7 @@ namespace VoxelRuntime
 			const FVoxelWorldSettings& World,
 			const FVoxelSpatialPolicyParams& Params,
 			const FVoxelQuadTreeSpatialParams& QuadTreeParams,
+			float BaseChunkSizeWS,
 			const TArray<FVector>& CamerasWS,
 			TArray<FQuadTreeLeaf>& OutLeaves) const override
 		{
@@ -61,22 +62,22 @@ namespace VoxelRuntime
 
 			const FVector CamWS = CamerasWS[0];
 
-			const float BaseTile = World.SurfaceSettings.BaseTileSizeWS;
+			const float EffectiveBaseTile = FMath::Max(1.0f, BaseChunkSizeWS);
 			const int32 ExtTiles     = FMath::Max(1, QuadTreeParams.SurfaceExtentTiles0);
 			const int32 GuardTiles = FMath::Max(2, Params.GuardTiles);
 			
 			const int32 RequestedTilesPerSide = 2 * (ExtTiles + GuardTiles) + 1;
 			const int32 TilesPerSide = 1 << CeilLog2_Int(RequestedTilesPerSide);
-			const float SizeWS       = float(TilesPerSide) * BaseTile;
+			const float SizeWS       = float(TilesPerSide) * EffectiveBaseTile;
 			const float RadiusWS     = SizeWS * 0.5f;
 
-			UpdateDomainIfNeeded(CamWS, BaseTile, SizeWS, Params);
+			UpdateDomainIfNeeded(CamWS, EffectiveBaseTile, SizeWS, Params);
 
 			const FVector DomainMin  = DomainMinWS;
 			const FVector DomainSize(SizeWS, SizeWS, 0.f);
 
 			FQuadTreeSettings Settings;
-			Settings.MinSize          = FMath::RoundToInt(BaseTile);                 // stop splitting at base tile
+			Settings.MinSize          = FMath::RoundToInt(EffectiveBaseTile);                 // stop splitting at base tile
 			Settings.MaxDepth         = QuadTreeParams.QuadTreeMaxDepth;
 			Settings.DistanceModifier = FMath::Max(1, QuadTreeParams.QuadTreeSplitRadiusMultiplierPerLevel);
 
@@ -95,7 +96,7 @@ namespace VoxelRuntime
 			LastDomainMinWS  = DomainMin;
 			LastDomainSizeWS = SizeWS;
 			LastRadiusWS     = RadiusWS;
-			LastBaseTileWS   = BaseTile;
+			LastBaseTileWS   = EffectiveBaseTile;
 		}
 
 		// Tunables (put these in Params or SurfaceSettings later)

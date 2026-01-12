@@ -16,6 +16,7 @@ namespace Voxel
 			const FVoxelWorldSettings& World,
 			const FVoxelSpatialPolicyParams& Params,
 			const FVoxelOcTreeSpatialParams& OcTreeParams,
+			float BaseChunkSizeWS,
 			const TArray<FVector>& CamerasWS,
 			TArray<FOcTreeLeaf>& OutLeaves) const = 0;
 

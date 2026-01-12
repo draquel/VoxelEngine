@@ -23,6 +23,7 @@ namespace Voxel
  		const FVoxelWorldSettings& World,
  		const FVoxelSpatialPolicyParams& Params,
  		const FVoxelQuadTreeSpatialParams& QuadTreeParams,
+		float BaseChunkSizeWS,
  		const TArray<FVector>& CamerasWS,
  		TArray<FQuadTreeLeaf>& OutLeaves) const = 0;
 		

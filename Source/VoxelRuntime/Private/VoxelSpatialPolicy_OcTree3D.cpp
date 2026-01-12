@@ -52,8 +52,11 @@ namespace VoxelRuntime
 			return;
 		}
 
+		const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
+		const double BaseChunkWS = EffectiveBaseChunkSizeWS(World);
+
 		TArray<FOcTreeLeaf> Leaves;
-		LeafSource->GetLeaves(World, Params, World.MarchingSettings.SpatialParams, CamerasWS, Leaves);
+		LeafSource->GetLeaves(World, Params, World.MarchingSettings.SpatialParams, (float)BaseChunkWS, CamerasWS, Leaves);
 		if (Leaves.Num() == 0)
 		{
 			return;
@@ -62,8 +65,6 @@ namespace VoxelRuntime
 		TSet<FVoxelChunkKey> Seen;
 		Seen.Reserve(Leaves.Num() * 2);
 
-		const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
-		const double BaseChunkWS = EffectiveBaseChunkSizeWS(World);
 		const FVector DomainMinWS = LeafSource->GetDomainMinWS_DebugOnlyOrAPI();
 		const uint64 DomainEpoch = LeafSource->GetDomainEpoch();
 

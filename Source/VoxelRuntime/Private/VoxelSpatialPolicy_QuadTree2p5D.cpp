@@ -53,16 +53,16 @@ namespace VoxelRuntime
 	    if (!LeafSource.IsValid() || CamerasWS.Num() == 0)
 	        return;
 
+	    const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
+	    const double BaseTileSize = EffectiveBaseTileSizeWS(World);
+
 	    TArray<FQuadTreeLeaf> Leaves;
-	    LeafSource->GetLeaves(World, Params, World.SurfaceSettings.SpatialParams, CamerasWS, Leaves);
+	    LeafSource->GetLeaves(World, Params, World.SurfaceSettings.SpatialParams, (float)BaseTileSize, CamerasWS, Leaves);
 	    if (Leaves.Num() == 0)
 	        return;
 
 	    TSet<FVoxelChunkKey> Seen;
 	    Seen.Reserve(Leaves.Num() * 2);
-
-	    const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
-	    const double BaseTileSize = EffectiveBaseTileSizeWS(World);
 
 	#if !(UE_BUILD_SHIPPING)
 	    int32 Bad = 0;

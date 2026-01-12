@@ -64,6 +64,7 @@ namespace VoxelRuntime
 			const FVoxelWorldSettings& World,
 			const FVoxelSpatialPolicyParams& Params,
 			const FVoxelOcTreeSpatialParams& OcTreeParams,
+			float BaseChunkSizeWS,
 			const TArray<FVector>& CamerasWS,
 			TArray<FOcTreeLeaf>& OutLeaves) const override
 		{
@@ -75,18 +76,19 @@ namespace VoxelRuntime
 
 			const FVector CamWS = CamerasWS[0];
 
-			const float BaseChunkSizeWS = FMath::Max(1.0f, World.MarchingSettings.BaseCellSizeWS * (float)World.MarchingSettings.CellsPerAxis);
+			// Use the provided base chunk size
+			const float EffectiveBaseChunkWS = FMath::Max(1.0f, BaseChunkSizeWS);
 
 			// Derive domain size from Params
 			const int32 ExtTiles = FMath::Max(1, OcTreeParams.MarchingExtentCells0); 
 			const int32 GuardTiles = FMath::Max(2, Params.GuardTiles);
 			const int32 RequestedTilesPerSide = 2 * (ExtTiles + GuardTiles) + 1;
 			const int32 TilesPerSide = 1 << CeilLog2_Int(RequestedTilesPerSide);
-			const float SizeWS = (float)TilesPerSide * BaseChunkSizeWS;
+			const float SizeWS = (float)TilesPerSide * EffectiveBaseChunkWS;
 
-			UpdateDomainIfNeeded(CamWS, BaseChunkSizeWS, SizeWS, Params);
+			UpdateDomainIfNeeded(CamWS, EffectiveBaseChunkWS, SizeWS, Params);
 
-			Settings.MinSize = FMath::RoundToInt(BaseChunkSizeWS);
+			Settings.MinSize = FMath::RoundToInt(EffectiveBaseChunkWS);
 			Settings.MaxDepth = FMath::Max(0, OcTreeParams.OcTreeMaxDepth);
 			Settings.DistanceModifier = FMath::Max(1, OcTreeParams.OcTreeSplitRadiusMultiplierPerLevel);
 
@@ -104,7 +106,7 @@ namespace VoxelRuntime
 			LastCamWS = CamWS;
 			LastDomainMinWS = DomainMinWS;
 			LastDomainSizeWS = SizeWS;
-			LastBaseChunkWS = BaseChunkSizeWS;
+			LastBaseChunkWS = EffectiveBaseChunkWS;
 			LastRadiusWS = 0.5f * SizeWS;
 		}
 
