@@ -11,6 +11,7 @@
 #include "VoxelMCDebugComponent.h"
 #include "OcTreeLeafSource_FromOcTree.h"
 #include "VoxelSpatialPolicy_OcTree3D.h"
+#include "VoxelSpatialPolicy_OcTreeGreedy.h"
 #include "VoxelSpatialPolicy_QuadTree2p5D.h"
 #include "Engine/World.h"
 
@@ -58,8 +59,14 @@ void AVoxelWorldActor::BeginPlay()
 	{
 		//OcTree 3D
 		TSharedPtr<VoxelRuntime::FOcTreeLeafSource_FromOcTree> LeafSource =	MakeShared<VoxelRuntime::FOcTreeLeafSource_FromOcTree>();
-		SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_OcTree3D>(LeafSource);	
+		SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_OcTree3D>(LeafSource);
 	}	
+	if (TerrainMode == EVoxelWorldTerrainMode::Blocks3D)
+	{
+		//Greedy 3D
+		TSharedPtr<VoxelRuntime::FOcTreeLeafSource_FromOcTree> LeafSource =	MakeShared<VoxelRuntime::FOcTreeLeafSource_FromOcTree>();
+		SpatialPolicy = MakeShared<VoxelRuntime::FVoxelSpatialPolicy_OcTreeGreedy>(LeafSource);
+	}
 	ChunkSubsystem->SetSpatialPolicy(SpatialPolicy);
 	
 	

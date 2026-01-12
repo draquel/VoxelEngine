@@ -10,6 +10,7 @@
 #include "VoxelChunkGPUResources.h"
 #include "VoxelChunkRecord.h"
 #include "VoxelSpatialPolicy_OcTree3D.h"
+#include "VoxelSpatialPolicy_OcTreeGreedy.h"
 #include "VoxelSpatialPolicy_QuadTree2p5D.h"
 #include "VoxelCore/Public/VoxelChunkRenderPayload.h"
 #include "VoxelCore/Public/IVoxelChunkBuildService.h"
@@ -24,6 +25,11 @@ namespace
 	bool IsMarchingCubesPolicy(const TSharedPtr<Voxel::IVoxelSpatialPolicy>& SpatialPolicy)
 	{
 		return SpatialPolicy.IsValid() && SpatialPolicy->MeshMode() == EVoxelMeshMode::MarchingCubes;
+	}
+
+	bool IsGreedyMesherPolicy(const TSharedPtr<Voxel::IVoxelSpatialPolicy>& SpatialPolicy)
+	{
+		return SpatialPolicy.IsValid() && SpatialPolicy->MeshMode() == EVoxelMeshMode::GreedyMesher;
 	}
 
 	float DistanceToCamera(const FVector& CenterWS, const FVector& CameraWS, bool bSurfacePolicy)
@@ -275,6 +281,7 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 
 	const bool bSurfacePolicy = IsSurfacePolicy(SpatialPolicy);
 	const bool bMarchingCubesPolicy = IsMarchingCubesPolicy(SpatialPolicy);
+	const bool bGreedyMesherPolicy = IsGreedyMesherPolicy(SpatialPolicy);
 	
 	// Optional: keep distances updated for ALL chunks (even undesired) for stable eviction ordering.
 	// If you keep this, ApplyDemands will still overwrite distance for desired keys (fine).
@@ -337,6 +344,27 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 			if (bMarchingCubesPolicy)
 			{
 				if (VoxelRuntime::FVoxelSpatialPolicy_OcTree3D* OT = static_cast<VoxelRuntime::FVoxelSpatialPolicy_OcTree3D*>(SpatialPolicy.Get()))
+				{
+					if (OT->LeafSource.IsValid())
+					{
+						if (VoxelRuntime::FOcTreeLeafSource_FromOcTree* LS = static_cast<VoxelRuntime::FOcTreeLeafSource_FromOcTree*>(OT->LeafSource.Get()))
+						{
+							if (bDrawDomainDebug)
+							{
+								LS->DebugDrawDomain(World);
+							}
+							if (bOcTreeDebug)
+							{
+								LS->DebugDrawOcTree(World);	
+							}
+						}
+					}
+				}
+			}
+
+			if (bGreedyMesherPolicy)
+			{
+				if (VoxelRuntime::FVoxelSpatialPolicy_OcTreeGreedy* OT = static_cast<VoxelRuntime::FVoxelSpatialPolicy_OcTreeGreedy*>(SpatialPolicy.Get()))
 				{
 					if (OT->LeafSource.IsValid())
 					{

@@ -24,6 +24,9 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
 	TEnumAsByte<EVoxelWorldRenderMode> RenderMode = EVoxelWorldRenderMode::VertexFactory;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
+	bool bUseGreedyMesher = false;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
 	FVoxelWorldSettings Settings;
