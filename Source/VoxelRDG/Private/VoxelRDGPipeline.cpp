@@ -16,6 +16,8 @@
 #include "MarchingCubes/MC_ScanPass.h"
 #include "MarchingCubes/MC_ScatterPass.h"
 #include "MarchingCubes/MC_TangentPass.h"
+#include "GreedyMesher/GM_BuildPass.h"
+#include "GreedyMesher/GM_NormalsPass.h"
 
 
 // Voxel MC Pipeline Contract:
@@ -210,6 +212,24 @@ static void AllocateChunkBuffers(
 		// TangentBasisBufferRDG will be allocated by FMC_TangentPass::AddMC_TangentPass later
 		Res.TangentBasisBufferRDG = nullptr;
 	}
+
+	if (Req.Mode == EVoxelMeshMode::GreedyMesher)
+	{
+		const uint32 MaxVerts = 8;
+		const uint32 MaxIndices = 36;
+
+		FRDGBufferDesc VBDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(FVector4f), MaxVerts);
+		VBDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
+		Res.VertexBufferRDG = GraphBuilder.CreateBuffer(VBDesc, TEXT("Voxel.Greedy.Vertices"));
+
+		FRDGBufferDesc IBDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), MaxIndices);
+		IBDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_IndexBuffer;
+		Res.IndexBufferRDG = GraphBuilder.CreateBuffer(IBDesc, TEXT("Voxel.Greedy.Indices"));
+
+		FRDGBufferDesc NDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(FVector4f), MaxVerts);
+		NDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource;
+		Res.NormalsBufferRDG = GraphBuilder.CreateBuffer(NDesc, TEXT("Voxel.Greedy.Normals"));
+	}
 }
 
 void FVoxelRDGPipeline::BuildChunk_RenderThread(
@@ -320,6 +340,53 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 				Params,
 				FIntVector(1,1,1));
 		}
+	}
+
+	if (Req.Mode == EVoxelMeshMode::GreedyMesher)
+	{
+		check(InOutResources->VertexBufferRDG);
+		check(InOutResources->IndexBufferRDG);
+		check(InOutResources->NormalsBufferRDG);
+
+		const uint32 MaxVerts = 8;
+
+		const FVoxelNoiseParams NoiseParamsGPU = MakeVoxelNoiseParams(Req.Payload.NoiseParameters);
+		FRDGBufferRef NoiseParamsBuffer =
+			CreateStructuredBuffer(
+				GraphBuilder,
+				TEXT("Voxel.NoiseParams.Greedy"),
+				sizeof(FVoxelNoiseParams),
+				1,
+				&NoiseParamsGPU,
+				sizeof(FVoxelNoiseParams));
+		FRDGBufferSRVRef NoiseSRV = GraphBuilder.CreateSRV(NoiseParamsBuffer);
+
+		FGreedyMesherBuildPassInputs Inputs;
+		Inputs.ChunkParams.ChunkOriginWS = Req.Payload.ChunkOriginWS;
+		Inputs.ChunkParams.ChunkSizeWS = Req.Payload.ChunkSizeWS;
+		Inputs.ChunkParams.IsoLevel = Req.Payload.IsoLevel;
+		Inputs.ChunkParams.ChunkSeed = (uint32)Req.Payload.Seed;
+		Inputs.NoiseParamsSRV = NoiseSRV;
+		Inputs.VertexBuffer = InOutResources->VertexBufferRDG;
+		Inputs.IndexBuffer = InOutResources->IndexBufferRDG;
+		Inputs.VertexCountBuffer = InOutResources->VertexCountRDG;
+		Inputs.IndexCountBuffer = InOutResources->IndexCountRDG;
+
+		GM_BuildPass::AddGM_BuildPass(GraphBuilder, Inputs);
+
+		FGreedyMesherNormalsPassInputs NormalsInputs;
+		NormalsInputs.ChunkSizeWS = Req.Payload.ChunkSizeWS;
+		NormalsInputs.VertexBuffer = InOutResources->VertexBufferRDG;
+		NormalsInputs.VertexCountBuffer = InOutResources->VertexCountRDG;
+		NormalsInputs.NormalsBuffer = InOutResources->NormalsBufferRDG;
+		NormalsInputs.MaxVerts = MaxVerts;
+
+		GM_NormalsPass::AddGM_NormalsPass(GraphBuilder, NormalsInputs);
+		
+		InOutResources->TangentBasisBufferRDG = FMC_TangentPass::AddMC_TangentPass(
+			GraphBuilder,
+			InOutResources->NormalsBufferRDG,
+			MaxVerts);
 	}
 	
 	if (Req.Mode == EVoxelMeshMode::SurfaceGrid)

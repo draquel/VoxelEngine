@@ -1,0 +1,35 @@
+﻿// /Plugin/Voxel/GreedyMesher/GM_Normals.usf
+
+#include "/Engine/Private/Common.ush"
+
+float ChunkSizeWS;
+uint  MaxVerts;
+uint  _Pad0;
+uint  _Pad1;
+
+StructuredBuffer<uint> VertexCount;
+Buffer<float4> InVertices;
+RWBuffer<float4> OutNormals;
+
+[numthreads(64, 1, 1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	uint idx = DTid.x;
+	if (idx >= MaxVerts)
+	{
+		return;
+	}
+
+	uint count = VertexCount[0];
+	if (idx >= count)
+	{
+		return;
+	}
+
+	float3 pos = InVertices[idx].xyz;
+	float3 center = float3(ChunkSizeWS * 0.5, ChunkSizeWS * 0.5, ChunkSizeWS * 0.5);
+	float3 dir = pos - center;
+	float len = length(dir);
+	float3 n = (len > 1e-4f) ? (dir / len) : float3(0, 0, 1);
+	OutNormals[idx] = float4(n, 1.0f);
+}

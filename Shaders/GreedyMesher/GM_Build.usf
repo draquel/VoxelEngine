@@ -1,0 +1,93 @@
+﻿// /Plugin/Voxel/GreedyMesher/GM_Build.usf
+
+#include "/Engine/Private/Common.ush"
+#include "../Noise/VoxelDensity.ush"
+
+float3 ChunkOriginWS;
+float  ChunkSizeWS;
+float  IsoLevel;
+uint   ChunkSeed;
+
+StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
+
+RWBuffer<float4> OutVertices;
+RWBuffer<uint>   OutIndices;
+RWStructuredBuffer<uint> OutVertexCount;
+RWStructuredBuffer<uint> OutIndexCount;
+
+bool ChunkIsSolid()
+{
+	float3 corners[8];
+	corners[0] = ChunkOriginWS;
+	corners[1] = ChunkOriginWS + float3(ChunkSizeWS, 0, 0);
+	corners[2] = ChunkOriginWS + float3(ChunkSizeWS, ChunkSizeWS, 0);
+	corners[3] = ChunkOriginWS + float3(0, ChunkSizeWS, 0);
+	corners[4] = ChunkOriginWS + float3(0, 0, ChunkSizeWS);
+	corners[5] = ChunkOriginWS + float3(ChunkSizeWS, 0, ChunkSizeWS);
+	corners[6] = ChunkOriginWS + float3(ChunkSizeWS, ChunkSizeWS, ChunkSizeWS);
+	corners[7] = ChunkOriginWS + float3(0, ChunkSizeWS, ChunkSizeWS);
+
+	FVoxelNoiseParams NP = NoiseParamsBuf[0];
+	[unroll]
+	for (uint i = 0; i < 8; ++i)
+	{
+		float d = SampleDensity_Terrain_Noise(corners[i], NP, ChunkSeed);
+		if (d >= IsoLevel)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+[numthreads(1, 1, 1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	if (!ChunkIsSolid())
+	{
+		return;
+	}
+
+	float3 v0 = float3(0, 0, 0);
+	float3 v1 = float3(ChunkSizeWS, 0, 0);
+	float3 v2 = float3(ChunkSizeWS, ChunkSizeWS, 0);
+	float3 v3 = float3(0, ChunkSizeWS, 0);
+	float3 v4 = float3(0, 0, ChunkSizeWS);
+	float3 v5 = float3(ChunkSizeWS, 0, ChunkSizeWS);
+	float3 v6 = float3(ChunkSizeWS, ChunkSizeWS, ChunkSizeWS);
+	float3 v7 = float3(0, ChunkSizeWS, ChunkSizeWS);
+
+	OutVertices[0] = float4(v0, 1.0f);
+	OutVertices[1] = float4(v1, 1.0f);
+	OutVertices[2] = float4(v2, 1.0f);
+	OutVertices[3] = float4(v3, 1.0f);
+	OutVertices[4] = float4(v4, 1.0f);
+	OutVertices[5] = float4(v5, 1.0f);
+	OutVertices[6] = float4(v6, 1.0f);
+	OutVertices[7] = float4(v7, 1.0f);
+
+	uint indices[36] = {
+		0, 1, 2,
+		0, 2, 3,
+		4, 6, 5,
+		4, 7, 6,
+		0, 3, 7,
+		0, 7, 4,
+		1, 6, 2,
+		1, 5, 6,
+		0, 5, 1,
+		0, 4, 5,
+		3, 2, 6,
+		3, 6, 7
+	};
+
+	[unroll]
+	for (uint i = 0; i < 36; ++i)
+	{
+		OutIndices[i] = indices[i];
+	}
+
+	OutVertexCount[0] = 8;
+	OutIndexCount[0] = 36;
+}
