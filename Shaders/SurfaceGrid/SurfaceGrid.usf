@@ -20,7 +20,7 @@ uint VertexIndex(uint x, uint y) { return y * VertsPerSide + x; }
 float SampleHeightWS(float3 WorldWS)
 {
     FVoxelNoiseParams P = NoiseParamsBuf[0];
-    return SampleDensity_Terrain_Noise(WorldWS, P, P.Seed);
+    return SampleDensity_Terrain_Noise(WorldWS, P, P.Seed,VertexSpacingWS);
 }
 
 [numthreads(8,8,1)]

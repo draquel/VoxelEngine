@@ -31,12 +31,12 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 	float3 dy = float3(0.0f, delta, 0.0f);
 	float3 dz = float3(0.0f, 0.0f, delta);
 
-	float dpx = SampleDensity_Terrain_Noise(posWS + dx, NP, ChunkSeed);
-	float dnx = SampleDensity_Terrain_Noise(posWS - dx, NP, ChunkSeed);
-	float dpy = SampleDensity_Terrain_Noise(posWS + dy, NP, ChunkSeed);
-	float dny = SampleDensity_Terrain_Noise(posWS - dy, NP, ChunkSeed);
-	float dpz = SampleDensity_Terrain_Noise(posWS + dz, NP, ChunkSeed);
-	float dnz = SampleDensity_Terrain_Noise(posWS - dz, NP, ChunkSeed);
+	float dpx = SampleDensity_Terrain_Noise(posWS + dx, NP, ChunkSeed,StepSizeWS);
+	float dnx = SampleDensity_Terrain_Noise(posWS - dx, NP, ChunkSeed,StepSizeWS);
+	float dpy = SampleDensity_Terrain_Noise(posWS + dy, NP, ChunkSeed,StepSizeWS);
+	float dny = SampleDensity_Terrain_Noise(posWS - dy, NP, ChunkSeed,StepSizeWS);
+	float dpz = SampleDensity_Terrain_Noise(posWS + dz, NP, ChunkSeed,StepSizeWS);
+	float dnz = SampleDensity_Terrain_Noise(posWS - dz, NP, ChunkSeed,StepSizeWS);
 
 	float invTwoDelta = 1.0f / (2.0f * delta);
 	float3 grad = float3(
