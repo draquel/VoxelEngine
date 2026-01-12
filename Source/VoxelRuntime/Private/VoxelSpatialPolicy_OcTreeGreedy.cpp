@@ -6,12 +6,14 @@ namespace VoxelRuntime
 {
 	static FORCEINLINE double EffectiveBaseChunkSizeWS(const FVoxelWorldSettings& World)
 	{
-		const int32 CellsPerAxis = FMath::Max(1, World.GreedySettings.CellsPerAxis);
-		return FMath::Max(1.0, (double)World.GreedySettings.BaseCellSizeWS * (double)CellsPerAxis);
+		// BaseCellSizeWS in GreedySettings is the CHUNK size (e.g. 3200)
+		return FMath::Max(1.0, (double)World.GreedySettings.BaseCellSizeWS);
 	}
 
 	double FVoxelSpatialPolicy_OcTreeGreedy::ChunkSizeWSAtLOD(const FVoxelWorldSettings& World, int32 LOD)
 	{
+		// For uniform blocks, we force LOD 0 everywhere in demands, 
+		// but let's keep the helper consistent.
 		const double Base = EffectiveBaseChunkSizeWS(World);
 		return Base * (double)(1 << FMath::Max(0, LOD));
 	}
@@ -52,6 +54,9 @@ namespace VoxelRuntime
 			return;
 		}
 
+		const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
+		const double BaseChunkWS = EffectiveBaseChunkSizeWS(World);
+
 		TArray<FOcTreeLeaf> Leaves;
 		LeafSource->GetLeaves(World, Params, World.GreedySettings.SpatialParams, (float)BaseChunkWS, CamerasWS, Leaves);
 		if (Leaves.Num() == 0)
@@ -62,10 +67,10 @@ namespace VoxelRuntime
 		TSet<FVoxelChunkKey> Seen;
 		Seen.Reserve(Leaves.Num() * 2);
 
-		const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
-		const double BaseChunkWS = EffectiveBaseChunkSizeWS(World);
 		const FVector DomainMinWS = LeafSource->GetDomainMinWS_DebugOnlyOrAPI();
 		const uint64 DomainEpoch = LeafSource->GetDomainEpoch();
+
+		const double ZRangeLimit = World.NoiseParams.HeightAmp + 5000.0;
 
 		for (const FOcTreeLeaf& Leaf : Leaves)
 		{
@@ -73,6 +78,12 @@ namespace VoxelRuntime
 			const int32 LOD = ComputeLODFromLeafSize_ClampToLeaf(LeafSizeWS, BaseChunkWS, MaxLOD);
 			const double ChunkSizeWS = ChunkSizeWSAtLOD(World, LOD);
 			const double Eps = ChunkSizeWS * 1e-6;
+
+			// Vertical culling to avoid requesting empty/solid chunks far above/below the terrain
+			if (Leaf.Position.Z > ZRangeLimit || Leaf.Position.Z + LeafSizeWS < -ZRangeLimit)
+			{
+				continue;
+			}
 
 			const int32 X = (int32)FMath::FloorToDouble(((Leaf.Position.X - DomainMinWS.X) + Eps) / ChunkSizeWS);
 			const int32 Y = (int32)FMath::FloorToDouble(((Leaf.Position.Y - DomainMinWS.Y) + Eps) / ChunkSizeWS);
@@ -89,7 +100,7 @@ namespace VoxelRuntime
 			}
 			Seen.Add(Key);
 
-			const FVector ChunkCenterWS = Leaf.Position + FVector(ChunkSizeWS * 0.5);
+			const FVector ChunkCenterWS = Leaf.Position + FVector(LeafSizeWS * 0.5);
 			float BestDist = BIG_NUMBER;
 			for (const FVector& Cam : CamerasWS)
 			{
@@ -98,6 +109,7 @@ namespace VoxelRuntime
 
 			FVoxelChunkDemand D;
 			D.Key = Key;
+			// Resident if within policy radius.
 			D.Wanted = (LOD <= Params.ResidentThroughLOD) ? EVoxelChunkWantedState::Resident : EVoxelChunkWantedState::Requested;
 			D.ApproxDistWS = BestDist;
 			D.Priority = Voxel::ComputePriority(BestDist, LOD);
