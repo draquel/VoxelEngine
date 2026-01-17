@@ -158,7 +158,7 @@ namespace VoxelRuntime
 		// Better long-term: add explicit SurfaceVertsPerSide + SurfaceTileSizeWS into payload,
 		// but this lets you get the policy running immediately.
 
-		const float VertexSpacingWS = World.MarchingSettings.BaseCellSizeWS * float(1 << Key.LOD);
+		const float VertexSpacingWS = OutPayload.ChunkSizeWS / float(World.MarchingSettings.CellsPerAxis);
 
 		OutPayload.CellsPerAxis = World.MarchingSettings.CellsPerAxis;        // reinterpret for SurfaceGrid
 		OutPayload.StepSizeWS   = VertexSpacingWS;             // spacing between grid verts
