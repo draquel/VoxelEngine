@@ -23,6 +23,7 @@ struct FMCCountPassOutputs
 	FRDGBufferRef TriCountPerCell = nullptr;
 	FRDGBufferRef VertCountPerCell = nullptr;
 	FRDGBufferRef CaseIndexPerCell = nullptr;
+	FRDGBufferRef DebugDensity = nullptr;
 	uint32 CellsPerAxis = 0;
 };
 

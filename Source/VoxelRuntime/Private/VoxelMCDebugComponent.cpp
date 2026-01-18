@@ -50,6 +50,7 @@ void UVoxelMCDebugComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		PollScatterVerts();
 		PollIndices();
 		PollNormals();
+		PollDebugDensity();
 
 		// PollDebugTap();
 	
@@ -136,6 +137,18 @@ void UVoxelMCDebugComponent::DispatchNow()
             bDebugTapPending = false;
         }
 
+		if (bDebugReadDensity)
+		{
+			DebugDensityReadback = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.DebugDensityReadback"));
+			bDebugDensityPending = true;
+			bCanFreeDebugDensityReadback = false;
+		}
+		else
+		{
+			DebugDensityReadback.Reset();
+			bDebugDensityPending = false;
+		}
+
     	//Scattter
         VertexReadback = MakeShared<FRHIGPUBufferReadback, ESPMode::ThreadSafe>(TEXT("MC.ScatterVertsReadback"));
         bScatterPending = true;
@@ -220,13 +233,16 @@ void UVoxelMCDebugComponent::DispatchNow()
 				 IndexRB    = IndicesReadback,
 				 NormalRB   = NormalsReadback,
 				 TotalVRB   = TotalVertsReadback,
-				 TotalTRB   = TotalTrisReadback](FRHICommandListImmediate& RHICmdList)
+				 TotalTRB   = TotalTrisReadback,
+				 DebugDensityRB = DebugDensityReadback,
+				 DebugDensityBuffer = Count.DebugDensity](FRHICommandListImmediate& RHICmdList)
 				{
 					if (VertexRB.IsValid())  VertexRB->EnqueueCopy(RHICmdList, RBParams->Verts->GetRHI());
 					if (IndexRB.IsValid())   IndexRB->EnqueueCopy(RHICmdList, RBParams->Indices->GetRHI());
 					if (NormalRB.IsValid())  NormalRB->EnqueueCopy(RHICmdList, RBParams->Normals->GetRHI());
 					if (TotalVRB.IsValid())  TotalVRB->EnqueueCopy(RHICmdList, RBParams->TotalVerts->GetRHI());
 					if (TotalTRB.IsValid())  TotalTRB->EnqueueCopy(RHICmdList, RBParams->TotalTris->GetRHI());
+					if (DebugDensityRB.IsValid() && DebugDensityBuffer) DebugDensityRB->EnqueueCopy(RHICmdList, DebugDensityBuffer->GetRHI());
 				});
         	
             GraphBuilder.Execute();
@@ -235,13 +251,14 @@ void UVoxelMCDebugComponent::DispatchNow()
 			bIndicesPending    = IndicesReadback.IsValid();
 			bNormalsPending    = NormalsReadback.IsValid();
 			bTotalVertsPending = TotalVertsReadback.IsValid();
-			bTotalTrisPending  = TotalTrisReadback.IsValid();	
+			bTotalTrisPending  = TotalTrisReadback.IsValid();
+			bDebugDensityPending = DebugDensityReadback.IsValid();
         });
 }
 
 bool UVoxelMCDebugComponent::AnyPending() const
 {
-	return bTriCountPending || bTotalVertsPending || bDebugTapPending || bScatterPending || bIndicesPending || bNormalsPending || bTotalTrisPending;
+	return bTriCountPending || bTotalVertsPending || bDebugTapPending || bScatterPending || bIndicesPending || bNormalsPending || bTotalTrisPending || bDebugDensityPending;
 
 }
 
@@ -659,6 +676,63 @@ void UVoxelMCDebugComponent::PollDebugTap()
 		});
 }
 
+void UVoxelMCDebugComponent::PollDebugDensity()
+{
+	if (!bDebugDensityPending)
+		return;
+
+	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> RB;
+	{
+		FScopeLock Lock(&ReadbackCS);
+		RB = DebugDensityReadback;
+	}
+
+	if (!RB.IsValid())
+	{
+		bDebugDensityPending = false;
+		return;
+	}
+
+	if (!RB->IsReady())
+		return;
+
+	bDebugDensityPending = false;
+
+	TWeakObjectPtr<UVoxelMCDebugComponent> WeakThis(this);
+
+	ENQUEUE_RENDER_COMMAND(MC_Density_LockCopy)(
+		[WeakThis, RB](FRHICommandListImmediate& RHICmdList)
+		{
+			if (!WeakThis.IsValid())
+				return;
+
+			const uint32 Count = 4;
+			const uint32 Bytes = Count * sizeof(FVector4f);
+
+			const FVector4f* Data = reinterpret_cast<const FVector4f*>(RB->Lock(Bytes));
+			TArray<FVector4f> Copy;
+			Copy.SetNumZeroed(Count);
+
+			if (Data)
+			{
+				FMemory::Memcpy(Copy.GetData(), Data, Bytes);
+			}
+
+			RB->Unlock();
+
+			AsyncTask(ENamedThreads::GameThread, [WeakThis, Copy = MoveTemp(Copy)]() mutable
+			{
+				if (!WeakThis.IsValid())
+					return;
+
+				FScopeLock Lock(&WeakThis->ReadbackCS);
+				WeakThis->PendingDebugDensity = MoveTemp(Copy);
+				WeakThis->bHasPendingDebugDensity = true;
+				WeakThis->bCanFreeDebugDensityReadback = true;
+			});
+		});
+}
+
 void UVoxelMCDebugComponent::ConsumeAndLog()
 {
 	FScopeLock Lock(&ReadbackCS);
@@ -699,6 +773,24 @@ void UVoxelMCDebugComponent::ConsumeAndLog()
 				S += FString::Printf(TEXT("%u "), PendingIndices[i]);
 			}
 			// UE_LOG(LogTemp, Warning, TEXT("MC Indices[0..%d): %s"), FMath::Min(N, 64), *S);
+		}
+	}
+
+	if (bHasPendingDebugDensity)
+	{
+		bHasPendingDebugDensity = false;
+		if (PendingDebugDensity.Num() >= 4)
+		{
+			const FVector4f& Header = PendingDebugDensity[0];
+			const FVector4f& Cave = PendingDebugDensity[1];
+			const FVector4f& Dens = PendingDebugDensity[2];
+			const FVector4f& Scale = PendingDebugDensity[3];
+
+			UE_LOG(LogTemp, Log, TEXT("MC DebugDensity: StepSize=%.3f Cells=%.0f Iso=%.3f Seed=%.0f | Cave(Freq=%.3f Amp=%.3f Thresh=%.3f Soft=%.3f) | d0=%.3f d=%.3f carve=%.3f Warp=%.3f | WS=(%.6f, %.6f, %.6f)"),
+				Header.X, Header.Y, Header.Z, Header.W,
+				Cave.X, Cave.Y, Cave.Z, Cave.W,
+				Dens.X, Dens.Y, Dens.Z, Dens.W,
+				Scale.X, Scale.Y, Scale.Z);
 		}
 	}
 }

@@ -16,6 +16,7 @@ StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
 RWStructuredBuffer<uint> OutTriCountPerCell;   // NumCells
 RWStructuredBuffer<uint> OutVertCountPerCell;  // NumCells
 RWStructuredBuffer<uint> OutCaseIndexPerCell;  // NumCells
+RWStructuredBuffer<float4> OutDebugDensity;    // 4x float4
 
 uint ComputeCaseIndex(float3 cellMinWS)
 {
@@ -61,6 +62,17 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 
     float3 cellMinWS = ChunkOriginWS + float3(x, y, z) * StepSizeWS;
     uint cellIndex = x + y * CellsPerAxis + z * CellsPerAxis * CellsPerAxis;
+
+	if (x == 0 && y == 0 && z == 0)
+	{
+		FVoxelNoiseParams NP = NoiseParamsBuf[0];
+		float d0 = Density_HeightField(cellMinWS, NP, ChunkSeed);
+		float d  = SampleDensity_Terrain_Noise(cellMinWS, NP, ChunkSeed, StepSizeWS);
+		OutDebugDensity[0] = float4(StepSizeWS, (float)CellsPerAxis, IsoLevel, (float)ChunkSeed);
+		OutDebugDensity[1] = float4(NP.CaveFreq, NP.CaveAmp, NP.CaveThreshold, NP.CaveSoftness);
+		OutDebugDensity[2] = float4(d0, d, d - d0, NP.CaveWarpAmp);
+		OutDebugDensity[3] = float4(NP.WorldScale.x, NP.WorldScale.y, NP.WorldScale.z, 0.0f);
+	}
 
     // Compute case index exactly once
     uint caseIndex = 0;

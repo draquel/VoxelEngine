@@ -47,6 +47,9 @@ public:
 	
 	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
 	bool bDebugReadScanTap = true;
+
+	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
+	bool bDebugReadDensity = true;
 	
 	UPROPERTY(EditAnywhere, Category="Voxel|MC Debug")
 	bool bRenderToOwnerPMC = true;
@@ -74,6 +77,7 @@ private:
 	void PollTotalTris();
 	void PollScatterVerts();
 	void PollDebugTap();
+	void PollDebugDensity();
 	void PollIndices();
 	void PollNormals();
 
@@ -95,6 +99,7 @@ private:
 	bool bIndicesPending  = false;
 	bool bNormalsPending  = false;
 	bool bTotalTrisPending  = false;
+	bool bDebugDensityPending = false;
 
 	// ---------------------------
 	// Readback objects (created on game thread)
@@ -106,6 +111,7 @@ private:
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> IndicesReadback;
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> NormalsReadback;
 	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> TotalTrisReadback;
+	TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> DebugDensityReadback;
 
 	// ---------------------------
 	// Readback “how much did we copy”
@@ -125,6 +131,7 @@ private:
 	bool bHasPendingIndices     = false;
 	bool bHasPendingNormals     = false;
 	bool bHasPendingTotalTris      = false;
+	bool bHasPendingDebugDensity = false;
 	
 	bool bCanFreeTriCountsReadback  = false;
 	bool bCanFreeTotalVertsReadback = false;
@@ -133,6 +140,7 @@ private:
 	bool bCanFreeIndicesReadback    = false;
 	bool bCanFreeNormalsReadback    = false;
 	bool bCanFreeTotalTrisReadback  = false;
+	bool bCanFreeDebugDensityReadback = false;
 
 	TArray<uint32>    PendingTriCounts;     // optional
 	uint32            PendingTotalVerts = 0;
@@ -141,6 +149,7 @@ private:
 	TArray<FVector4f> PendingScatterVerts;  // float4
 	TArray<uint32>    PendingIndices;       // uint
 	TArray<FVector3f> PendingNormals;
+	TArray<FVector4f> PendingDebugDensity;
 	
 	// timing
 	float TimeSinceLastDispatch = 0.f;

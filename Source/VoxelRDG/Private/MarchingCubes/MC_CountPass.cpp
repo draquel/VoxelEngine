@@ -27,6 +27,7 @@ public:
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint32>, OutTriCountPerCell)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint32>, OutVertCountPerCell)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint32>, OutCaseIndexPerCell)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<FVector4f>, OutDebugDensity)
 	END_SHADER_PARAMETER_STRUCT()
 };
 
@@ -62,11 +63,16 @@ FMCCountPassOutputs FMC_CountPass::AddMC_CountPass(
 	FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), Cells),
 	TEXT("MC.CaseIndexPerCell"));
 
+	Out.DebugDensity = GraphBuilder.CreateBuffer(
+		FRDGBufferDesc::CreateStructuredDesc(sizeof(FVector4f), 4),
+		TEXT("MC.DebugDensity"));
+	
 	
     // Clear them (optional but helpful while debugging)
     AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.TriCountPerCell), 0);
     AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.VertCountPerCell), 0);
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.CaseIndexPerCell), 0);
+	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.DebugDensity),0);
 	
 	auto* PassParams = GraphBuilder.AllocParameters<FMC_CountCS::FParameters>();
 	PassParams->ChunkOriginWS = FVector3f(ChunkParams.ChunkOriginWS);
@@ -91,6 +97,7 @@ FMCCountPassOutputs FMC_CountPass::AddMC_CountPass(
 	PassParams->OutTriCountPerCell  = GraphBuilder.CreateUAV(Out.TriCountPerCell);
 	PassParams->OutVertCountPerCell = GraphBuilder.CreateUAV(Out.VertCountPerCell);
 	PassParams->OutCaseIndexPerCell = GraphBuilder.CreateUAV(Out.CaseIndexPerCell);
+	PassParams->OutDebugDensity     = GraphBuilder.CreateUAV(Out.DebugDensity);
 
     TShaderMapRef<FMC_CountCS> ComputeShader(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 
