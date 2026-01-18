@@ -6,8 +6,8 @@ namespace VoxelRuntime
 {
 	static FORCEINLINE double EffectiveBaseChunkSizeWS(const FVoxelWorldSettings& World)
 	{
-		const int32 CellsPerAxis = FMath::Max(1, World.MarchingSettings.CellsPerAxis);
-		return FMath::Max(1.0, (double)World.MarchingSettings.BaseCellSizeWS * (double)CellsPerAxis);
+		// BaseCellSizeWS in MarchingSettings represents the chunk size (world units).
+		return FMath::Max(1.0, (double)World.MarchingSettings.BaseCellSizeWS);
 	}
 
 	double FVoxelSpatialPolicy_OcTree3D::ChunkSizeWSAtLOD(const FVoxelWorldSettings& World, int32 LOD)
