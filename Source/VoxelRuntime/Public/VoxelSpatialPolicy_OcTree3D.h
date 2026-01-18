@@ -38,5 +38,11 @@ namespace VoxelRuntime
 	private:
 		static int32 ComputeLODFromLeafSize_ClampToLeaf(double LeafSizeWS, double BaseChunkWS, int32 MaxLOD);
 		static double ChunkSizeWSAtLOD(const FVoxelWorldSettings& World, int32 LOD);
+		
+		mutable TMap<FVoxelChunkKey, uint8> KeepAliveFrames; // key -> frames remaining
+		mutable uint64 LastEpoch = 0;
+
+		// Tunables
+		static constexpr uint8 DemandKeepAlive = 2; // keep vanished keys for 2 frames
 	};
 }

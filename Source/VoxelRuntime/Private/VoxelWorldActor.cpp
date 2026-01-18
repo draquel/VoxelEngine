@@ -15,6 +15,34 @@
 #include "VoxelSpatialPolicy_QuadTree2p5D.h"
 #include "Engine/World.h"
 
+bool GetEditHitPoint(APlayerController* PC, FVector& OutPoint)
+{
+	FHitResult Hit;
+	if (!PC) return false;
+
+	// Mouse cursor method:
+	if (PC->GetHitResultUnderCursor(ECC_Visibility, true, Hit) && Hit.bBlockingHit)
+	{
+		OutPoint = Hit.ImpactPoint;
+		return true;
+	}
+
+	// Crosshair / forward trace fallback:
+	FVector CamLoc; FRotator CamRot;
+	PC->GetPlayerViewPoint(CamLoc, CamRot);
+
+	const FVector Start = CamLoc;
+	const FVector End   = CamLoc + CamRot.Vector() * 100000.f;
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(VoxelEditTrace), true);
+	if (PC->GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params) && Hit.bBlockingHit)
+	{
+		OutPoint = Hit.ImpactPoint;
+		return true;
+	}
+	return false;
+}
+
 AVoxelWorldActor::AVoxelWorldActor()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -30,9 +58,6 @@ AVoxelWorldActor::AVoxelWorldActor()
 #if WITH_EDITOR	
 	DensityDebugComponent = CreateDefaultSubobject<UVoxelDensityDebugComponent>(TEXT("DensityDebugComponent"));
 	DensityDebugComponent->SetComponentTickEnabled(false);
-	
-	MCDebugComponent = CreateDefaultSubobject<UVoxelMCDebugComponent>(TEXT("MCDebugComponent"));
-	MCDebugComponent->SetComponentTickEnabled(false);	
 #endif
 }
 
@@ -116,4 +141,36 @@ void AVoxelWorldActor::Tick(float DeltaSeconds)
 	}
 
 	ChunkSubsystem->TickStreaming(DeltaSeconds, GetWorld(), CameraWS);
+}
+
+void AVoxelWorldActor::SpawnStampAtAim(bool bCarve)
+{
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	FVector P;
+	if (!GetEditHitPoint(PC, P)) return;
+
+	FVoxelEditStamp S;
+	S.Center = P;
+	S.Radius = 500.f;
+	S.Strength = bCarve ? +5000.f : -5000.f;
+
+	ChunkSubsystem->ApplyEditStamp(S);
+}
+
+void AVoxelWorldActor::DebugSpawnStampForward(bool bCarve)
+{
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	if (!PC) return;
+
+	FVector CamLoc; FRotator CamRot;
+	PC->GetPlayerViewPoint(CamLoc, CamRot);
+
+	const FVector Center = CamLoc + CamRot.Vector() * 1500.f;
+
+	FVoxelEditStamp S;
+	S.Center = Center;
+	S.Radius = 500.f;
+	S.Strength = bCarve ? +5000.f : -5000.f; // +carve, -fill for your convention
+
+	ChunkSubsystem->ApplyEditStamp(S); // recommended wrapper that adds + invalidates
 }

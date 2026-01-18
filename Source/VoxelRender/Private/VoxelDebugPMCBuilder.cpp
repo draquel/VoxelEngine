@@ -163,106 +163,147 @@ void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, co
 		TSharedPtr<TArray<int32>> OutInds = MakeShared<TArray<int32>>();
 		TSharedPtr<TArray<FVector>> OutNorms = MakeShared<TArray<FVector>>();
 
-		ENQUEUE_RENDER_COMMAND(VoxelConsumeReadback)([PMCWeak = TWeakObjectPtr<UProceduralMeshComponent>(PMC), OutVerts, OutInds, OutNorms, GPU, BuiltKey, VertSpace = P.VertexSpace, ChunkOriginWS = P.ChunkOriginWS, ChunkSize=P.ChunkSize, SkirtDepth = P.SkirtDepth, SkirtEdgeMask = P.SkirtEdgeMask, PayloadBuildId, OnBuiltRef, GetSectionIndexRef](FRHICommandListImmediate&) mutable
+		ENQUEUE_RENDER_COMMAND(VoxelConsumeReadback)(
+			[PMCWeak = TWeakObjectPtr<UProceduralMeshComponent>(PMC)
+			, OutVerts, OutInds, OutNorms
+			, GPU
+			, BuiltKey
+			, VertSpace = P.VertexSpace
+			, ChunkOriginWS = P.ChunkOriginWS
+			, ChunkSize = P.ChunkSize
+			, SkirtDepth = P.SkirtDepth
+			, SkirtEdgeMask = P.SkirtEdgeMask
+			, PayloadBuildId
+			, OnBuiltRef
+			, GetSectionIndexRef](FRHICommandListImmediate&) mutable
+		{
+			FVoxelChunkGPUResources& G = *GPU.Get();
+
+			// Read counts
+			const uint32* VCountPtr = (const uint32*)G.VertexCountReadback->Lock(sizeof(uint32));
+			const uint32* ICountPtr = (const uint32*)G.IndexCountReadback->Lock(sizeof(uint32));
+			const uint32 VCount = VCountPtr ? VCountPtr[0] : 0;
+			const uint32 ICount = ICountPtr ? ICountPtr[0] : 0;
+			G.VertexCountReadback->Unlock();
+			G.IndexCountReadback->Unlock();
+
+			// Helper: "complete" this payload on game thread even if empty/failed
+			auto CompleteEmpty = [PMCWeak, BuiltKey, PayloadBuildId, OnBuiltRef, GetSectionIndexRef]()
 			{
-				FVoxelChunkGPUResources& G = *GPU.Get();
-
-				const uint32* VCountPtr = (const uint32*)G.VertexCountReadback->Lock(sizeof(uint32));
-				const uint32* ICountPtr = (const uint32*)G.IndexCountReadback->Lock(sizeof(uint32));
-				const uint32 VCount = VCountPtr ? VCountPtr[0] : 0;
-				const uint32 ICount = ICountPtr ? ICountPtr[0] : 0;
-				G.VertexCountReadback->Unlock();
-				G.IndexCountReadback->Unlock();
-			
-				if (VCount == 0 || ICount == 0)
-					return;
-
-				struct FFloat4 { float X, Y, Z, W; };
-				struct FFloat3 { float X, Y, Z; };
-
-				const FFloat4* VPtr = (const FFloat4*)G.VertexReadback->Lock(VCount * sizeof(FFloat4));
-				const uint32*  IPtr = (const uint32*)G.IndexReadback->Lock(ICount * sizeof(uint32));
-				const FFloat3* NPtr = nullptr;
-				if (!VPtr || !IPtr)
-				{
-					if (VPtr) G.VertexReadback->Unlock();
-					if (IPtr) G.IndexReadback->Unlock();
-					return;
-				}
-
-				OutVerts->SetNum((int32)VCount);
-				for (uint32 i = 0; i < VCount; i++)
-				{
-					(*OutVerts)[i] = FVector(VPtr[i].X, VPtr[i].Y, VPtr[i].Z);
-				}
-
-				OutInds->SetNum((int32)ICount);
-				for (uint32 i = 0; i < ICount; i++)
-				{
-					(*OutInds)[(int32)i] = (int32)IPtr[i];
-				}
-			
-				OutNorms->SetNum((int32)VCount);
-				OutNorms->Init(FVector::UpVector, (int32)VCount);
-				if (G.NormalsReadback->IsReady())
-				{
-					const FFloat4* NPtr4 = (const FFloat4*)G.NormalsReadback->Lock(VCount * sizeof(FFloat4));
-					if (NPtr4)
-					{
-						for (uint32 i = 0; i < VCount; i++) (*OutNorms)[i] = FVector(NPtr4[i].X, NPtr4[i].Y, NPtr4[i].Z);
-						G.NormalsReadback->Unlock();
-					}
-				}
-
-				G.VertexReadback->Unlock();
-				G.IndexReadback->Unlock();
-			
-				AsyncTask(ENamedThreads::GameThread, [PMCWeak, OutVerts, OutInds, OutNorms, BuiltKey, ChunkSize, ChunkOriginWS, VertSpace, SkirtDepth, SkirtEdgeMask, PayloadBuildId, OnBuiltRef, GetSectionIndexRef]() mutable
+				AsyncTask(ENamedThreads::GameThread, [PMCWeak, BuiltKey, PayloadBuildId, OnBuiltRef, GetSectionIndexRef]()
 				{
 					UProceduralMeshComponent* PMCStrong = PMCWeak.Get();
 					if (!PMCStrong) return;
 
-					// 1) Append skirts FIRST (may add vertices/indices)
-					// AppendBoundarySkirts_ChunkLocalMasked(*OutVerts, *OutInds, ChunkSize, SkirtDepth, SkirtEdgeMask);
-
-					// 2) Build per-vertex arrays AFTER skirts
-					TArray<FVector2D> UV0;
-					TArray<FProcMeshTangent> Tangents;
-					TArray<FLinearColor> Colors;
-
-					// UVs based on bounds in chunk-local space
-					FVector2D MinUV(FLT_MAX, FLT_MAX);
-					FVector2D MaxUV(-FLT_MAX, -FLT_MAX);
-					for (FVector& P : *OutVerts)
-					{
-						if (VertSpace == EVoxelVertexSpace::ChunkLocal)
-						{
-							P = P + ChunkOriginWS;
-						}
-						
-						MinUV.X = FMath::Min(MinUV.X, (float)P.X);
-						MinUV.Y = FMath::Min(MinUV.Y, (float)P.Y);
-						MaxUV.X = FMath::Max(MaxUV.X, (float)P.X);
-						MaxUV.Y = FMath::Max(MaxUV.Y, (float)P.Y);
-					}
-					const float Width  = FMath::Max(MaxUV.X - MinUV.X, 1.0f);
-					const float Height = FMath::Max(MaxUV.Y - MinUV.Y, 1.0f);
-
-					UV0.SetNumUninitialized(OutVerts->Num());
-					for (int32 i = 0; i < OutVerts->Num(); ++i)
-					{
-						const FVector& P = (*OutVerts)[i];
-						UV0[i] = FVector2D(((float)P.X - MinUV.X) / Width, ((float)P.Y - MinUV.Y) / Height);
-					}
-
-					PMCStrong->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 					const int32 Section = (*GetSectionIndexRef)(BuiltKey);
 					PMCStrong->ClearMeshSection(Section);
-					PMCStrong->CreateMeshSection_LinearColor(Section, *OutVerts, *OutInds, *OutNorms, UV0, Colors, Tangents, false);
 
 					(*OnBuiltRef)(BuiltKey, PayloadBuildId);
 				});
+			};
+
+			// If empty mesh, still mark built (otherwise Ready backlog never clears)
+			if (VCount == 0 || ICount == 0)
+			{
+				CompleteEmpty();
+				return;
+			}
+
+			struct FFloat4 { float X, Y, Z, W; };
+
+			const FFloat4* VPtr = (const FFloat4*)G.VertexReadback->Lock(VCount * sizeof(FFloat4));
+			const uint32*  IPtr = (const uint32*)G.IndexReadback->Lock(ICount * sizeof(uint32));
+			if (!VPtr || !IPtr)
+			{
+				if (VPtr) G.VertexReadback->Unlock();
+				if (IPtr) G.IndexReadback->Unlock();
+
+				CompleteEmpty();
+				return;
+			}
+
+			OutVerts->SetNum((int32)VCount);
+			for (uint32 i = 0; i < VCount; i++)
+			{
+				(*OutVerts)[(int32)i] = FVector(VPtr[i].X, VPtr[i].Y, VPtr[i].Z);
+			}
+
+			OutInds->SetNum((int32)ICount);
+			for (uint32 i = 0; i < ICount; i++)
+			{
+				(*OutInds)[(int32)i] = (int32)IPtr[i];
+			}
+
+			OutNorms->SetNum((int32)VCount);
+			OutNorms->Init(FVector::UpVector, (int32)VCount);
+
+			// Optional normals readback (MUST be null-safe + unlock-safe)
+			if (G.NormalsReadback && G.NormalsReadback->IsReady())
+			{
+				const FFloat4* NPtr4 = (const FFloat4*)G.NormalsReadback->Lock(VCount * sizeof(FFloat4));
+				if (NPtr4)
+				{
+					for (uint32 i = 0; i < VCount; i++)
+					{
+						(*OutNorms)[(int32)i] = FVector(NPtr4[i].X, NPtr4[i].Y, NPtr4[i].Z);
+					}
+				}
+				G.NormalsReadback->Unlock(); // ALWAYS unlock, even if NPtr4 == nullptr
+			}
+
+			G.VertexReadback->Unlock();
+			G.IndexReadback->Unlock();
+
+			AsyncTask(ENamedThreads::GameThread,
+				[PMCWeak, OutVerts, OutInds, OutNorms, BuiltKey, ChunkSize, ChunkOriginWS, VertSpace, SkirtDepth, SkirtEdgeMask, PayloadBuildId, OnBuiltRef, GetSectionIndexRef]() mutable
+			{
+				UProceduralMeshComponent* PMCStrong = PMCWeak.Get();
+				if (!PMCStrong) return;
+
+				// AppendBoundarySkirts_ChunkLocalMasked(*OutVerts, *OutInds, ChunkSize, SkirtDepth, SkirtEdgeMask);
+
+				TArray<FVector2D> UV0;
+				TArray<FProcMeshTangent> Tangents;
+				TArray<FLinearColor> Colors;
+
+				// Convert verts if necessary + compute UV bounds
+				FVector2D MinUV(FLT_MAX, FLT_MAX);
+				FVector2D MaxUV(-FLT_MAX, -FLT_MAX);
+
+				for (FVector& P : *OutVerts)
+				{
+					if (VertSpace == EVoxelVertexSpace::ChunkLocal)
+					{
+						P = P + ChunkOriginWS;
+					}
+
+					MinUV.X = FMath::Min(MinUV.X, (float)P.X);
+					MinUV.Y = FMath::Min(MinUV.Y, (float)P.Y);
+					MaxUV.X = FMath::Max(MaxUV.X, (float)P.X);
+					MaxUV.Y = FMath::Max(MaxUV.Y, (float)P.Y);
+				}
+
+				const float Width  = FMath::Max(MaxUV.X - MinUV.X, 1.0f);
+				const float Height = FMath::Max(MaxUV.Y - MinUV.Y, 1.0f);
+
+				UV0.SetNumUninitialized(OutVerts->Num());
+				for (int32 i = 0; i < OutVerts->Num(); ++i)
+				{
+					const FVector& P = (*OutVerts)[i];
+					UV0[i] = FVector2D(((float)P.X - MinUV.X) / Width, ((float)P.Y - MinUV.Y) / Height);
+				}
+
+				PMCStrong->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+				PMCStrong->SetCollisionObjectType(ECC_WorldStatic);
+				PMCStrong->SetCollisionResponseToAllChannels(ECR_Block);
+
+				const int32 Section = (*GetSectionIndexRef)(BuiltKey);
+				PMCStrong->ClearMeshSection(Section);
+				PMCStrong->CreateMeshSection_LinearColor(Section, *OutVerts, *OutInds, *OutNorms, UV0, Colors, Tangents, true);
+
+				(*OnBuiltRef)(BuiltKey, PayloadBuildId);
 			});
+		});
 
 		BuiltThisCall++;
 		if (BuiltThisCall >= MaxPerCall)

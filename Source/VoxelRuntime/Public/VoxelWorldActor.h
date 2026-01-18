@@ -33,10 +33,14 @@ public:
 
 	UPROPERTY(VisibleAnywhere, Category="Voxel")
 	TObjectPtr<UVoxelEditLayer> EditLayer;
+	
+	UFUNCTION(BlueprintCallable, Category="Voxel")	
+	void SpawnStampAtAim(bool bCarve);
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
+	void DebugSpawnStampForward(bool bCarve);
 
 private:
 	FTimerHandle DebugPollTimer;
@@ -46,8 +50,6 @@ private:
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UProceduralMeshComponent> DebugPMC;
 	
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UVoxelDensityDebugComponent> DensityDebugComponent;
-	
-	UPROPERTY(VisibleAnywhere) TObjectPtr<UVoxelMCDebugComponent> MCDebugComponent;
 	
 	UPROPERTY() TObjectPtr<UVoxelChunkSubsystem> ChunkSubsystem;
 };

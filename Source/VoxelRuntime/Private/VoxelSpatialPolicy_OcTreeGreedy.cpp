@@ -43,89 +43,108 @@ namespace VoxelRuntime
 	}
 
 	void FVoxelSpatialPolicy_OcTreeGreedy::ComputeDemands(
-		const FVoxelWorldSettings& World,
-		const FVoxelSpatialPolicyParams& Params,
-		const TArray<FVector>& CamerasWS,
-		TArray<FVoxelChunkDemand>& OutDemands) const
+	    const FVoxelWorldSettings& World,
+	    const FVoxelSpatialPolicyParams& Params,
+	    const TArray<FVector>& CamerasWS,
+	    TArray<FVoxelChunkDemand>& OutDemands) const
 	{
-		OutDemands.Reset();
-		if (!LeafSource.IsValid() || CamerasWS.Num() == 0)
-		{
-			return;
-		}
+	    OutDemands.Reset();
+	    if (!LeafSource.IsValid() || CamerasWS.Num() == 0)
+	    {
+	        return;
+	    }
 
-		const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
-		const double BaseChunkWS = EffectiveBaseChunkSizeWS(World);
+	    const int32 MaxLOD = FMath::Max(0, Params.MaxLOD);
+	    const double BaseChunkWS = EffectiveBaseChunkSizeWS(World);
 
-		TArray<FOcTreeLeaf> Leaves;
-		LeafSource->GetLeaves(World, Params, World.GreedySettings.SpatialParams, (float)BaseChunkWS, CamerasWS, Leaves);
-		if (Leaves.Num() == 0)
-		{
-			return;
-		}
+	    TArray<FOcTreeLeaf> Leaves;
+	    LeafSource->GetLeaves(
+	        World,
+	        Params,
+	        World.GreedySettings.SpatialParams,
+	        (float)BaseChunkWS,
+	        CamerasWS,
+	        Leaves);
 
-		TSet<FVoxelChunkKey> Seen;
-		Seen.Reserve(Leaves.Num() * 2);
+	    if (Leaves.Num() == 0)
+	    {
+	        return;
+	    }
 
-		const FVector DomainMinWS = LeafSource->GetDomainMinWS_DebugOnlyOrAPI();
-		const uint64 DomainEpoch = LeafSource->GetDomainEpoch();
+	    TSet<FVoxelChunkKey> Seen;
+	    Seen.Reserve(Leaves.Num() * 2);
 
-		const double ZRangeLimit = World.NoiseParams.HeightAmp + 5000.0;
+	    const FVector DomainMinWS = LeafSource->GetDomainMinWS_DebugOnlyOrAPI();
+	    const uint64 DomainEpoch = LeafSource->GetDomainEpoch();
 
-		for (const FOcTreeLeaf& Leaf : Leaves)
-		{
-			const double LeafSizeWS = Leaf.Size.X;
-			const int32 LOD = ComputeLODFromLeafSize_ClampToLeaf(LeafSizeWS, BaseChunkWS, MaxLOD);
-			const double ChunkSizeWS = ChunkSizeWSAtLOD(World, LOD);
-			const double Eps = ChunkSizeWS * 1e-6;
+	    // Vertical culling bounds (tune as desired)
+	    const double ZRangeLimit = (double)World.NoiseParams.HeightAmp + 5000.0;
 
-			// Vertical culling to avoid requesting empty/solid chunks far above/below the terrain
-			if (Leaf.Position.Z > ZRangeLimit || Leaf.Position.Z + LeafSizeWS < -ZRangeLimit)
-			{
-				continue;
-			}
+	    for (const FOcTreeLeaf& Leaf : Leaves)
+	    {
+	        // Leaf.Position is MIN corner; Leaf.Size is full extent.
+	        const double LeafMinZ = (double)Leaf.Position.Z;
+	        const double LeafMaxZ = (double)Leaf.Position.Z + (double)Leaf.Size.Z;
 
-			const int32 X = (int32)FMath::FloorToDouble(((Leaf.Position.X - DomainMinWS.X) + Eps) / ChunkSizeWS);
-			const int32 Y = (int32)FMath::FloorToDouble(((Leaf.Position.Y - DomainMinWS.Y) + Eps) / ChunkSizeWS);
-			const int32 Z = (int32)FMath::FloorToDouble(((Leaf.Position.Z - DomainMinWS.Z) + Eps) / ChunkSizeWS);
+	        // Cull leaves fully above or fully below our interested band.
+	        if (LeafMinZ > ZRangeLimit || LeafMaxZ < -ZRangeLimit)
+	        {
+	            continue;
+	        }
 
-			FVoxelChunkKey Key;
-			Key.LOD = LOD;
-			Key.Coord = FIntVector(X, Y, Z);
-			Key.DomainEpoch = (int64)DomainEpoch;
+	        const double LeafSizeWS = (double)Leaf.Size.X; // assumes cubic split; safe if Tree uses cubes
+	        const int32 LOD = ComputeLODFromLeafSize_ClampToLeaf(LeafSizeWS, BaseChunkWS, MaxLOD);
+	        const double ChunkSizeWS = ChunkSizeWSAtLOD(World, LOD);
 
-			if (Seen.Contains(Key))
-			{
-				continue;
-			}
-			Seen.Add(Key);
+	        // Tiny epsilon to stabilize boundary quantization.
+	        const double Eps = ChunkSizeWS * 1e-6;
 
-			const FVector ChunkCenterWS = Leaf.Position + FVector(LeafSizeWS * 0.5);
-			float BestDist = BIG_NUMBER;
-			for (const FVector& Cam : CamerasWS)
-			{
-				BestDist = FMath::Min(BestDist, FVector::Dist(ChunkCenterWS, Cam));
-			}
+	        const int32 X = (int32)FMath::FloorToDouble(((Leaf.Position.X - DomainMinWS.X) + Eps) / ChunkSizeWS);
+	        const int32 Y = (int32)FMath::FloorToDouble(((Leaf.Position.Y - DomainMinWS.Y) + Eps) / ChunkSizeWS);
+	        const int32 Z = (int32)FMath::FloorToDouble(((Leaf.Position.Z - DomainMinWS.Z) + Eps) / ChunkSizeWS);
 
-			FVoxelChunkDemand D;
-			D.Key = Key;
-			// Resident if within policy radius.
-			D.Wanted = (LOD <= Params.ResidentThroughLOD) ? EVoxelChunkWantedState::Resident : EVoxelChunkWantedState::Requested;
-			D.ApproxDistWS = BestDist;
-			D.Priority = Voxel::ComputePriority(BestDist, LOD);
-			D.DomainEpoch = DomainEpoch;
+	        FVoxelChunkKey Key;
+	        Key.LOD = LOD;
+	        Key.Coord = FIntVector(X, Y, Z);
+	        Key.DomainEpoch = (int64)DomainEpoch;
 
-			OutDemands.Add(D);
-		}
+	        if (Seen.Contains(Key))
+	        {
+	            continue;
+	        }
+	        Seen.Add(Key);
 
-		OutDemands.Sort([](const FVoxelChunkDemand& A, const FVoxelChunkDemand& B)
-		{
-			if (A.Wanted != B.Wanted)
-			{
-				return A.Wanted > B.Wanted;
-			}
-			return A.Priority > B.Priority;
-		});
+	        // --- STABLE chunk center ---
+	        // Use the domain grid for center/dist instead of leaf center/size.
+	        const FVector ChunkOriginWS =
+	            DomainMinWS + FVector((double)X * ChunkSizeWS, (double)Y * ChunkSizeWS, (double)Z * ChunkSizeWS);
+
+	        const FVector ChunkCenterWS = ChunkOriginWS + FVector(ChunkSizeWS * 0.5);
+
+	        float BestDist = BIG_NUMBER;
+	        for (const FVector& Cam : CamerasWS)
+	        {
+	            BestDist = FMath::Min(BestDist, FVector::Dist(ChunkCenterWS, Cam));
+	        }
+
+	        FVoxelChunkDemand D;
+	        D.Key = Key;
+	        D.Wanted = (LOD <= Params.ResidentThroughLOD) ? EVoxelChunkWantedState::Resident : EVoxelChunkWantedState::Requested;
+	        D.ApproxDistWS = BestDist;
+	        D.Priority = Voxel::ComputePriority(BestDist, LOD);
+	        D.DomainEpoch = DomainEpoch;
+
+	        OutDemands.Add(D);
+	    }
+
+	    OutDemands.Sort([](const FVoxelChunkDemand& A, const FVoxelChunkDemand& B)
+	    {
+	        if (A.Wanted != B.Wanted)
+	        {
+	            return A.Wanted > B.Wanted;
+	        }
+	        return A.Priority > B.Priority;
+	    });
 	}
 
 	float FVoxelSpatialPolicy_OcTreeGreedy::ChunkSizeWS(const FVoxelWorldSettings& World, int32 LOD) const

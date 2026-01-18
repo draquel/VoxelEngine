@@ -17,17 +17,28 @@ namespace VoxelRender
 
 	void FPMCDebugChunkRenderConsumer::EnqueueBuild(const FVoxelChunkRenderPayload& Payload)
 	{
-		// Ignore stale/duplicate vs what we already *built*
-		const uint64* Built = LastBuiltBuildId.Find(Payload.Key);
-		if (Built && Payload.BuildId <= *Built)
-			return;
+		// Ignore stale or duplicate builds vs what we already BUILT
+		if (const uint64* Built = LastBuiltBuildId.Find(Payload.Key))
+		{
+			if (Payload.BuildId <= *Built)
+				return;
+		}
 
-		// Latest-wins queue
-		FVoxelChunkRenderPayload& Slot = PendingBuilds.FindOrAdd(Payload.Key);
-		if (Slot.BuildId > Payload.BuildId)
-			return; // already queued something newer
+		// Latest-wins queue: keep only the newest pending build per chunk
+		if (FVoxelChunkRenderPayload* Existing = PendingBuilds.Find(Payload.Key))
+		{
+			// If we already have a newer (or equal) build queued, drop this one
+			if (Existing->BuildId >= Payload.BuildId)
+				return;
 
-		Slot = Payload;
+			// Otherwise overwrite with the newer payload
+			*Existing = Payload;
+		}
+		else
+		{
+			// First pending build for this chunk
+			PendingBuilds.Add(Payload.Key, Payload);
+		}
 	}
 
 	void FPMCDebugChunkRenderConsumer::RemoveChunk(const FVoxelChunkKey& Key)
@@ -57,21 +68,32 @@ namespace VoxelRender
 		Payloads.Reserve(MaxBuildsPerTick);
 
 		int32 Added = 0;
-		for (auto It = PendingBuilds.CreateIterator(); It && Added < MaxBuildsPerTick; ++It)
+
+		// IMPORTANT: Do NOT remove from PendingBuilds here.
+		// TryConsumeAndBuild may finish asynchronously; we remove only on success in the callback.
+		for (auto It = PendingBuilds.CreateConstIterator(); It && Added < MaxBuildsPerTick; ++It)
 		{
 			Payloads.Add(It.Value());
-			It.RemoveCurrent(); // consume it now
 			++Added;
 		}
 
-		// Drive the PMC builder
 		FVoxelDebugPMCBuilder::TryConsumeAndBuild(
 			PMC,
 			Payloads,
-			[this](const FVoxelChunkKey& Key){ return GetOrCreateSection(Key); },
+			[this](const FVoxelChunkKey& Key) { return GetOrCreateSection(Key); },
 			[this](const FVoxelChunkKey& Key, uint64 BuildId)
 			{
 				LastBuiltBuildId.Add(Key, BuildId);
+
+				if (FVoxelChunkRenderPayload* Pending = PendingBuilds.Find(Key))
+				{
+					if (Pending->BuildId == BuildId)
+					{
+						PendingBuilds.Remove(Key);
+					}
+					// else: newer build already queued, keep it
+				}
+
 				if (OnBuilt) OnBuilt(Key, BuildId);
 			});
 	}
