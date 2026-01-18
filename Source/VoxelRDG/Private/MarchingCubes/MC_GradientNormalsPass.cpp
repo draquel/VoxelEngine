@@ -4,6 +4,7 @@
 #include "RenderGraphBuilder.h"
 #include "RenderGraphUtils.h"
 #include "ShaderParameterStruct.h"
+#include "VoxelEditLayer.h"
 #include "MarchingCubes/MarchingCubesDispatch.h"
 #include "MarchingCubes/MC_NormalsPass.h"
 
@@ -29,6 +30,9 @@ public:
 	SHADER_USE_PARAMETER_STRUCT(FMCGradientNormalsCS, FGlobalShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32, EditStampCount)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelEditStampGPU>, EditStamps)
+	
 		SHADER_PARAMETER_RDG_BUFFER_SRV(Buffer<float4>, InPositions)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelNoiseParams>, NoiseParamsBuf)
 		SHADER_PARAMETER(float, IsoLevel)
@@ -47,6 +51,7 @@ FMCNormalsOutputs FMC_GradientNormalsPass::AddMC_GradientNormalsPass(
 	FRDGBuilder& GraphBuilder,
 	const FMCChunkParamsCPU& ChunkParams,
 	const FVoxelNoiseParamsCPU& NoiseParamsCPU,
+	const FVoxelEditParams& EditParams,
 	FRDGBufferRef Positions,
 	FRDGBufferRef Indices,
 	FRDGBufferRef TotalTris,
@@ -94,6 +99,9 @@ FMCNormalsOutputs FMC_GradientNormalsPass::AddMC_GradientNormalsPass(
 			sizeof(FVoxelNoiseParams));
 	Params->NoiseParamsBuf = GraphBuilder.CreateSRV(NoiseParamsBuffer);
 
+	Params->EditStampCount = EditParams.EditStampCount;
+	Params->EditStamps = GraphBuilder.CreateSRV(EditParams.EditStamps);
+	
 	Params->OutNormals = GraphBuilder.CreateUAV(Out.Normals, PF_A32B32G32R32F);
 
 	TShaderMapRef<FMCGradientNormalsCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));

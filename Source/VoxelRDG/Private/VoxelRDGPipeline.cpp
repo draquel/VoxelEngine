@@ -9,6 +9,7 @@
 #include "ShaderParameterStruct.h"
 
 #include "VoxelChunkGPUResources.h"
+#include "VoxelEditLayer.h"
 #include "MarchingCubes/MarchingCubesDispatch.h"
 #include "MarchingCubes/MC_CountPass.h"
 #include "MarchingCubes/MC_IndexPass.h"
@@ -78,6 +79,9 @@ class FSurfaceGridVertCS : public FGlobalShader
 	SHADER_USE_PARAMETER_STRUCT(FSurfaceGridVertCS, FGlobalShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32, EditStampCount)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelEditStampGPU>, EditStamps)
+	
 		SHADER_PARAMETER(uint32,   VertsPerSide)
 		SHADER_PARAMETER(float,    TileSizeWS)
 		SHADER_PARAMETER(float,    VertexSpacingWS)
@@ -98,6 +102,9 @@ class FSurfaceGridIdxCS : public FGlobalShader
 	SHADER_USE_PARAMETER_STRUCT(FSurfaceGridIdxCS, FGlobalShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32, EditStampCount)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelEditStampGPU>, EditStamps)
+	
 		SHADER_PARAMETER(uint32, VertsPerSide)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutIndices)
 	END_SHADER_PARAMETER_STRUCT()
@@ -239,6 +246,22 @@ static void AllocateChunkBuffers(
 		NDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource;
 		Res.NormalsBufferRDG = GraphBuilder.CreateBuffer(NDesc, TEXT("Voxel.Greedy.Normals"));
 	}
+
+	if (Req.Payload.EditStamps.Num() > 0)
+	{
+		Res.EditStampBufferRDG = CreateStructuredBuffer(
+			GraphBuilder,
+			TEXT("Voxel.EditStamps"),
+			sizeof(FVoxelEditStampGPU),
+			Req.Payload.EditStamps.Num(),
+			Req.Payload.EditStamps.GetData(),
+			sizeof(FVoxelEditStampGPU) * Req.Payload.EditStamps.Num()
+		);
+	}
+	else
+	{
+		Res.EditStampBufferRDG = CreateStructuredBuffer(GraphBuilder, TEXT("Voxel.EditStamps"), sizeof(FVoxelEditStampGPU), 0, nullptr, 0);
+	}
 }
 
 void FVoxelRDGPipeline::BuildChunk_RenderThread(
@@ -281,9 +304,12 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		ChunkParams.IsoLevel       = Req.Payload.IsoLevel;      // ensure FVoxelChunkBuildReq.Payload has this
 		ChunkParams.ChunkOriginWS  = Req.Payload.ChunkOriginWS;
 		ChunkParams.ChunkSeed      = (uint32)Req.Payload.Seed;
+		
+		FVoxelEditParams EditParams= FVoxelEditParams();
+		EditParams.EditStamps = InOutResources->EditStampBufferRDG;
+		EditParams.EditStampCount = Req.Payload.EditStampCount;
 
-		const FMCCountPassOutputs Count =
-			FMC_CountPass::AddMC_CountPass(GraphBuilder, ChunkParams, Req.Payload.NoiseParameters);
+		const FMCCountPassOutputs Count = FMC_CountPass::AddMC_CountPass(GraphBuilder, ChunkParams, Req.Payload.NoiseParameters, EditParams);
 
 		const uint32 NumCells = Count.CellsPerAxis * Count.CellsPerAxis * Count.CellsPerAxis;
 
@@ -304,11 +330,11 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 				GraphBuilder,
 				ChunkParams,
 				Req.Payload.NoiseParameters,
+				EditParams,
 				Scan.VertOffsets,
 				Count.VertCountPerCell,
 				Count.CaseIndexPerCell,
-				MaxVerts,
-				true);
+				MaxVerts, true);
 
 		FRDGBufferRef Indices =
 			FMC_IndexPass::AddMC_IndexScatterPass(
@@ -326,12 +352,12 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 				GraphBuilder,
 				ChunkParams,
 				Req.Payload.NoiseParameters,
+				EditParams,
 				Scatter.Vertices,
 				Indices,
 				Scan.TotalTris,
 				Scan.TotalVerts,
-				Args.DispatchArgs,
-				MaxVerts);
+				Args.DispatchArgs, MaxVerts);
 		
 		FRDGBufferRef Tangents =
 			FMC_TangentPass::AddMC_TangentPass(
@@ -412,6 +438,8 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		Inputs.NormalsBuffer = InOutResources->NormalsBufferRDG;
 		Inputs.VertexCountBuffer = InOutResources->VertexCountRDG;
 		Inputs.IndexCountBuffer = InOutResources->IndexCountRDG;
+		Inputs.EditStampBuffer = InOutResources->EditStampBufferRDG;
+		Inputs.EditStampCount = Req.Payload.EditStampCount;
 
 		GM_BuildPass::AddGM_BuildPass(GraphBuilder, Inputs);
 		
@@ -464,7 +492,7 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 				&NoiseParamsGPU,
 				sizeof(FVoxelNoiseParams));
 		FRDGBufferSRVRef NoiseSRV = GraphBuilder.CreateSRV(NoiseParamsBuffer);
-
+		
 		const float VertexSpacingWS = Req.Payload.StepSizeWS;
 		const float TileSizeWS      = Req.Payload.ChunkSizeWS;
 		const FVector3f OriginWS    = FVector3f(Req.Payload.ChunkOriginWS);
@@ -478,7 +506,9 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 			P->TileOriginWS    = OriginWS;
 			P->NoiseParamsBuf  = NoiseSRV;
 			P->OutVertices     = GraphBuilder.CreateUAV(InOutResources->VertexBufferRDG, PF_A32B32G32R32F);
-
+			P->EditStampCount  = Req.Payload.EditStampCount;
+			P->EditStamps      = GraphBuilder.CreateSRV(InOutResources->EditStampBufferRDG);
+			
 			TShaderMapRef<FSurfaceGridVertCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 			FComputeShaderUtils::AddPass(
 				GraphBuilder,
@@ -496,6 +526,8 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 			auto* P = GraphBuilder.AllocParameters<FSurfaceGridIdxCS::FParameters>();
 			P->VertsPerSide = VertsPerSide;
 			P->OutIndices   = GraphBuilder.CreateUAV(InOutResources->IndexBufferRDG, PF_R32_UINT);
+			P->EditStampCount =	Req.Payload.EditStampCount;
+			P->EditStamps = GraphBuilder.CreateSRV(InOutResources->EditStampBufferRDG);
 
 			TShaderMapRef<FSurfaceGridIdxCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 			FComputeShaderUtils::AddPass(
@@ -538,7 +570,6 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 
 		InOutResources->TangentBasisBufferRDG = PackedTangents;
 	}
-
 
 	// ---- Extract only buffers that are NON-NULL ----
 	if (InOutResources->VertexBufferRDG)  GraphBuilder.QueueBufferExtraction(InOutResources->VertexBufferRDG,  &InOutResources->VertexPooled);

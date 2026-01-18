@@ -12,6 +12,8 @@ struct FGreedyMesherBuildPassInputs
 	FRDGBufferRef NormalsBuffer = nullptr;
 	FRDGBufferRef VertexCountBuffer = nullptr;
 	FRDGBufferRef IndexCountBuffer = nullptr;
+	FRDGBufferRef EditStampBuffer = nullptr;
+	uint32 EditStampCount = 0;	
 };
 
 namespace GM_BuildPass

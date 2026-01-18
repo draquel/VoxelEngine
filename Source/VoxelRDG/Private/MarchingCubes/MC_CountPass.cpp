@@ -6,6 +6,7 @@
 #include "RenderGraphBuilder.h"
 #include "RenderGraphUtils.h"
 #include "RHIStaticStates.h"
+#include "VoxelEditLayer.h"
 #include "MarchingCubes/MarchingCubesDispatch.h"
 
 class FMC_CountCS : public FGlobalShader
@@ -15,6 +16,9 @@ public:
 	SHADER_USE_PARAMETER_STRUCT(FMC_CountCS, FGlobalShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32, EditStampCount)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelEditStampGPU>, EditStamps)
+	
 		SHADER_PARAMETER(FVector3f, ChunkOriginWS)
 		SHADER_PARAMETER(float,    StepSizeWS)
 		SHADER_PARAMETER(uint32,   CellsPerAxis)
@@ -41,7 +45,8 @@ uint32 FMC_CountPass::CeilDivU32(uint32 a, uint32 b)
 FMCCountPassOutputs FMC_CountPass::AddMC_CountPass(
     FRDGBuilder& GraphBuilder,
     const FMCChunkParamsCPU& ChunkParams,
-	const FVoxelNoiseParamsCPU& NoiseParamsCPU
+	const FVoxelNoiseParamsCPU& NoiseParamsCPU,
+	const FVoxelEditParams& EditParams
 	)
 {
     FMCCountPassOutputs Out;
@@ -93,6 +98,9 @@ FMCCountPassOutputs FMC_CountPass::AddMC_CountPass(
 			sizeof(FVoxelNoiseParams));
 	FRDGBufferSRVRef NoiseParamsSRV = GraphBuilder.CreateSRV(NoiseParamsBuffer);
 	PassParams->NoiseParamsBuf = NoiseParamsSRV;
+	
+	PassParams->EditStampCount = EditParams.EditStampCount;
+	PassParams->EditStamps = GraphBuilder.CreateSRV(EditParams.EditStamps);
 	
 	PassParams->OutTriCountPerCell  = GraphBuilder.CreateUAV(Out.TriCountPerCell);
 	PassParams->OutVertCountPerCell = GraphBuilder.CreateUAV(Out.VertCountPerCell);

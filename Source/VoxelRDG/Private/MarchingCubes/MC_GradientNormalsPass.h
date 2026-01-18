@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "VoxelEditLayer.h"
 #include "VoxelCore/Public/VoxelNoiseParams.h"
 
 struct FMCChunkParamsCPU;
@@ -13,10 +14,10 @@ public:
 		FRDGBuilder& GraphBuilder,
 		const FMCChunkParamsCPU& ChunkParams,
 		const FVoxelNoiseParamsCPU& NoiseParamsCPU,
+		const FVoxelEditParams& EditParams,
 		FRDGBufferRef Positions,
 		FRDGBufferRef Indices,
 		FRDGBufferRef TotalTris,
 		FRDGBufferRef TotalVerts,
-		FRDGBufferRef DispatchArgs,
-		uint32 MaxVerts);
+		FRDGBufferRef DispatchArgs, uint32 MaxVerts);
 };

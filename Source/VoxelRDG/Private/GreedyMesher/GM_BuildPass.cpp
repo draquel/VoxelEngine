@@ -11,6 +11,9 @@ class FGreedyBuildCS : public FGlobalShader
 	SHADER_USE_PARAMETER_STRUCT(FGreedyBuildCS, FGlobalShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32, EditStampCount)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelEditStampGPU>, EditStamps)
+	
 		SHADER_PARAMETER(FVector3f, ChunkOriginWS)
 		SHADER_PARAMETER(float, ChunkSizeWS)
 		SHADER_PARAMETER(float, StepSizeWS)
@@ -60,6 +63,8 @@ namespace GM_BuildPass
 		Params->OutNormals = GraphBuilder.CreateUAV(Inputs.NormalsBuffer, PF_A32B32G32R32F);
 		Params->OutVertexCount = GraphBuilder.CreateUAV(Inputs.VertexCountBuffer);
 		Params->OutIndexCount = GraphBuilder.CreateUAV(Inputs.IndexCountBuffer);
+		Params->EditStampCount = Inputs.EditStampCount;
+		Params->EditStamps = GraphBuilder.CreateSRV(Inputs.EditStampBuffer);
 
 		TShaderMapRef<FGreedyBuildCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
 		FComputeShaderUtils::AddPass(

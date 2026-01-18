@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "VoxelNoiseParams.ush"
 #include "VoxelNoiseFast3D.ush"
+#include "../Edits/VoxelEdits.ush"
 
 #define SEED_CAVE_REGION  0xA17C0DEu
 #define SEED_CAVE_WARP_X  0xA17C101u
@@ -280,7 +281,8 @@ float SampleDensity_Sphere_Noise(float3 Pws, float3 CenterWS, float RadiusWS, co
     float d = d0;
     d += Density_OverhangPerturb(Pws, NP, seed, d0);
     d += Density_CavesCarve(Pws, NP, seed, d0, StepSizeWS);
-
+    d = ApplyEditStamps(Pws, d);
+    
     return d;
 }
 
@@ -308,7 +310,9 @@ float SampleDensity_Terrain_Noise(
 
     float d = d0;
     // d += Density_OverhangPerturb(Pws, NP, seed, d0);
-    d += Density_CavesCarve(Pws, NP, seed, d0, StepSizeWS);
+    // d += Density_CavesCarve(Pws, NP, seed, d0, StepSizeWS);
 
+    d = ApplyEditStamps(Pws, d);
+    
     return d;
 }

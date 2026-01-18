@@ -12,6 +12,9 @@ public:
 	SHADER_USE_PARAMETER_STRUCT(FMC_ScatterCS, FGlobalShader);
 
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32, EditStampCount)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelEditStampGPU>, EditStamps)
+	
 		SHADER_PARAMETER(FVector3f, ChunkOriginWS)
 		SHADER_PARAMETER(float,    StepSizeWS)
 		SHADER_PARAMETER(uint32,   CellsPerAxis)
@@ -38,6 +41,7 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	FRDGBuilder& GraphBuilder,
 	const FMCChunkParamsCPU& Chunk,
 	const FVoxelNoiseParamsCPU& NoiseParamsCPU,
+	const FVoxelEditParams& EditParams,
 	FRDGBufferRef VertOffsets,
 	FRDGBufferRef VertCountPerCell,
 	FRDGBufferRef CaseIndexPerCell,
@@ -77,6 +81,9 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	FRDGBufferSRVRef NoiseParamsSRV = GraphBuilder.CreateSRV(NoiseParamsBuffer);
 	PassParams->NoiseParamsBuf = NoiseParamsSRV;
 
+	PassParams->EditStampCount = EditParams.EditStampCount;
+	PassParams->EditStamps = GraphBuilder.CreateSRV(EditParams.EditStamps);
+	
 	PassParams->VertOffsets      = GraphBuilder.CreateSRV(VertOffsets);
 	PassParams->VertCountPerCell = GraphBuilder.CreateSRV(VertCountPerCell);
 	PassParams->CaseIndexPerCell = GraphBuilder.CreateSRV(CaseIndexPerCell);
