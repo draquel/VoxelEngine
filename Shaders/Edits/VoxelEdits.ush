@@ -1,0 +1,37 @@
+﻿#pragma once
+
+struct FVoxelEditStampGPU
+{
+	float3 CenterWS;
+	float  RadiusWS;
+	float  DeltaDensity; // +carve, -fill (in your convention)
+	float  Falloff;      // 0..1
+	float2 _Pad;
+};
+
+StructuredBuffer<FVoxelEditStampGPU> EditStamps;
+uint EditStampCount;
+
+float ApplyEditStamps(float3 Pws, float baseDensity)
+{
+	float d = baseDensity;
+
+	[loop]
+	for (uint i = 0; i < EditStampCount; ++i)
+	{
+		FVoxelEditStampGPU s = EditStamps[i];
+
+		float dist = length(Pws - s.CenterWS);
+		if (dist >= s.RadiusWS) continue;
+
+		// Soft edge: inner radius where full strength applies
+		float inner = s.RadiusWS * (1.0 - saturate(s.Falloff));
+		float t = (dist - inner) / max(1e-4, (s.RadiusWS - inner));
+		float w = 1.0 - saturate(t);     // 1 inside inner, fades to 0 at edge
+		w = w*w*(3 - 2*w);               // smoothstep-ish
+
+		d += s.DeltaDensity * w;
+	}
+
+	return d;
+}
