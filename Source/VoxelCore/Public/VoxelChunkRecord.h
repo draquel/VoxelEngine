@@ -46,6 +46,11 @@ struct VOXELCORE_API FVoxelChunkRecord
 	double LastBecameVisibleSec  = 0.0; // when it became Resident (optional but useful)
 	
 	uint64 DomainEpoch = 0;
+	uint32 BuiltEditEpoch = 0;
+	uint32 DirtyEditEpoch = 0;
+	
+	bool bPendingEditRebuild = false;
+	uint64 PendingEditBuildId = 0; // optional
 	
 	// Existing debug pipeline handle
 	TSharedPtr<struct FVoxelChunkGPUResources> GPU;

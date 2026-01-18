@@ -9,6 +9,7 @@
 #include "RendererInterface.h"
 #include "VoxelChunkGPUResources.h"
 #include "VoxelChunkRecord.h"
+#include "VoxelEditLayer.h"
 #include "VoxelSpatialPolicy_OcTree3D.h"
 #include "VoxelSpatialPolicy_OcTreeGreedy.h"
 #include "VoxelSpatialPolicy_QuadTree2p5D.h"
@@ -84,15 +85,7 @@ void UVoxelChunkSubsystem::InitializeVoxel(const FVoxelWorldSettings& InSettings
 	bQuadTreeDebug = InSettings.bEnableQuadTreeDebug;
 	bOcTreeDebug = InSettings.bEnableOcTreeDebug;
 	
-	// LODParams.CellsPerAxis = Settings.CellsPerAxis;
-	// LODParams.BaseCellSizeWS = Settings.BaseStepSize;  // your “cell size” == step
-	// LODParams.MaxLOD = 2;                              // start conservative
-	// LODParams.R0Chunks = 4;                            // tune
-	// LODParams.ZMinWS = -1500.f;
-	// LODParams.ZMaxWS = +1500.f;
-	// LODParams.MaxDesiredChunks = 512;               
 }
-
 
 uint8 UVoxelChunkSubsystem::ComputeSkirtMaskSameLOD(FVoxelChunkKey Key)
 {
@@ -448,43 +441,44 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 void UVoxelChunkSubsystem::InvalidateRegionSphere(const FVector& CenterWS, float RadiusWS)
 {
 }
-void UVoxelChunkSubsystem::PollGeneratingToReady()
-{
-	const double Now = FPlatformTime::Seconds();
-
-	for (auto& KVP : Chunks)
-	{
-		FVoxelChunkRecord& R = KVP.Value;
-		if (R.State != EVoxelChunkState::Generating)
-			continue;
-
-		if (!R.GPU.IsValid())
-			continue;
-
-		FVoxelChunkGPUResources& G = *R.GPU.Get();
-
-		// Must match what your PMC builder expects
-		if (!G.VertexReadback || !G.IndexReadback || !G.VertexCountReadback || !G.IndexCountReadback)
-			continue;
-
-		if (!G.VertexReadback->IsReady() || !G.IndexReadback->IsReady() ||
-			!G.VertexCountReadback->IsReady() || !G.IndexCountReadback->IsReady())
-			continue;
-
-		// Optional: cancellation gate
-		if (R.bCancelRequested)
-		{
-			// Drop it without ever becoming Ready/Resident
-			R.GPU.Reset();
-			R.State = EVoxelChunkState::Unloaded; // or Evicting
-			R.LastStateChangeSec = Now;
-			continue;
-		}
-
-		R.State = EVoxelChunkState::Ready;
-		R.LastStateChangeSec = Now;
-	}
-}
+// void UVoxelChunkSubsystem::PollGeneratingToReady()
+// {
+// 	// const double Now = FPlatformTime::Seconds();
+// 	//
+// 	// for (auto& KVP : Chunks)
+// 	// {
+// 	// 	FVoxelChunkRecord& R = KVP.Value;
+// 	// 	if (R.State != EVoxelChunkState::Generating)
+// 	// 		continue;
+// 	//
+// 	// 	if (!R.GPU.IsValid())
+// 	// 		continue;
+// 	//
+// 	// 	FVoxelChunkGPUResources& G = *R.GPU.Get();
+// 	//
+// 	// 	// Must match what your PMC builder expects
+// 	// 	if (!G.VertexReadback || !G.IndexReadback || !G.VertexCountReadback || !G.IndexCountReadback)
+// 	// 		continue;
+// 	//
+// 	// 	if (!G.VertexReadback->IsReady() || !G.IndexReadback->IsReady() ||
+// 	// 		!G.VertexCountReadback->IsReady() || !G.IndexCountReadback->IsReady())
+// 	// 		continue;
+// 	//
+// 	// 	// Optional: cancellation gate
+// 	// 	if (R.bCancelRequested)
+// 	// 	{
+// 	// 		// Drop it without ever becoming Ready/Resident
+// 	// 		R.GPU.Reset();
+// 	// 		R.State = EVoxelChunkState::Unloaded; // or Evicting
+// 	// 		R.LastStateChangeSec = Now;
+// 	// 		continue;
+// 	// 	}
+// 	//
+// 	// 	R.State = EVoxelChunkState::Ready;
+// 	// 	R.BuiltEditEpoch = R.LastBuildPayload.EditEpoch; // or EditLayer->Epoch at time of request
+// 	// 	R.LastStateChangeSec = Now;
+// 	// }
+// }
 
 FVoxelChunkRecord& UVoxelChunkSubsystem::GetOrCreateChunk(const FVoxelChunkKey& Key)
 {
@@ -712,37 +706,79 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 	TArray<FVoxelChunkRecord*> Buckets[16];
 	int32 InFlight = 0;
 
+	const auto IsChunkDirty = [](const FVoxelChunkRecord& R)
+	{
+		return (R.DirtyEditEpoch > 0) && (R.DirtyEditEpoch > R.BuiltEditEpoch);
+	};
+
 	for (auto& KVP : Chunks)
 	{
 		FVoxelChunkRecord& R = KVP.Value;
 
+		// Boost priority / recycle Ready if dirty (Ready isn't visible)
+		if (EditLayer && IsChunkDirty(R))
+		{
+			if (R.State == EVoxelChunkState::Ready)
+			{
+				R.State = EVoxelChunkState::Requested;
+			}
+
+			const float Dist = (float)DistanceToCamera(R.ChunkCenterWS, CameraWS, IsSurfacePolicy(SpatialPolicy));
+			const float Boost = 50'000.f / FMath::Max(500.f, Dist); // strong near camera, weak far
+			R.Priority = FMath::Max(R.Priority, Boost);
+		}
+		
+		const bool bNeedsEditRebuild = (R.DirtyEditEpoch > 0 && R.DirtyEditEpoch > R.BuiltEditEpoch);
+
+		if (bNeedsEditRebuild && R.State == EVoxelChunkState::Resident)
+		{
+			R.bPendingEditRebuild = true;
+			R.Priority = FMath::Max(R.Priority, 10'000.f);
+
+			const int32 L = FMath::Clamp(R.Key.LOD, 0, 15);
+			Buckets[L].Add(&R); // ✅ allow Resident into buckets
+			continue;
+		}
+
+		// In-flight accounting
 		if (R.State == EVoxelChunkState::Generating)
 		{
 			++InFlight;
 			continue;
 		}
 
-		if (R.State == EVoxelChunkState::Requested)
-		{
-			if (R.Priority <= 0.f && !SpatialPolicy.IsValid())
-				R.Priority = ScoreChunk(R.Key, CameraWS);
+		const bool bDirty = EditLayer ? IsChunkDirty(R) : false;
 
-			// Consider treating as low priority or skip.
-			if (SpatialPolicy.IsValid() && R.Priority <= 0.f)
-				continue;
+		// ✅ Schedulable work:
+		// - Requested (normal path)
+		// - Resident + Dirty (rebuild in place while old mesh remains visible)
+		const bool bSchedulable =
+			(R.State == EVoxelChunkState::Requested) ||
+			(R.State == EVoxelChunkState::Resident && bDirty);
 
-			const int32 L = FMath::Clamp(R.Key.LOD, 0, 15);
-			Buckets[L].Add(&R);
-		}
+		if (!bSchedulable)
+			continue;
+
+		if (R.Priority <= 0.f && !SpatialPolicy.IsValid())
+			R.Priority = ScoreChunk(R.Key, CameraWS);
+
+		// Consider treating as low priority or skip.
+		if (SpatialPolicy.IsValid() && R.Priority <= 0.f)
+			continue;
+
+		const int32 L = FMath::Clamp(R.Key.LOD, 0, 15);
+		Buckets[L].Add(&R);
 	}
 
-	// Sort each bucket by priority
+	// Sort each bucket by priority (pointer-safe comparator)
 	for (int32 L = 0; L < 16; ++L)
 	{
 		Buckets[L].Sort([](const FVoxelChunkRecord& A, const FVoxelChunkRecord& B)
 		{
 			return A.Priority > B.Priority;
 		});
+		// If your compiler complains because Buckets holds pointers, use this instead:
+		// Buckets[L].Sort([](const FVoxelChunkRecord* A, const FVoxelChunkRecord* B){ return A->Priority > B->Priority; });
 	}
 
 	const int32 InFlightSlots = FMath::Max(0, MaxInFlightBuilds - InFlight);
@@ -754,8 +790,6 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		for (int32 i = 0; i < 16; ++i) OutQuota[i] = 0;
 		if (Total <= 0) return;
 
-		// A simple curve: 40% L0, 25% L1, 15% L2, 10% L3, rest 10% shared.
-		// Then enforce minimums if there is pending work in those buckets.
 		static const float W[16] =
 		{
 			0.40f, 0.25f, 0.15f, 0.10f,
@@ -771,7 +805,6 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 			Sum += OutQuota[L];
 		}
 
-		// Distribute remainder starting from L0 outward
 		int32 Rem = Total - Sum;
 		for (int32 L = 0; L < 16 && Rem > 0; ++L)
 		{
@@ -779,11 +812,10 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 			--Rem;
 		}
 	};
-	
+
 	int32 Quota[16];
 	BuildQuota(Remaining, Quota);
 
-	// Optional: minimum guarantees if those buckets have work
 	auto EnsureMin = [&](int32 L, int32 Min)
 	{
 		if (Buckets[L].Num() > 0)
@@ -794,13 +826,29 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 	EnsureMin(1, 1);
 	EnsureMin(2, 1);
 	EnsureMin(3, 1);
-	
+
 	auto DispatchOne = [&](FVoxelChunkRecord* Rec)
 	{
 		if (!Rec || Remaining <= 0) return false;
-		if (Rec->State != EVoxelChunkState::Requested) return false;
 
+		const bool bDirty = (EditLayer != nullptr) && (Rec->DirtyEditEpoch > 0) && (Rec->DirtyEditEpoch > Rec->BuiltEditEpoch);
+		const bool bAllowed =
+			(Rec->State == EVoxelChunkState::Requested) ||
+			(Rec->State == EVoxelChunkState::Resident && bDirty);
+
+		if (!bAllowed)
+			return false;
+
+		if (Rec->State != EVoxelChunkState::Requested)
+		{
+			if (!(Rec->State == EVoxelChunkState::Resident && Rec->bPendingEditRebuild))
+				return false;
+		}
+		
+		// Start building a replacement.
+		// NOTE: if it was Resident, the old render stays until consumer overwrites that section.
 		Rec->State = EVoxelChunkState::Generating;
+		Rec->bPendingEditRebuild = false;
 
 		FVoxelChunkBuildPayload Inputs;
 		if (SpatialPolicy.IsValid())
@@ -808,18 +856,31 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 			SpatialPolicy->FillBuildPayload(Settings, Settings.LODParams, Rec->Key, Inputs);
 			Inputs.ChunkOriginWS = Rec->ChunkOriginWS;
 		}
-		else
-		{
-			// // fallback
-			// Inputs.Key          = Rec->Key;
-			// Inputs.Seed         = Settings.Seed;
-			// Inputs.CellsPerAxis = FMath::Max<uint32>(Settings.CellsPerAxis, 8);
-			// Inputs.StepSizeWS   = Settings.BaseStepSize * float(1 << Rec->Key.LOD);
-			// Inputs.ChunkOriginWS= ComputeChunkOriginWS(Rec->Key);
-			// Inputs.NoiseParameters = FVoxelNoiseParamsCPU();
-		}
 
 		Inputs.EditLayer = EditLayer;
+		Inputs.EditEpoch = EditLayer ? EditLayer->Epoch : 0;
+
+		TArray<FVoxelEditStampGPU> GPUStamps;
+		if (Inputs.EditLayer)
+		{
+			GPUStamps.Reserve(Inputs.EditLayer->Stamps.Num());
+			for (const FVoxelEditStamp& S : Inputs.EditLayer->Stamps)
+			{
+				FVoxelEditStampGPU G{};
+				G.CenterWS = (FVector3f)S.Center;
+				G.RadiusWS = S.Radius;
+
+				const float Strength = S.Strength;
+				const float Delta = (S.Op == EVoxelEditOp::Carve) ? +Strength : -Strength;
+				G.DeltaDensity = Delta;
+
+				G.Falloff = S.Falloff;
+				G.Pad = FVector2f::ZeroVector;
+				GPUStamps.Add(G);
+			}
+		}
+		Inputs.EditStamps = GPUStamps;
+		Inputs.EditStampCount = GPUStamps.Num();
 
 		if (!Rec->GPU.IsValid())
 			Rec->GPU = MakeShared<FVoxelChunkGPUResources>();
@@ -846,7 +907,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		return true;
 	};
 
-	// Pass 1: honor quotas for LOD0..2 (tuneable)
+	// Pass 1: honor quotas
 	for (int32 L = 0; L < 16 && Remaining > 0; ++L)
 	{
 		int32 Take = Quota[L];
@@ -857,7 +918,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		}
 	}
 
-	// Pass 2: round-robin fill remaining across all LODs (keeps far field alive)
+	// Pass 2: round-robin fill
 	int32 Cursor[16] = {0};
 	while (Remaining > 0)
 	{
@@ -874,7 +935,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 				}
 			}
 		}
-		if (!bAny) break; // nothing left to dispatch
+		if (!bAny) break;
 	}
 }
 
@@ -886,8 +947,11 @@ void UVoxelChunkSubsystem::AttachReadyToRender()
     {
         FVoxelChunkRecord& R = KVP.Value;
 
-        if (R.State != EVoxelChunkState::Generating) continue;
-        if (!R.GPU.IsValid()) continue;
+        if (R.State != EVoxelChunkState::Generating && R.State != EVoxelChunkState::Ready)
+            continue;
+
+        if (!R.GPU.IsValid())
+            continue;
 
         if (R.bCancelRequested)
         {
@@ -909,35 +973,35 @@ void UVoxelChunkSubsystem::AttachReadyToRender()
         if (!bReady)
             continue;
 
-        // Already submitted this build to the consumer?
+        // Mark READY once GPU results are available
+        if (R.State != EVoxelChunkState::Ready)
+        {
+            R.State = EVoxelChunkState::Ready;
+            R.LastStateChangeSec = Now;
+            Telemetry_BecameReady++;
+        }
+
+        // If we already enqueued this build, nothing to do
         if (R.LastEnqueuedRenderBuildId == R.BuildId)
             continue;
 
-        // Mark READY (GPU work done + CPU readback available)
-        R.State = EVoxelChunkState::Ready;
-        R.LastStateChangeSec = Now;
-        Telemetry_BecameReady++;
+        // If no consumer yet, stay Ready and we’ll enqueue later when consumer appears
+        if (!RenderConsumer)
+            continue;
 
-        if (RenderConsumer)
-        {
-            FVoxelChunkRenderPayload P;
-            P.Key         = R.Key;
-            P.BuildId      = R.BuildId;
-            P.GPU          = R.GPU;
-            P.VertexSpace  = EVoxelVertexSpace::ChunkLocal;
-            P.ChunkOriginWS= R.ChunkOriginWS;
-            P.ChunkSize    = GetChunkSizeWS(R.Key);
-        	P.StepSizeWS    = R.LastBuildPayload.StepSizeWS;
-        	P.CellsPerAxis  = R.LastBuildPayload.CellsPerAxis;
+        FVoxelChunkRenderPayload P;
+        P.Key          = R.Key;
+        P.BuildId       = R.BuildId;
+        P.GPU           = R.GPU;
+        P.VertexSpace   = EVoxelVertexSpace::ChunkLocal;
+        P.ChunkOriginWS = R.ChunkOriginWS;
+        P.ChunkSize     = GetChunkSizeWS(R.Key);
+        P.StepSizeWS    = R.LastBuildPayload.StepSizeWS;
+        P.CellsPerAxis  = R.LastBuildPayload.CellsPerAxis;
 
-            // P.SkirtDepth   = Settings.BaseStepSize * 4.0f;
-            // P.SkirtEdgeMask= ComputeSkirtMaskSameLOD(R.Key);
-
-            RenderConsumer->EnqueueBuild(P);
-
-            // IMPORTANT: set after enqueue
-            R.LastEnqueuedRenderBuildId = R.BuildId;
-        }
+        RenderConsumer->EnqueueBuild(P);
+        R.LastEnqueuedRenderBuildId = R.BuildId;
+    	R.BuiltEditEpoch = R.LastBuildPayload.EditEpoch;
     }
 }
 
@@ -948,30 +1012,32 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 
 	const double Now = FPlatformTime::Seconds();
 	const bool bSurfacePolicy = IsSurfacePolicy(SpatialPolicy);
-	const double DesiredGraceSec = 0.35;   // prevents “stop-and-pop holes”
-	const double VisibleGraceSec = 0.75;   // keep recently visible tiles a bit longer
 
+	// Grace windows (tune)
+	const double DesiredGraceSec = 0.35;
+	const double VisibleGraceSec = 0.75;
 
 	// Base delays (tune)
-	const double BaseEvictDelaySec = 1.0;   // was 0.5
-	const double MinVisibleSec     = 0.75;  // prevents “pop out” right after attach
+	const double BaseEvictDelaySec = 1.0;
+	const double MinVisibleSec     = 0.75;
+
+	// ✅ NEW: hard cap on how long an undesired resident can remain as “fallback”
+	// If replacements never arrive (due to churn/cancel), this prevents resident count from growing forever.
+	const double MaxFallbackSec = 3.0;  // try 2–5 seconds
 
 	auto EvictDelayForLOD = [&](int32 LOD) -> double
 	{
-		// Coarser tiles should linger longer to avoid far-field collapse.
-		// Example curve: LOD0=1s, LOD1=1.5s, LOD2=2.25s, LOD3=3.4s...
 		return BaseEvictDelaySec * FMath::Pow(1.5, (double)FMath::Max(0, LOD));
 	};
-	
+
 	auto RecordsOverlapWS = [&](const FVoxelChunkRecord& A, const FVoxelChunkRecord& B) -> bool
 	{
-		// Overlap check in world space (2.5D for surface, 3D for volume)
-		const float SizeA = SpatialPolicy->ChunkSizeWS(Settings, A.Key.LOD);
-		const float SizeB = SpatialPolicy->ChunkSizeWS(Settings, B.Key.LOD);
-		
+		const float SizeA = SpatialPolicy.IsValid() ? SpatialPolicy->ChunkSizeWS(Settings, A.Key.LOD) : GetChunkSizeWS(A.Key);
+		const float SizeB = SpatialPolicy.IsValid() ? SpatialPolicy->ChunkSizeWS(Settings, B.Key.LOD) : GetChunkSizeWS(B.Key);
+
 		const FVector MinA = A.ChunkOriginWS;
 		const FVector MaxA = MinA + (bSurfacePolicy ? FVector(SizeA, SizeA, 0.0f) : FVector(SizeA));
-		
+
 		const FVector MinB = B.ChunkOriginWS;
 		const FVector MaxB = MinB + (bSurfacePolicy ? FVector(SizeB, SizeB, 0.0f) : FVector(SizeB));
 
@@ -981,25 +1047,19 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 	for (auto& KVP : Chunks)
 	{
 		FVoxelChunkRecord& R = KVP.Value;
-
 		const bool bDesired = Desired.Contains(R.Key);
-		
+
 		if (bDesired)
 		{
+			// Rescue from Evicting if it becomes desired again
 			if (R.State == EVoxelChunkState::Evicting)
 			{
 				R.bCancelRequested = false;
 
-				// If it was visible before, keep it visible.
-				// Otherwise, Requested is fine.
 				if (R.GPU.IsValid() && (R.LastBecameVisibleSec > 0.0))
-				{
 					R.State = EVoxelChunkState::Resident;
-				}
 				else
-				{
 					R.State = EVoxelChunkState::Requested;
-				}
 
 				R.LastStateChangeSec = Now;
 			}
@@ -1007,60 +1067,97 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 			R.LastBecameUnwantedSec = 0.0;
 			continue;
 		}
-		
-		// 1) request cancel if generating (as it's no longer desired)
+
+		// Not desired below this line -----------------------------------------
+
+		// If generating and no longer desired, request cancel.
 		if (R.State == EVoxelChunkState::Generating)
 		{
 			R.bCancelRequested = true;
 			continue;
 		}
 
-		// --- Transition-aware eviction: don't leave holes ---
-		// If we're resident (current or old epoch), stay resident until our replacements are also resident.
+		// ✅ FIX2 (from earlier): Ready chunks are not visible; evict aggressively when undesired
+		if (R.State == EVoxelChunkState::Ready)
+		{
+			if (RenderConsumer)
+				RenderConsumer->RemoveChunk(R.Key);
+
+			R.LastEnqueuedRenderBuildId = 0;
+			R.GPU.Reset();
+
+			Telemetry_Evicted++;
+			Chunks.Remove(R.Key);
+			continue;
+		}
+
+		// Stamp when it first became unwanted
+		if (R.LastBecameUnwantedSec <= 0.0)
+			R.LastBecameUnwantedSec = Now;
+
+		// Transition-aware eviction: don't leave holes.
 		if (R.State == EVoxelChunkState::Resident)
 		{
-			bool bAnyOverlappingDesiredNotResident = false;
 			bool bHasAnyOverlappingDesired = false;
+			bool bAnyOverlappingDesiredNotResident = false;
+			bool bAnyOverlappingDesiredResident = false;
+			
+			const double SinceVisible = (R.LastBecameVisibleSec > 0) ? (Now - R.LastBecameVisibleSec) : 1e9;
+			const double LocalMaxFallbackSec = (SinceVisible < 2.0) ? 8.0 : 3.0; // example curve
 
 			for (const FVoxelChunkKey& DesiredKey : Desired)
 			{
 				const FVoxelChunkRecord* DesiredRec = Chunks.Find(DesiredKey);
 				if (!DesiredRec) continue;
 
-				if (RecordsOverlapWS(R, *DesiredRec))
+				if (!RecordsOverlapWS(R, *DesiredRec))
+					continue;
+
+				bHasAnyOverlappingDesired = true;
+
+				if (DesiredRec->State == EVoxelChunkState::Resident)
 				{
-					bHasAnyOverlappingDesired = true;
-					if (DesiredRec->State != EVoxelChunkState::Resident || (Now - DesiredRec->LastBecameVisibleSec) < 0.1)
-					{
-						bAnyOverlappingDesiredNotResident = true;
-						break;
-					}
+					bAnyOverlappingDesiredResident = true;
 				}
+				else
+				{
+					bAnyOverlappingDesiredNotResident = true;
+				}
+
+				// early out if we know both facts
+				if (bAnyOverlappingDesiredResident && bAnyOverlappingDesiredNotResident)
+					break;
 			}
 
-			if (bHasAnyOverlappingDesired && bAnyOverlappingDesiredNotResident)
+			// If we overlap desired content but none of it is resident yet, keep briefly as fallback…
+			// …but NOT forever.
+			if (bHasAnyOverlappingDesired && bAnyOverlappingDesiredNotResident && !bAnyOverlappingDesiredResident)
 			{
-				continue; // KEEP as fallback
+				const double FallbackAge = Now - R.LastBecameUnwantedSec;
+				if (FallbackAge < LocalMaxFallbackSec)
+				{
+					continue; // keep as fallback for a bit
+				}
+				// else: fall through and evict (replacement didn’t arrive in time)
 			}
+
+			// If we overlap desired and at least one overlap is resident, we can safely evict
+			// after normal grace delays below.
 		}
 
-		// 2) stamp when it first became unwanted
-		if (R.LastBecameUnwantedSec <= 0.0)
-			R.LastBecameUnwantedSec = Now;
-
-		// 3) keep recently desired tiles around briefly even if they fall out this tick
+		// Keep recently desired tiles around briefly even if they fall out this tick
 		if ((Now - R.LastBecameDesiredSec) < DesiredGraceSec)
 			continue;
-		
-		// 4) keep recently visible tiles around a bit (stops flicker near boundaries)
+
+		// Keep recently visible tiles around a bit (stops flicker near boundaries)
 		if (R.State == EVoxelChunkState::Resident && (Now - R.LastBecameVisibleSec) < VisibleGraceSec)
 			continue;
 
-		// 5) don’t evict something that *just* became visible
+		// Don’t evict something that *just* became visible
 		if (R.LastBecameVisibleSec > 0.0 && (Now - R.LastBecameVisibleSec) < MinVisibleSec)
 			continue;
 
-		// 6) mark state evicting, but only remove after per-LOD delay
+		// Mark state evicting, but only remove after per-LOD delay
 		if (R.State != EVoxelChunkState::Evicting)
 		{
 			R.State = EVoxelChunkState::Evicting;
@@ -1106,8 +1203,6 @@ void UVoxelChunkSubsystem::EvictUnwanted(const TSet<FVoxelChunkKey>& Desired)
 	}
 }
 
-
-
 void UVoxelChunkSubsystem::DebugRequestChunkOnce(const FVoxelChunkKey& Key)
 {
     FVoxelChunkRecord* Rec = Chunks.Find(Key);
@@ -1133,15 +1228,30 @@ void UVoxelChunkSubsystem::OnConsumerBuilt(const FVoxelChunkKey& Key, uint64 Bui
 	FVoxelChunkRecord* R = Chunks.Find(Key);
 	if (!R) return;
 
+	// Ignore stale callbacks from older builds
 	if (BuiltBuildId != R->BuildId)
 		return;
 
-	if (R->State == EVoxelChunkState::Ready || R->State == EVoxelChunkState::Generating)
+	// If the consumer attached this build, it is now visible.
+	// Do NOT require a specific state here; states can transiently change
+	// (edits, eviction rescue, demand churn) while the consumer is building.
+	R->State = EVoxelChunkState::Resident;
+
+	R->LastStateChangeSec = FPlatformTime::Seconds();
+	R->LastBecameVisibleSec = R->LastStateChangeSec;
+
+	// Record the epoch the *built* mesh corresponds to.
+	R->BuiltEditEpoch = R->LastBuildPayload.EditEpoch;
+	
+	if (R->DirtyEditEpoch <= R->BuiltEditEpoch)
 	{
-		R->State = EVoxelChunkState::Resident;
-		R->LastStateChangeSec = FPlatformTime::Seconds();
-		R->LastBecameVisibleSec = FPlatformTime::Seconds();
+		R->DirtyEditEpoch = 0;
 	}
+
+	// Optional: sanity book-keeping
+	R->LastEnqueuedRenderBuildId = BuiltBuildId;
+
+	Telemetry_BecameResident++;
 }
 
 void UVoxelChunkSubsystem::OnConsumerRemoved(const FVoxelChunkKey& Key)
@@ -1160,6 +1270,53 @@ static const TCHAR* ToString(EVoxelChunkState S)
 	case EVoxelChunkState::Resident:   return TEXT("Resident");
 	case EVoxelChunkState::Evicting:   return TEXT("Evicting");
 	default: return TEXT("Unknown");
+	}
+}
+
+void UVoxelChunkSubsystem::ApplyEditStamp(const FVoxelEditStamp& S)
+{
+	if (!EditLayer) return;
+
+	EditLayer->AddStamp(S);
+	EditLayer->Epoch++;
+
+	const bool bSurfacePolicy = IsSurfacePolicy(SpatialPolicy);
+
+	// Base stamp bounds
+	FBox StampBox = EditLayer->StampBoundsWS(S);
+
+	// ✅ Expand by 1 voxel step (halo) so neighbor chunks rebuild and seams match
+	// Use the smallest relevant step (LOD0 base step) so we don't miss a seam.
+	const float Halo = Settings.MarchingSettings.BaseCellSizeWS; // or Settings.BaseStepSize if that’s your name
+	StampBox = StampBox.ExpandBy(Halo);
+
+	const uint32 NewEpoch = EditLayer->Epoch;
+
+	for (auto& KVP : Chunks)
+	{
+		FVoxelChunkRecord& R = KVP.Value;
+
+		const float SizeWS = GetChunkSizeWS(R.Key);
+		const FVector Min = R.ChunkOriginWS;
+		const FVector Max = Min + (bSurfacePolicy ? FVector(SizeWS, SizeWS, 0.f) : FVector(SizeWS));
+		const FBox ChunkBox(Min, Max);
+
+		if (!ChunkBox.Intersect(StampBox))
+			continue;
+
+		R.DirtyEditEpoch = FMath::Max(R.DirtyEditEpoch, NewEpoch);
+
+		if (R.State == EVoxelChunkState::Resident)
+		{
+			R.bPendingEditRebuild = true;
+			R.Priority = FMath::Max(R.Priority, 10'000.f); // not 1e9
+		}
+		else if (R.State == EVoxelChunkState::Ready)
+		{
+			// ready isn't visible, okay to recycle
+			R.State = EVoxelChunkState::Requested;
+			R.Priority = FMath::Max(R.Priority, 10'000.f);
+		}
 	}
 }
 
@@ -1208,6 +1365,19 @@ void UVoxelChunkSubsystem::EmitTelemetry(float DeltaSeconds, int32 DesiredCount,
 			Counts[(int32)EVoxelChunkState::Evicting]);
 
 		GEngine->AddOnScreenDebugMessage((uint64)0xBEEFCAFEULL, (float)TelemetryPeriod + 0.05f, FColor::Cyan, Msg);
+	
+		
+		double OldestReadyAge = 0.0;
+		for (auto& KVP : Chunks)
+		{
+			const FVoxelChunkRecord& R = KVP.Value;
+			if (R.State == EVoxelChunkState::Ready)
+			{
+				OldestReadyAge = FMath::Max(OldestReadyAge, FPlatformTime::Seconds() - R.LastStateChangeSec);
+			}
+		}
+		UE_LOG(LogTemp, Warning, TEXT("OldestReadyAge=%.2fs"), OldestReadyAge);
+		
 		
 		UE_LOG(LogTemp, Warning,
 			TEXT("[VoxelStream] Desired=%d Total=%d | Req %d Gen %d Ready %d Res %d Ev %d | +Rq=%d +Disp=%d +Ready=%d +Res=%d +Ev=%d +Cancel=%d"),
@@ -1217,4 +1387,33 @@ void UVoxelChunkSubsystem::EmitTelemetry(float DeltaSeconds, int32 DesiredCount,
 
 		Telemetry_Requested = Telemetry_Dispatched = Telemetry_BecameReady = Telemetry_BecameResident = Telemetry_Evicted = Telemetry_Canceled = 0;
 	}
+}
+
+static bool GetCameraWS(UWorld* World, FVector& OutLoc, FRotator& OutRot)
+{
+	if (!World) return false;
+	APlayerController* PC = World->GetFirstPlayerController();
+	if (!PC) return false;
+	PC->GetPlayerViewPoint(OutLoc, OutRot);
+	return true;
+}
+
+void UVoxelChunkSubsystem::DebugSpawnStampForward(bool bCarve)
+{
+	FVector CamLoc; FRotator CamRot;
+	if (!GetCameraWS(GetWorld(), CamLoc, CamRot)) return;
+
+	const FVector Center = CamLoc + CamRot.Vector() * 1500.f;
+
+	FVoxelEditStamp S;
+	S.Center = Center;
+	S.Radius = 500.f;
+
+	// IMPORTANT: density convention: <0 solid, >0 empty
+	// Carve => push density more positive
+	S.Strength = bCarve ? +5000.f : -5000.f;
+
+	ApplyEditStamp(S);
+
+	DrawDebugSphere(GetWorld(), S.Center, S.Radius, 24, FColor::Cyan, false, 2.0f, 0, 2.0f);
 }

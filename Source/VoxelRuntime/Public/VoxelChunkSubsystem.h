@@ -7,6 +7,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "VoxelChunkKey.h"
 #include "VoxelChunkRecord.h"
+#include "VoxelEditLayer.h"
 #include "VoxelSpatialPolicyTypes.h"
 #include "VoxelWorldSettings.h"
 #include "VoxelChunkSubsystem.generated.h"
@@ -38,7 +39,7 @@ public:
 
 	// Invalidation entry points
 	void InvalidateRegionSphere(const FVector& CenterWS, float RadiusWS);
-	void PollGeneratingToReady();
+	// void PollGeneratingToReady();
 
 	FVoxelChunkRecord& GetOrCreateChunk(const FVoxelChunkKey& Key);
 	
@@ -49,14 +50,16 @@ public:
 	void OnConsumerBuilt(const FVoxelChunkKey& Key, uint64 BuiltBuildId);
 	void OnConsumerRemoved(const FVoxelChunkKey& Key);
 
+	void ApplyEditStamp(const FVoxelEditStamp& S);
 	void EmitTelemetry(float DeltaSeconds, int32 DesiredCount, int32 DemandCount);
+	void DebugSpawnStampForward(bool bCarve);
 	void SetRenderConsumer(TSharedPtr<Voxel::IVoxelChunkRenderConsumer> In) { RenderConsumer = MoveTemp(In); };
 	void SetBuildService(TSharedPtr<Voxel::IVoxelChunkBuildService> In) { BuildService = MoveTemp(In); };
 	void SetSpatialPolicy(TSharedPtr<Voxel::IVoxelSpatialPolicy> In) { SpatialPolicy = MoveTemp(In); };
 	uint8 ComputeSkirtMaskSameLOD(FVoxelChunkKey Key);
 	void AttachReadyToRender();
 	void CancelCoarserOverlaps_DemandTime(const TArray<FVoxelChunkDemand>& Demands);
-
+	
 private:
 
 	TSharedPtr<Voxel::IVoxelChunkRenderConsumer> RenderConsumer;

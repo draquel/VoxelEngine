@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "VoxelChunkKey.h"
+#include "VoxelEditLayer.h"
 #include "VoxelNoiseParams.h"
 
 class UVoxelEditLayer;
@@ -51,12 +52,16 @@ struct FVoxelChunkBuildPayload
 	FVoxelChunkKey Key;
 	int32 Seed = 0;
 	UVoxelEditLayer* EditLayer = nullptr;
+	uint32 EditEpoch = 0;
 
 	// Derived
 	FVector ChunkOriginWS = FVector::ZeroVector;
 	float ChunkSizeWS = 0.f;
 	float StepSizeWS = 50.f;
 	int32 CellsPerAxis = 32;
+	
+	uint32 EditStampCount;
+	TArray<FVoxelEditStampGPU> EditStamps;
 
 	// MC-specific knobs can live here too if you want:
 	float IsoLevel = 0.f;
