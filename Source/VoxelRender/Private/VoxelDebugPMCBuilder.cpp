@@ -293,13 +293,14 @@ void FVoxelDebugPMCBuilder::TryConsumeAndBuild(UProceduralMeshComponent* PMC, co
 					UV0[i] = FVector2D(((float)P.X - MinUV.X) / Width, ((float)P.Y - MinUV.Y) / Height);
 				}
 
-				PMCStrong->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+				PMCStrong->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 				PMCStrong->SetCollisionObjectType(ECC_WorldStatic);
-				PMCStrong->SetCollisionResponseToAllChannels(ECR_Block);
-
+				// PMCStrong->SetCollisionResponseToAllChannels(ECR_Block);
+				PMCStrong->CastShadow = false;
+					
 				const int32 Section = (*GetSectionIndexRef)(BuiltKey);
 				PMCStrong->ClearMeshSection(Section);
-				PMCStrong->CreateMeshSection_LinearColor(Section, *OutVerts, *OutInds, *OutNorms, UV0, Colors, Tangents, true);
+				PMCStrong->CreateMeshSection_LinearColor(Section, *OutVerts, *OutInds, *OutNorms, UV0, Colors, Tangents, false);
 
 				(*OnBuiltRef)(BuiltKey, PayloadBuildId);
 			});

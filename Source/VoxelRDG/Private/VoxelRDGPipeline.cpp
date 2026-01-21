@@ -268,21 +268,6 @@ static void AllocateChunkBuffers(
 		Res.NormalsBufferRDG = GraphBuilder.CreateBuffer(NDesc, TEXT("Voxel.Greedy.Normals"));
 	}
 
-	if (Req.Payload.EditStamps.Num() > 0)
-	{
-		Res.EditStampBufferRDG = CreateStructuredBuffer(
-			GraphBuilder,
-			TEXT("Voxel.EditStamps"),
-			sizeof(FVoxelEditStampGPU),
-			Req.Payload.EditStamps.Num(),
-			Req.Payload.EditStamps.GetData(),
-			sizeof(FVoxelEditStampGPU) * Req.Payload.EditStamps.Num()
-		);
-	}
-	else
-	{
-		Res.EditStampBufferRDG = CreateStructuredBuffer(GraphBuilder, TEXT("Voxel.EditStamps"), sizeof(FVoxelEditStampGPU), 0, nullptr, 0);
-	}
 	AllocateEditStampBuffer(GraphBuilder,Req.Payload.EditStamps, Res.EditStampBufferRDG);
 }
 
@@ -309,17 +294,17 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	// ---- Dispatch by mode (your real calls go here) ----
 	if (Req.Mode == EVoxelMeshMode::MarchingCubes)
 	{
-		const FVoxelNoiseParamsCPU& NoiseCPU = Req.Payload.NoiseParameters;
-		UE_LOG(LogTemp, Log, TEXT("[VoxelBuild][MC] ChunkOrigin=%s StepSizeWS=%.3f CellsPerAxis=%u Iso=%.3f Seed=%u Noise(CaveAmp=%.3f CaveFreq=%.3f CaveThreshold=%.3f WorldScale=%s)"),
-			*Req.Payload.ChunkOriginWS.ToString(),
-			Req.Payload.StepSizeWS,
-			Req.Payload.CellsPerAxis,
-			Req.Payload.IsoLevel,
-			(uint32)Req.Payload.Seed,
-			NoiseCPU.CaveAmp,
-			NoiseCPU.CaveFreq,
-			NoiseCPU.CaveThreshold,
-			*NoiseCPU.WorldScale.ToString());
+		// const FVoxelNoiseParamsCPU& NoiseCPU = Req.Payload.NoiseParameters;
+		// UE_LOG(LogTemp, Log, TEXT("[VoxelBuild][MC] ChunkOrigin=%s StepSizeWS=%.3f CellsPerAxis=%u Iso=%.3f Seed=%u Noise(CaveAmp=%.3f CaveFreq=%.3f CaveThreshold=%.3f WorldScale=%s)"),
+		// 	*Req.Payload.ChunkOriginWS.ToString(),
+		// 	Req.Payload.StepSizeWS,
+		// 	Req.Payload.CellsPerAxis,
+		// 	Req.Payload.IsoLevel,
+		// 	(uint32)Req.Payload.Seed,
+		// 	NoiseCPU.CaveAmp,
+		// 	NoiseCPU.CaveFreq,
+		// 	NoiseCPU.CaveThreshold,
+		// 	*NoiseCPU.WorldScale.ToString());
 
 		// Build chunk params for MC
 		FMCChunkParamsCPU ChunkParams;
