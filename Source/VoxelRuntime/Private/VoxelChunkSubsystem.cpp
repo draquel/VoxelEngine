@@ -7,9 +7,12 @@
 #include "QuadTreeLeafSource_FromUQuadTree.h"
 #include "RHICommandList.h"
 #include "RendererInterface.h"
+#include "RenderGraphBuilder.h"
+#include "RenderGraphUtils.h"
 #include "VoxelChunkGPUResources.h"
 #include "VoxelChunkRecord.h"
 #include "VoxelEditLayer.h"
+#include "VoxelPickService.h"
 #include "VoxelSpatialPolicy_OcTree3D.h"
 #include "VoxelSpatialPolicy_OcTreeGreedy.h"
 #include "VoxelSpatialPolicy_QuadTree2p5D.h"
@@ -434,6 +437,9 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 		BuildService->Tick(DeltaSeconds);
 
 	EvictUnwanted(Desired);
+	
+	if (PickService.IsValid())
+		PickService->Tick();
 
 	EmitTelemetry(DeltaSeconds, Desired.Num(), Demands.Num());
 }
@@ -441,44 +447,6 @@ void UVoxelChunkSubsystem::TickStreaming(float DeltaSeconds, UWorld* World, cons
 void UVoxelChunkSubsystem::InvalidateRegionSphere(const FVector& CenterWS, float RadiusWS)
 {
 }
-// void UVoxelChunkSubsystem::PollGeneratingToReady()
-// {
-// 	// const double Now = FPlatformTime::Seconds();
-// 	//
-// 	// for (auto& KVP : Chunks)
-// 	// {
-// 	// 	FVoxelChunkRecord& R = KVP.Value;
-// 	// 	if (R.State != EVoxelChunkState::Generating)
-// 	// 		continue;
-// 	//
-// 	// 	if (!R.GPU.IsValid())
-// 	// 		continue;
-// 	//
-// 	// 	FVoxelChunkGPUResources& G = *R.GPU.Get();
-// 	//
-// 	// 	// Must match what your PMC builder expects
-// 	// 	if (!G.VertexReadback || !G.IndexReadback || !G.VertexCountReadback || !G.IndexCountReadback)
-// 	// 		continue;
-// 	//
-// 	// 	if (!G.VertexReadback->IsReady() || !G.IndexReadback->IsReady() ||
-// 	// 		!G.VertexCountReadback->IsReady() || !G.IndexCountReadback->IsReady())
-// 	// 		continue;
-// 	//
-// 	// 	// Optional: cancellation gate
-// 	// 	if (R.bCancelRequested)
-// 	// 	{
-// 	// 		// Drop it without ever becoming Ready/Resident
-// 	// 		R.GPU.Reset();
-// 	// 		R.State = EVoxelChunkState::Unloaded; // or Evicting
-// 	// 		R.LastStateChangeSec = Now;
-// 	// 		continue;
-// 	// 	}
-// 	//
-// 	// 	R.State = EVoxelChunkState::Ready;
-// 	// 	R.BuiltEditEpoch = R.LastBuildPayload.EditEpoch; // or EditLayer->Epoch at time of request
-// 	// 	R.LastStateChangeSec = Now;
-// 	// }
-// }
 
 FVoxelChunkRecord& UVoxelChunkSubsystem::GetOrCreateChunk(const FVoxelChunkKey& Key)
 {
@@ -1340,19 +1308,19 @@ void UVoxelChunkSubsystem::EmitTelemetry(float DeltaSeconds, int32 DesiredCount,
 		Total++;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[VoxelStream] Desired=%d Total=%d U=%d Rq=%d G=%d Rd=%d Rs=%d Ev=%d InFlightCap=%d GenPerTick=%d EvictPerTick=%d"),
-		DesiredCount,
-		Total,
-		Counts[(int32)EVoxelChunkState::Unloaded],
-		Counts[(int32)EVoxelChunkState::Requested],
-		Counts[(int32)EVoxelChunkState::Generating],
-		Counts[(int32)EVoxelChunkState::Ready],
-		Counts[(int32)EVoxelChunkState::Resident],
-		Counts[(int32)EVoxelChunkState::Evicting],
-		MaxInFlightBuilds,
-		MaxGeneratePerTick,
-		MaxEvictPerTick
-	);
+	// UE_LOG(LogTemp, Warning, TEXT("[VoxelStream] Desired=%d Total=%d U=%d Rq=%d G=%d Rd=%d Rs=%d Ev=%d InFlightCap=%d GenPerTick=%d EvictPerTick=%d"),
+	// 	DesiredCount,
+	// 	Total,
+	// 	Counts[(int32)EVoxelChunkState::Unloaded],
+	// 	Counts[(int32)EVoxelChunkState::Requested],
+	// 	Counts[(int32)EVoxelChunkState::Generating],
+	// 	Counts[(int32)EVoxelChunkState::Ready],
+	// 	Counts[(int32)EVoxelChunkState::Resident],
+	// 	Counts[(int32)EVoxelChunkState::Evicting],
+	// 	MaxInFlightBuilds,
+	// 	MaxGeneratePerTick,
+	// 	MaxEvictPerTick
+	// );
 
 	if (bTelemetryOnScreen && GEngine)
 	{
@@ -1367,23 +1335,23 @@ void UVoxelChunkSubsystem::EmitTelemetry(float DeltaSeconds, int32 DesiredCount,
 		GEngine->AddOnScreenDebugMessage((uint64)0xBEEFCAFEULL, (float)TelemetryPeriod + 0.05f, FColor::Cyan, Msg);
 	
 		
-		double OldestReadyAge = 0.0;
-		for (auto& KVP : Chunks)
-		{
-			const FVoxelChunkRecord& R = KVP.Value;
-			if (R.State == EVoxelChunkState::Ready)
-			{
-				OldestReadyAge = FMath::Max(OldestReadyAge, FPlatformTime::Seconds() - R.LastStateChangeSec);
-			}
-		}
-		UE_LOG(LogTemp, Warning, TEXT("OldestReadyAge=%.2fs"), OldestReadyAge);
+		// double OldestReadyAge = 0.0;
+		// for (auto& KVP : Chunks)
+		// {
+		// 	const FVoxelChunkRecord& R = KVP.Value;
+		// 	if (R.State == EVoxelChunkState::Ready)
+		// 	{
+		// 		OldestReadyAge = FMath::Max(OldestReadyAge, FPlatformTime::Seconds() - R.LastStateChangeSec);
+		// 	}
+		// }
+		// UE_LOG(LogTemp, Warning, TEXT("OldestReadyAge=%.2fs"), OldestReadyAge);
 		
 		
-		UE_LOG(LogTemp, Warning,
-			TEXT("[VoxelStream] Desired=%d Total=%d | Req %d Gen %d Ready %d Res %d Ev %d | +Rq=%d +Disp=%d +Ready=%d +Res=%d +Ev=%d +Cancel=%d"),
-			DesiredCount, Total, Counts[(int32)EVoxelChunkState::Requested], Counts[(int32)EVoxelChunkState::Generating],
-			Counts[(int32)EVoxelChunkState::Ready], Counts[(int32)EVoxelChunkState::Resident], Counts[(int32)EVoxelChunkState::Evicting],
-			Telemetry_Requested, Telemetry_Dispatched, Telemetry_BecameReady, Telemetry_BecameResident, Telemetry_Evicted, Telemetry_Canceled);
+		// UE_LOG(LogTemp, Warning,
+		// 	TEXT("[VoxelStream] Desired=%d Total=%d | Req %d Gen %d Ready %d Res %d Ev %d | +Rq=%d +Disp=%d +Ready=%d +Res=%d +Ev=%d +Cancel=%d"),
+		// 	DesiredCount, Total, Counts[(int32)EVoxelChunkState::Requested], Counts[(int32)EVoxelChunkState::Generating],
+		// 	Counts[(int32)EVoxelChunkState::Ready], Counts[(int32)EVoxelChunkState::Resident], Counts[(int32)EVoxelChunkState::Evicting],
+		// 	Telemetry_Requested, Telemetry_Dispatched, Telemetry_BecameReady, Telemetry_BecameResident, Telemetry_Evicted, Telemetry_Canceled);
 
 		Telemetry_Requested = Telemetry_Dispatched = Telemetry_BecameReady = Telemetry_BecameResident = Telemetry_Evicted = Telemetry_Canceled = 0;
 	}
@@ -1416,4 +1384,84 @@ void UVoxelChunkSubsystem::DebugSpawnStampForward(bool bCarve)
 	ApplyEditStamp(S);
 
 	DrawDebugSphere(GetWorld(), S.Center, S.Radius, 24, FColor::Cyan, false, 2.0f, 0, 2.0f);
+}
+
+void UVoxelChunkSubsystem::DebugEnqueuePickAndStamp(const FVector& RayOriginWS, const FVector& RayDirWS, bool bCarve)
+{
+	if (IsEngineExitRequested())
+		return;
+
+	if (!PickService.IsValid())
+	{
+		PickService = MakeUnique<FVoxelPickService>();
+	}
+
+	Voxel::FVoxelPickRequest Req;
+	Req.RayOriginWS   = RayOriginWS;
+	Req.RayDirWS      = RayDirWS;
+
+	// Tune these defaults
+	Req.MaxDistanceWS = 50000.f;
+	Req.StepWS        = FMath::Max(10.f, GetPickStepSizeWS() * 0.5f);
+
+	Req.bCarve        = bCarve;
+	
+	// Req.RadiusWS      = 500.f;
+	// Req.Strength      = 5000.f;
+	// Req.Falloff       = 1.0f;
+
+	PickService->EnqueueRequest(Req);
+}
+
+float UVoxelChunkSubsystem::GetPickStepSizeWS() const
+{
+	// Use LOD0 cell size as the sampling step parameter
+	// Adjust if your SampleDensity_Terrain_Noise expects something else.
+	return Settings.MarchingSettings.BaseCellSizeWS;
+}
+
+uint32 UVoxelChunkSubsystem::GetEditStampCount_RenderThreadSafe() const
+{
+	return EditLayer ? (uint32)EditLayer->Stamps.Num() : 0;
+}
+
+FRDGBufferSRVRef UVoxelChunkSubsystem::GetEditStampsSRV_RenderThreadSafe(FRDGBuilder& GraphBuilder) const
+{
+	// If you already have a persistent pooled buffer for stamps, return SRV to that.
+	// Otherwise, build a transient RDG upload buffer from EditLayer->Stamps.
+
+	const uint32 Count = GetEditStampCount_RenderThreadSafe();
+	if (!EditLayer || Count == 0)
+	{
+		// Return nullptr; AddVoxelPickPass handles dummy binding.
+		return nullptr;
+	}
+
+	// Build CPU array -> GPU array (render thread)
+	TArray<FVoxelEditStampGPU> GPUStamps;
+	GPUStamps.Reserve(Count);
+	for (const FVoxelEditStamp& S : EditLayer->Stamps)
+	{
+		FVoxelEditStampGPU G{};
+		G.CenterWS = (FVector3f)S.Center;
+		G.RadiusWS = S.Radius;
+
+		const float Strength = S.Strength;
+		const float Delta = (S.Op == EVoxelEditOp::Carve) ? +Strength : -Strength;
+		G.DeltaDensity = Delta;
+
+		G.Falloff = S.Falloff;
+		G.Pad = FVector2f::ZeroVector;
+		GPUStamps.Add(G);
+	}
+
+	FRDGBufferRef Buf = CreateStructuredBuffer(
+		GraphBuilder,
+		TEXT("Voxel.EditStamps"),
+		sizeof(FVoxelEditStampGPU),
+		GPUStamps.Num(),
+		GPUStamps.GetData(),
+		sizeof(FVoxelEditStampGPU) * GPUStamps.Num());
+
+	return GraphBuilder.CreateSRV(Buf);
 }

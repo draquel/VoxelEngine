@@ -8,6 +8,7 @@
 #include "VoxelChunkKey.h"
 #include "VoxelChunkRecord.h"
 #include "VoxelEditLayer.h"
+#include "VoxelPickService.h"
 #include "VoxelSpatialPolicyTypes.h"
 #include "VoxelWorldSettings.h"
 #include "VoxelChunkSubsystem.generated.h"
@@ -59,12 +60,24 @@ public:
 	uint8 ComputeSkirtMaskSameLOD(FVoxelChunkKey Key);
 	void AttachReadyToRender();
 	void CancelCoarserOverlaps_DemandTime(const TArray<FVoxelChunkDemand>& Demands);
+
+	FVoxelWorldSettings GetWorldSettings() const { return Settings; }
+	TObjectPtr<UVoxelEditLayer> GetEditLayer() const { return EditLayer; }
+	
+	// Call from PC / debug input
+	void DebugEnqueuePickAndStamp(const FVector& RayOriginWS, const FVector& RayDirWS, bool bCarve);
+
+	float GetPickStepSizeWS() const;
+	uint32 GetEditStampCount_RenderThreadSafe() const;
+	FRDGBufferSRVRef GetEditStampsSRV_RenderThreadSafe(FRDGBuilder& GraphBuilder) const;
+
 	
 private:
 
 	TSharedPtr<Voxel::IVoxelChunkRenderConsumer> RenderConsumer;
 	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService;
 	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy;
+	TUniquePtr<FVoxelPickService> PickService;
 	bool bDrawDomainDebug = false;
 	bool bDrawDemandDebug = false;
 	bool bQuadTreeDebug = false;
