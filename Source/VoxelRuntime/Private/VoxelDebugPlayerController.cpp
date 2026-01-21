@@ -143,7 +143,15 @@ void AVoxelDebugPlayerController::DoStamp(bool bCarve)
 	if (!Vox) return;
 
 	// Current signature
-	Vox->DebugEnqueuePickAndStamp(RayOriginWS, RayDirWS, bCarve);
+	Vox->DebugEnqueuePickAndStamp(
+		RayOriginWS,
+		RayDirWS,
+		bCarve,
+		StampRadiusWS,
+		StampStrength,
+		StampFalloff,
+		PickMaxDistanceWS,
+		PickStepWS);
 
 	// Recommended future overload (when you add it):
 	// Vox->DebugEnqueuePickAndStamp(RayOriginWS, RayDirWS, bCarve, StampRadiusWS, StampStrength, StampFalloff, PickMaxDistanceWS, PickStepWS);

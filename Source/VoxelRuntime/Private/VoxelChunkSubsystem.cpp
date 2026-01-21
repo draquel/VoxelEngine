@@ -1401,7 +1401,15 @@ void UVoxelChunkSubsystem::DebugSpawnStampForward(bool bCarve)
 	DrawDebugSphere(GetWorld(), S.Center, S.Radius, 24, FColor::Cyan, false, 2.0f, 0, 2.0f);
 }
 
-void UVoxelChunkSubsystem::DebugEnqueuePickAndStamp(const FVector& RayOriginWS, const FVector& RayDirWS, bool bCarve)
+void UVoxelChunkSubsystem::DebugEnqueuePickAndStamp(
+	const FVector& RayOriginWS,
+	const FVector& RayDirWS,
+	bool bCarve,
+	float StampRadiusWS,
+	float StampStrength,
+	float StampFalloff,
+	float MaxDistanceWS,
+	float StepWS)
 {
 	if (IsEngineExitRequested())
 		return;
@@ -1431,16 +1439,66 @@ void UVoxelChunkSubsystem::DebugEnqueuePickAndStamp(const FVector& RayOriginWS, 
 	Req.RayDirWS      = RayDirWS;
 
 	// Tune these defaults
-	Req.MaxDistanceWS = 50000.f;
-	Req.StepWS        = FMath::Max(10.f, GetPickStepSizeWS() * 0.5f);
+	Req.MaxDistanceWS = MaxDistanceWS;
+	Req.StepWS        = FMath::Max(10.f, StepWS);
 
 	Req.bCarve        = bCarve;
+	Req.StampRadiusWS = StampRadiusWS;
+	Req.StampStrength = StampStrength;
+	Req.StampFalloff  = StampFalloff;
+
+	Req.Seed          = Settings.Seed;
+	Req.IsoValue      = 0.0f;
+	Req.StepSizeWS    = GetPickStepSizeWS();
+	Req.NoiseParams   = Settings.NoiseParams;
+
+	if (EditLayer)
+	{
+		TArray<FVoxelEditStampGPU> GPUStamps;
+		GPUStamps.Reserve(EditLayer->Stamps.Num());
+		for (const FVoxelEditStamp& S : EditLayer->Stamps)
+		{
+			FVoxelEditStampGPU G{};
+			G.CenterWS = (FVector3f)S.Center;
+			G.RadiusWS = S.Radius;
+
+			const float Strength = S.Strength;
+			const float Delta = (S.Op == EVoxelEditOp::Carve) ? +Strength : -Strength;
+			G.DeltaDensity = Delta;
+
+			G.Falloff = S.Falloff;
+			G.Pad = FVector2f::ZeroVector;
+			GPUStamps.Add(G);
+		}
+
+		Req.EditStamps = MoveTemp(GPUStamps);
+		Req.EditStampCount = Req.EditStamps.Num();
+	}
 	
 	// Req.RadiusWS      = 500.f;
 	// Req.Strength      = 5000.f;
 	// Req.Falloff       = 1.0f;
 
 	PickService->EnqueueRequest(Req);
+}
+
+void UVoxelChunkSubsystem::DebugEnqueuePickAndStamp(const FVector& RayOriginWS, const FVector& RayDirWS, bool bCarve)
+{
+	const float DefaultRadius = 500.f;
+	const float DefaultStrength = 5000.f;
+	const float DefaultFalloff = 1.0f;
+	const float DefaultMaxDistance = 50000.f;
+	const float DefaultStep = FMath::Max(10.f, GetPickStepSizeWS() * 0.5f);
+
+	DebugEnqueuePickAndStamp(
+		RayOriginWS,
+		RayDirWS,
+		bCarve,
+		DefaultRadius,
+		DefaultStrength,
+		DefaultFalloff,
+		DefaultMaxDistance,
+		DefaultStep);
 }
 
 float UVoxelChunkSubsystem::GetPickStepSizeWS() const

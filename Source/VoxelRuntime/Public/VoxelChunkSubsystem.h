@@ -66,6 +66,15 @@ public:
 	TObjectPtr<UVoxelEditLayer> GetEditLayer() const { return EditLayer; }
 	
 	// Call from PC / debug input
+	void DebugEnqueuePickAndStamp(
+		const FVector& RayOriginWS,
+		const FVector& RayDirWS,
+		bool bCarve,
+		float StampRadiusWS,
+		float StampStrength,
+		float StampFalloff,
+		float MaxDistanceWS,
+		float StepWS);
 	void DebugEnqueuePickAndStamp(const FVector& RayOriginWS, const FVector& RayDirWS, bool bCarve);
 
 	float GetPickStepSizeWS() const;
