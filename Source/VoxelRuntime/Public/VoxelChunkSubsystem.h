@@ -55,7 +55,8 @@ public:
 	void EmitTelemetry(float DeltaSeconds, int32 DesiredCount, int32 DemandCount);
 	void DebugSpawnStampForward(bool bCarve);
 	void SetRenderConsumer(TSharedPtr<Voxel::IVoxelChunkRenderConsumer> In) { RenderConsumer = MoveTemp(In); };
-	void SetBuildService(TSharedPtr<Voxel::IVoxelChunkBuildService> In) { BuildService = MoveTemp(In); };
+	void SetBuildService(TSharedPtr<Voxel::IVoxelChunkBuildService> In);
+	void SetPickDispatcher(Voxel::IVoxelPickDispatcher* In);
 	void SetSpatialPolicy(TSharedPtr<Voxel::IVoxelSpatialPolicy> In) { SpatialPolicy = MoveTemp(In); };
 	uint8 ComputeSkirtMaskSameLOD(FVoxelChunkKey Key);
 	void AttachReadyToRender();
@@ -76,6 +77,7 @@ private:
 
 	TSharedPtr<Voxel::IVoxelChunkRenderConsumer> RenderConsumer;
 	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService;
+	Voxel::IVoxelPickDispatcher* PickDispatcher = nullptr;
 	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy;
 	TUniquePtr<FVoxelPickService> PickService;
 	bool bDrawDomainDebug = false;

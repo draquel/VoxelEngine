@@ -4,6 +4,7 @@
 #include "VoxelChunkKey.h"
 #include "VoxelChunkBuildPayload.h"
 #include "Templates/SharedPointer.h"
+#include "IVoxelPickDispatcher.h"
 
 class FRHICommandListImmediate;
 class UVoxelEditLayer;
@@ -26,5 +27,8 @@ namespace Voxel
 
 		// GameThread: optional pump if the service wants internal time slicing.
 		virtual void Tick(float DeltaSeconds) {}
+
+		// Optional: allow build services to expose a pick dispatcher without RTTI.
+		virtual Voxel::IVoxelPickDispatcher* AsPickDispatcher() { return nullptr; }
 	};
 }

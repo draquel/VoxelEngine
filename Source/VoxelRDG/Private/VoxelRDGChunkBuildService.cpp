@@ -39,9 +39,17 @@ namespace VoxelRender
 		const Voxel::FVoxelPickRequest& Req,
 		const TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe>& Readback)
 	{
-		check(IsInGameThread());
-
 		const Voxel::FVoxelPickRequest ReqCopy = Req;
+
+		if (IsInRenderingThread())
+		{
+			FRHICommandListImmediate& RHICmdList = FRHICommandListExecutor::GetImmediateCommandList();
+			if (!Readback.IsValid())
+				return;
+
+			Pipeline->Pick_RenderThread(RHICmdList, ReqCopy, Readback);
+			return;
+		}
 
 		ENQUEUE_RENDER_COMMAND(VoxelRDG_Pick)(
 			[this, ReqCopy, Readback](FRHICommandListImmediate& RHICmdList) mutable

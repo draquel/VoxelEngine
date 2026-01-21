@@ -23,6 +23,7 @@ namespace VoxelRender
 
 		virtual void EnqueueBuild(const FVoxelChunkBuildRequest& Req) override;
 		virtual void CancelBuild(const FVoxelChunkKey& Key, uint64 BuildId) override;
+		virtual Voxel::IVoxelPickDispatcher* AsPickDispatcher() override { return this; }
 		void EnqueuePick(const Voxel::FVoxelPickRequest& Req, const TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe>& Readback);
 		virtual void Tick(float DeltaSeconds) override;
 

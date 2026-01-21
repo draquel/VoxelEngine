@@ -70,7 +70,7 @@ void AVoxelWorldActor::BeginPlay()
 
     ChunkSubsystem->InitializeVoxel(Settings, EditLayer);
 
-	TSharedPtr<Voxel::IVoxelChunkBuildService> BuildService = MakeShared<VoxelRender::FVoxelRDGChunkBuildService>();
+	TSharedPtr<VoxelRender::FVoxelRDGChunkBuildService> BuildService = MakeShared<VoxelRender::FVoxelRDGChunkBuildService>();
 	ChunkSubsystem->SetBuildService(BuildService);
 	
 	TSharedPtr<Voxel::IVoxelSpatialPolicy> SpatialPolicy;

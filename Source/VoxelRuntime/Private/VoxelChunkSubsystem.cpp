@@ -90,6 +90,21 @@ void UVoxelChunkSubsystem::InitializeVoxel(const FVoxelWorldSettings& InSettings
 	
 }
 
+void UVoxelChunkSubsystem::SetBuildService(TSharedPtr<Voxel::IVoxelChunkBuildService> In)
+{
+	BuildService = MoveTemp(In);
+	SetPickDispatcher(BuildService.IsValid() ? BuildService->AsPickDispatcher() : nullptr);
+}
+
+void UVoxelChunkSubsystem::SetPickDispatcher(Voxel::IVoxelPickDispatcher* In)
+{
+	PickDispatcher = In;
+	if (PickService.IsValid())
+	{
+		PickService->Dispatcher = PickDispatcher;
+	}
+}
+
 uint8 UVoxelChunkSubsystem::ComputeSkirtMaskSameLOD(FVoxelChunkKey Key)
 {
 	auto HasNeighborResidentOrReadySameLOD = [&](const FVoxelChunkKey& K, int dx, int dy) -> bool
@@ -1394,6 +1409,21 @@ void UVoxelChunkSubsystem::DebugEnqueuePickAndStamp(const FVector& RayOriginWS, 
 	if (!PickService.IsValid())
 	{
 		PickService = MakeUnique<FVoxelPickService>();
+		PickService->Dispatcher = PickDispatcher;
+		PickService->OnHit = [this](const Voxel::FVoxelPickRequest& Req, const FVector& HitWS)
+		{
+			FVoxelEditStamp S;
+			S.Center = HitWS;
+			S.Radius = Req.StampRadiusWS;
+			S.Strength = FMath::Abs(Req.StampStrength);
+			S.Falloff = Req.StampFalloff;
+			S.Op = Req.bCarve ? EVoxelEditOp::Carve : EVoxelEditOp::Fill;
+			ApplyEditStamp(S);
+		};
+	}
+	else if (PickService->Dispatcher != PickDispatcher)
+	{
+		PickService->Dispatcher = PickDispatcher;
 	}
 
 	Voxel::FVoxelPickRequest Req;
