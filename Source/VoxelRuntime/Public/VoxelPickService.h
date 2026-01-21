@@ -15,7 +15,7 @@ public:
 	void Tick();
 
 	// Callback invoked on GT after a successful hit
-	TFunction<void(const FVector& HitWS, bool bCarve)> OnHit;
+	TFunction<void(const Voxel::FVoxelPickRequest& Req, const FVector& HitWS)> OnHit;
 
 	// Provided by your runtime/buildservice (must be valid)
 	Voxel::IVoxelPickDispatcher* Dispatcher = nullptr;
@@ -34,5 +34,4 @@ private:
 	double LastLaunchSec = 0.0;
 	double MinLaunchIntervalSec = 0.02; // 50 Hz max; tune
 };
-
 

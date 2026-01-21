@@ -23,6 +23,9 @@ namespace Voxel
 		float   StepWS        = 50.f;
 
 		bool    bCarve = true;
+		float   StampRadiusWS = 500.f;
+		float   StampStrength = 5000.f;
+		float   StampFalloff = 1.0f;
 
 		// Whatever you need to feed the pick shader:
 		uint32  Seed = 0;

@@ -36,11 +36,11 @@ void FVoxelPickService::Tick()
 		{
 			// Copy result on the RENDER THREAD (Lock must be RT)
 			const TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe> Readback = Pick.Readback;
-			const bool bCarve = Pick.Req.bCarve;
-			TFunction<void(const FVector&, bool)> OnHitCopy = OnHit;
+			const Voxel::FVoxelPickRequest ReqCopy = Pick.Req;
+			TFunction<void(const Voxel::FVoxelPickRequest&, const FVector&)> OnHitCopy = OnHit;
 
 			ENQUEUE_RENDER_COMMAND(VoxelPick_ReadbackConsume)(
-				[Readback, bCarve, OnHitCopy](FRHICommandListImmediate& RHICmdList) mutable
+				[Readback, ReqCopy, OnHitCopy](FRHICommandListImmediate& RHICmdList) mutable
 				{
 					check(IsInRenderingThread());
 
@@ -70,7 +70,7 @@ void FVoxelPickService::Tick()
 						Result.bHit = false;
 					}
 
-					AsyncTask(ENamedThreads::GameThread, [Result, bCarve, OnHitCopy]()
+					AsyncTask(ENamedThreads::GameThread, [Result, ReqCopy, OnHitCopy]()
 					{
 						if (!OnHitCopy) return;
 						if (!Result.bHit) return;
@@ -78,7 +78,7 @@ void FVoxelPickService::Tick()
 						// Extra sanity: reject NaNs
 						// if (!Result.HitWS.IsFinite()) return;
 
-						OnHitCopy(Result.HitWS, bCarve);
+						OnHitCopy(ReqCopy, Result.HitWS);
 					});
 				});
 
@@ -115,4 +115,3 @@ void FVoxelPickService::Tick()
 
 	InFlight = MoveTemp(NewPick);
 }
-
