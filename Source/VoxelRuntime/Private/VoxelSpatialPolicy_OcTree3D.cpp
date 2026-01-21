@@ -1,5 +1,6 @@
 #include "VoxelSpatialPolicy_OcTree3D.h"
 
+#include "OcTreeLeafSource_FromOcTree.h"
 #include "VoxelChunkCoordUtils.h"
 
 namespace VoxelRuntime
@@ -40,11 +41,29 @@ namespace VoxelRuntime
 		return LOD;
 	}
 
+	bool FVoxelSpatialPolicy_OcTree3D::HasDomainGrid() const
+	{
+		return LeafSource.IsValid();
+	}
+
+	bool FVoxelSpatialPolicy_OcTree3D::TryGetDomainMinWS_ForKey(const FVoxelChunkKey& Key, FVector& OutDomainMinWS) const
+	{
+		if (!LeafSource.IsValid())
+			return false;
+
+		// You may need a cast depending on your leaf source interface.
+		if (auto* LS = static_cast<VoxelRuntime::FOcTreeLeafSource_FromOcTree*>(LeafSource.Get()))
+		{
+			return LS->TryGetDomainMinWS_ForEpoch((uint64)Key.DomainEpoch, OutDomainMinWS);
+		}
+		return false;
+	}
+	
 	void FVoxelSpatialPolicy_OcTree3D::ComputeDemands(
-    const FVoxelWorldSettings& World,
-    const FVoxelSpatialPolicyParams& Params,
-    const TArray<FVector>& CamerasWS,
-    TArray<FVoxelChunkDemand>& OutDemands) const
+	    const FVoxelWorldSettings& World,
+	    const FVoxelSpatialPolicyParams& Params,
+	    const TArray<FVector>& CamerasWS,
+	    TArray<FVoxelChunkDemand>& OutDemands) const
 	{
 	    OutDemands.Reset();
 	    if (!LeafSource.IsValid() || CamerasWS.Num() == 0)
@@ -57,13 +76,10 @@ namespace VoxelRuntime
 
 	    TArray<FOcTreeLeaf> Leaves;
 	    LeafSource->GetLeaves(World, Params, World.MarchingSettings.SpatialParams, (float)BaseChunkWS, CamerasWS, Leaves);
-	    if (Leaves.Num() == 0)
-	    {
-	        // Even if leaves are empty for a frame, keep-alive can prevent total collapse.
-	        Leaves.Reset();
-	    }
 
-	    const FVector DomainMinWS = LeafSource->GetDomainMinWS_DebugOnlyOrAPI();
+	    // NOTE: if Leaves is empty for a frame, keep-alive below can still keep demands alive.
+	    // We don't early-return here; we just won't add "SeenNow" entries from leaves.
+
 	    const uint64 DomainEpoch = LeafSource->GetDomainEpoch();
 
 	    // If the domain epoch changed, cached keys are invalid.
@@ -72,20 +88,6 @@ namespace VoxelRuntime
 	        KeepAliveFrames.Reset();
 	        LastEpoch = DomainEpoch;
 	    }
-
-	    // Helper: compute center from key (stable, epoch-aware via DomainMinWS)
-	    auto ChunkCenterFromKeyWS = [&](const FVoxelChunkKey& Key) -> FVector
-	    {
-	        const double ChunkSizeWS = ChunkSizeWSAtLOD(World, Key.LOD);
-	        const FVector OriginWS =
-	            DomainMinWS +
-	            FVector(
-	                (double)Key.Coord.X * ChunkSizeWS,
-	                (double)Key.Coord.Y * ChunkSizeWS,
-	                (double)Key.Coord.Z * ChunkSizeWS);
-
-	        return OriginWS + FVector(ChunkSizeWS * 0.5);
-	    };
 
 	    auto BestDistanceToCameras = [&](const FVector& P) -> float
 	    {
@@ -97,11 +99,31 @@ namespace VoxelRuntime
 	        return BestDist;
 	    };
 
+	    // Compute stable center from key, using epoch-aware DomainMinWS.
+	    auto ChunkCenterFromKeyWS = [&](const FVoxelChunkKey& Key) -> FVector
+	    {
+	        const double ChunkSizeWS = ChunkSizeWSAtLOD(World, Key.LOD);
+
+	        FVector EpochDomainMinWS;
+	        if (!TryGetDomainMinWS_ForKey(Key, EpochDomainMinWS))
+	        {
+	            // Fallback: current domain min (still works, but less correct across epochs)
+	            EpochDomainMinWS = LeafSource->GetDomainMinWS_DebugOnlyOrAPI();
+	        }
+
+	        const Voxel::FStableChunkWS Stable = Voxel::ComputeStableChunkWS(EpochDomainMinWS, Key, ChunkSizeWS);
+	        return Stable.CenterWS;
+	    };
+
 	    // Collect current keys from leaves
 	    TSet<FVoxelChunkKey> SeenNow;
 	    SeenNow.Reserve(FMath::Max(Leaves.Num() * 2, 64));
 
 	    // Build demands from leaves
+	    // IMPORTANT: when mapping leaf -> key, use the *current* domain min/epoch
+	    // (leaves were generated in the current domain)
+	    const FVector CurDomainMinWS = LeafSource->GetDomainMinWS_DebugOnlyOrAPI();
+
 	    for (const FOcTreeLeaf& Leaf : Leaves)
 	    {
 	        const double LeafSizeWS = Leaf.Size.X;
@@ -109,11 +131,9 @@ namespace VoxelRuntime
 	        const double ChunkSizeWS = ChunkSizeWSAtLOD(World, LOD);
 	        const double Eps = ChunkSizeWS * 1e-6;
 
-	        // NOTE: your Leaf.Position usage is fine as long as it's stable (min corner vs center).
-	        // If Leaf.Position is a "min corner", ChunkCenter below should instead use Origin + 0.5*ChunkSize.
-	        const int32 X = (int32)FMath::FloorToDouble(((Leaf.Position.X - DomainMinWS.X) + Eps) / ChunkSizeWS);
-	        const int32 Y = (int32)FMath::FloorToDouble(((Leaf.Position.Y - DomainMinWS.Y) + Eps) / ChunkSizeWS);
-	        const int32 Z = (int32)FMath::FloorToDouble(((Leaf.Position.Z - DomainMinWS.Z) + Eps) / ChunkSizeWS);
+	        const int32 X = (int32)FMath::FloorToDouble(((Leaf.Position.X - CurDomainMinWS.X) + Eps) / ChunkSizeWS);
+	        const int32 Y = (int32)FMath::FloorToDouble(((Leaf.Position.Y - CurDomainMinWS.Y) + Eps) / ChunkSizeWS);
+	        const int32 Z = (int32)FMath::FloorToDouble(((Leaf.Position.Z - CurDomainMinWS.Z) + Eps) / ChunkSizeWS);
 
 	        FVoxelChunkKey Key;
 	        Key.LOD = LOD;
@@ -145,7 +165,6 @@ namespace VoxelRuntime
 	    }
 
 	    // ---- Hysteresis: keep recently-seen keys alive for a couple frames ----
-	    // This prevents tiny camera movements / octree split-merge noise from thrashing demands.
 	    for (auto It = KeepAliveFrames.CreateIterator(); It; ++It)
 	    {
 	        const FVoxelChunkKey Key = It.Key();
@@ -163,10 +182,8 @@ namespace VoxelRuntime
 	            continue;
 	        }
 
-	        // Decrement and emit one more time.
 	        FramesLeft--;
 
-	        // Re-emit demand for this key (same rules as normal)
 	        const FVector ChunkCenterWS = ChunkCenterFromKeyWS(Key);
 	        const float BestDist = BestDistanceToCameras(ChunkCenterWS);
 
@@ -177,11 +194,10 @@ namespace VoxelRuntime
 	            : EVoxelChunkWantedState::Requested;
 	        D.ApproxDistWS = BestDist;
 	        D.Priority = Voxel::ComputePriority(BestDist, Key.LOD);
-	        D.DomainEpoch = DomainEpoch;
+	        D.DomainEpoch = (uint64)Key.DomainEpoch;
 
 	        OutDemands.Add(D);
 
-	        // If it reached 0, drop next call.
 	        if (FramesLeft == 0)
 	        {
 	            It.RemoveCurrent();
@@ -205,7 +221,29 @@ namespace VoxelRuntime
 
 	FVector FVoxelSpatialPolicy_OcTree3D::ChunkOriginWS(const FVoxelWorldSettings& World, const FVoxelChunkKey& Key) const
 	{
-		return ChunkOriginWS_WithEpoch(World, Key, (uint64)Key.DomainEpoch);
+		const double ChunkSize = ChunkSizeWSAtLOD(World, Key.LOD);
+
+		FVector DomainMin;
+		if (!TryGetDomainMinWS_ForKey(Key, DomainMin))
+		{
+			// fallback: current domain (still functional)
+			DomainMin = LeafSource.IsValid() ? LeafSource->GetDomainMinWS_DebugOnlyOrAPI() : FVector::ZeroVector;
+		}
+
+		return Voxel::ComputeStableChunkWS(DomainMin, Key, ChunkSize).OriginWS;
+	}
+
+	FVector FVoxelSpatialPolicy_OcTree3D::ChunkCenterWS(const FVoxelWorldSettings& World, const FVoxelChunkKey& Key) const
+	{
+		const double ChunkSize = ChunkSizeWSAtLOD(World, Key.LOD);
+
+		FVector DomainMin;
+		if (!TryGetDomainMinWS_ForKey(Key, DomainMin))
+		{
+			DomainMin = LeafSource.IsValid() ? LeafSource->GetDomainMinWS_DebugOnlyOrAPI() : FVector::ZeroVector;
+		}
+
+		return Voxel::ComputeStableChunkWS(DomainMin, Key, ChunkSize).CenterWS;
 	}
 
 	FVector FVoxelSpatialPolicy_OcTree3D::ChunkOriginWS_WithEpoch(const FVoxelWorldSettings& World, const FVoxelChunkKey& Key, uint64 Epoch) const

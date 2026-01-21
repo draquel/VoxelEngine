@@ -242,6 +242,26 @@ namespace VoxelRuntime
 		    LastRecenterCamTile = CamTile;
 		}
 
+		// In your leaf source class (e.g., FOcTreeLeafSource_FromOcTree)
+
+		bool TryGetDomainMinWS_ForEpoch(uint64 Epoch, FVector& OutMinWS) const
+		{
+			if (const FVector* Found = DomainHistory.Find(Epoch))
+			{
+				OutMinWS = *Found;
+				return true;
+			}
+
+			// Fallback: if missing, return current (still functional, but less correct)
+			if (bHasDomain)
+			{
+				OutMinWS = DomainMinWS;
+				return true;
+			}
+
+			return false;
+		}
+		
 		void DebugDrawOcTree(UWorld* World, float Duration = 0.f)
 		{
 			Tree.Visualize(World, Voxel::FColorUtils::LODColors(), Duration);
