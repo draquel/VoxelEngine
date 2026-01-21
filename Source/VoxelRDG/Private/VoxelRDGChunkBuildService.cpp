@@ -2,6 +2,7 @@
 
 #include "VoxelRDGChunkBuildService.h"
 #include "IVoxelChunkBuildService.h"
+#include "IVoxelPickDispatcher.h"
 #include "VoxelRDGPipeline.h"
 #include "RHICommandList.h"
 
@@ -33,7 +34,26 @@ namespace VoxelRender
 		// Best-effort: you can track inflight keys/buildIds and ignore stale results on completion.
 		// Actual GPU cancel is non-trivial; the subsystem should gate by BuildId anyway.
 	}
+	
+	void FVoxelRDGChunkBuildService::EnqueuePick(
+		const Voxel::FVoxelPickRequest& Req,
+		const TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe>& Readback)
+	{
+		check(IsInGameThread());
 
+		const Voxel::FVoxelPickRequest ReqCopy = Req;
+
+		ENQUEUE_RENDER_COMMAND(VoxelRDG_Pick)(
+			[this, ReqCopy, Readback](FRHICommandListImmediate& RHICmdList) mutable
+			{
+				check(IsInRenderingThread());
+				if (!Readback.IsValid())
+					return;
+
+				Pipeline->Pick_RenderThread(RHICmdList, ReqCopy, Readback);
+			});
+	}
+	
 	void FVoxelRDGChunkBuildService::Tick(float DeltaSeconds)
 	{
 		IVoxelChunkBuildService::Tick(DeltaSeconds);

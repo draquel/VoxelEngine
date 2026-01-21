@@ -6,10 +6,12 @@
 #include "RHICommandList.h"
 
 #include "GlobalShader.h"
+#include "IVoxelPickDispatcher.h"
 #include "ShaderParameterStruct.h"
 
 #include "VoxelChunkGPUResources.h"
 #include "VoxelEditLayer.h"
+#include "VoxelPickPass.h"
 #include "MarchingCubes/MarchingCubesDispatch.h"
 #include "MarchingCubes/MC_CountPass.h"
 #include "MarchingCubes/MC_IndexPass.h"
@@ -153,6 +155,25 @@ IMPLEMENT_GLOBAL_SHADER(FSurfaceGridCountsCS, "/Plugin/Voxel/SurfaceGrid/Surface
 
 FVoxelRDGPipeline::FVoxelRDGPipeline() {}
 
+static void AllocateEditStampBuffer(FRDGBuilder& GraphBuilder, const TArray<FVoxelEditStampGPU>& EditStamps, FRDGBufferRef& OutEditStampBufferRDG)
+{
+	if (EditStamps.Num() > 0)
+	{
+		OutEditStampBufferRDG = CreateStructuredBuffer(
+			GraphBuilder,
+			TEXT("Voxel.EditStamps"),
+			sizeof(FVoxelEditStampGPU),
+			EditStamps.Num(),
+			EditStamps.GetData(),
+			sizeof(FVoxelEditStampGPU) * EditStamps.Num()
+		);
+	}
+	else
+	{
+		OutEditStampBufferRDG = CreateStructuredBuffer(GraphBuilder, TEXT("Voxel.EditStamps"), sizeof(FVoxelEditStampGPU), 0, nullptr, 0);
+	}	
+}
+
 static void AllocateChunkBuffers(
 	FRDGBuilder& GraphBuilder,
 	const FVoxelChunkBuildRequest& Req,
@@ -262,7 +283,10 @@ static void AllocateChunkBuffers(
 	{
 		Res.EditStampBufferRDG = CreateStructuredBuffer(GraphBuilder, TEXT("Voxel.EditStamps"), sizeof(FVoxelEditStampGPU), 0, nullptr, 0);
 	}
+	AllocateEditStampBuffer(GraphBuilder,Req.Payload.EditStamps, Res.EditStampBufferRDG);
 }
+
+
 
 void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	FRHICommandListImmediate& RHICmdList,
@@ -598,4 +622,67 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	InOutResources->IndexCountReadback->EnqueueCopy(RHICmdList,  InOutResources->IndexCountPooled->GetRHI());
 
 	InOutResources->bReadbackEnqueued = true;
+}
+
+void FVoxelRDGPipeline::Pick_RenderThread(
+	FRHICommandListImmediate& RHICmdList,
+	const Voxel::FVoxelPickRequest& Req,
+	const TSharedPtr<FRHIGPUBufferReadback, ESPMode::ThreadSafe>& Readback)
+{
+	check(IsInRenderingThread());
+
+	FRDGBuilder GraphBuilder(RHICmdList);
+
+	// ---- Build the EditStamps SRV for RDG ----
+	FRDGBufferRef EditStamps_RDG = nullptr;
+	AllocateEditStampBuffer(GraphBuilder,Req.EditStamps,EditStamps_RDG);
+	FRDGBufferSRVRef EditStampsSRV_RDG = GraphBuilder.CreateSRV(EditStamps_RDG);
+
+	if (Req.EditStampCount > 0 && EditStampsSRV_RDG != nullptr)
+	{
+		// You need the underlying buffer to register, not just the SRV.
+		// If all you have is SRV, you should also store the buffer pointer in Req (preferred).
+		// For now, assume you also have the buffer available as Req.EditStampsBuffer_RHI.
+		//
+		// Recommended: extend FVoxelPickRequest with:
+		//   TRefCountPtr<FRHIBuffer> EditStampsBuffer_RHI;
+		//
+		// Then:
+		// FRDGBufferRef Ext = GraphBuilder.RegisterExternalBuffer(CreateRDGBufferFromRHI(Req.EditStampsBuffer_RHI), TEXT("Voxel.EditStamps"));
+		// EditStampsSRV_RDG = GraphBuilder.CreateSRV(Ext);
+
+		// If you *only* have SRV and not buffer, you can't register into RDG correctly.
+		// So fallback to dummy below.
+	}
+
+	// Dummy stamps if missing
+	if (Req.EditStampCount == 0 || EditStampsSRV_RDG == nullptr)
+	{
+		FRDGBufferRef Dummy = GraphBuilder.CreateBuffer(
+			FRDGBufferDesc::CreateStructuredDesc(sizeof(FVoxelEditStampGPU), 1),
+			TEXT("Voxel.Pick.DummyStamps"));
+
+		EditStampsSRV_RDG = GraphBuilder.CreateSRV(Dummy);
+	}
+
+	// ---- Fill pass inputs ----
+	FVoxelPickPassInputs In{};
+	In.Readback       = Readback.Get();
+	In.RayOriginWS    = Req.RayOriginWS;
+	In.RayDirWS       = Req.RayDirWS;
+	In.MaxDistanceWS  = Req.MaxDistanceWS;
+	In.StepWS         = Req.StepWS;
+
+	In.Seed           = Req.Seed;
+	In.IsoValue       = Req.IsoValue;
+	In.StepSizeWS     = Req.StepSizeWS;
+
+	In.NoiseParams    = MakeVoxelNoiseParams(Req.NoiseParams);
+
+	In.EditStampCount = (EditStampsSRV_RDG ? Req.EditStampCount : 0);
+	In.EditStampsSRV  = EditStampsSRV_RDG;
+
+	FVoxelPickPass::AddVoxelPickPass(GraphBuilder, In);
+
+	GraphBuilder.Execute();
 }

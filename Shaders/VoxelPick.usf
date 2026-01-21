@@ -1,0 +1,123 @@
+﻿#include "/Engine/Private/Common.ush"
+#include "Noise/VoxelDensity.ush"
+
+struct FVoxelPickResult
+{
+    uint   bHit;       // 0/1
+    uint   _Pad0;
+    float  HitT;       // distance along ray
+    float  _Pad1;
+    float3 HitPosWS;
+    float  _Pad2;
+};
+static const uint VOXEL_PICK_RESULT_STRIDE = 32;
+
+RWStructuredBuffer<FVoxelPickResult> OutResult;
+
+StructuredBuffer<FVoxelNoiseParams>     NoiseParamsBuf;
+// StructuredBuffer<FVoxelEditStampGPU>    EditStamps;
+
+// --- IMPORTANT ---
+// DO NOT declare your own cbuffer when using SHADER_PARAMETER_STRUCT.
+// These are provided by UE automatically as globals with the same names:
+//
+float3 RayOriginWS;
+float  MaxDistanceWS;
+float3 RayDirWS;
+float  StepWS;
+uint   Seed;
+// uint   EditStampCount;
+float  IsoValue;
+float  StepSizeWS;
+
+float ApplyStampFalloff(float x, float falloff)
+{
+    float t = saturate(1.0 - x);
+    float p = lerp(1.0, 4.0, saturate(falloff));
+    return pow(t, p);
+}
+
+float SampleDensityWithStamps(float3 Pws)
+{
+    float d = SampleDensity_Terrain_Noise(Pws, NoiseParamsBuf[0], Seed, StepSizeWS);
+
+    [loop]
+    for (uint i = 0; i < EditStampCount; ++i)
+    {
+        FVoxelEditStampGPU s = EditStamps[i];
+        float dist = distance(Pws, s.CenterWS);
+        if (dist < s.RadiusWS)
+        {
+            float x = dist / max(s.RadiusWS, 1e-6);
+            float w = ApplyStampFalloff(x, s.Falloff);
+            d += (s.DeltaDensity * w);
+        }
+    }
+    return d;
+}
+
+[numthreads(1,1,1)]
+void MainCS(uint3 DTid : SV_DispatchThreadID)
+{
+    FVoxelPickResult r;
+    r.bHit = 0;
+    r._Pad0 = 0;
+    r.HitT = 0;
+    r._Pad1 = 0;
+    r.HitPosWS = (float3)0;
+    r._Pad2 = 0;
+
+    float3 dir = normalize(RayDirWS);
+    float stepWS = max(StepWS, 1e-3);
+    float maxDist = max(MaxDistanceWS, 0.0);
+
+    // Evaluate first point
+    float t0 = 0.0;
+    float3 p0 = RayOriginWS;
+    float d0 = SampleDensityWithStamps(p0) - IsoValue;
+
+    const uint MaxSteps = (uint)ceil(maxDist / stepWS);
+
+    [loop]
+    for (uint step = 0; step < MaxSteps; ++step)
+    {
+        float t1 = min((step + 1) * stepWS, maxDist);
+        float3 p1 = RayOriginWS + dir * t1;
+        float d1 = SampleDensityWithStamps(p1) - IsoValue;
+
+        if ((d0 <= 0 && d1 >= 0) || (d0 >= 0 && d1 <= 0))
+        {
+            float a = step * stepWS;
+            float b = t1;
+            float da = d0;
+            float db = d1;
+
+            [unroll]
+            for (uint it = 0; it < 12; ++it)
+            {
+                float m = 0.5 * (a + b);
+                float3 pm = RayOriginWS + dir * m;
+                float dm = SampleDensityWithStamps(pm) - IsoValue;
+
+                if ((da <= 0 && dm >= 0) || (da >= 0 && dm <= 0))
+                {
+                    b = m; db = dm;
+                }
+                else
+                {
+                    a = m; da = dm;
+                }
+            }
+
+            float thit = 0.5 * (a + b);
+            r.bHit = 1;
+            r.HitT = thit;
+            r.HitPosWS = RayOriginWS + dir * thit;
+            break;
+        }
+
+        d0 = d1;
+    }
+
+    OutResult[0] = r;
+}
