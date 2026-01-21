@@ -21,7 +21,8 @@ public class VoxelRuntime : ModuleRules
         {
             "RHI",
             "RenderCore",
-            "Projects"
+            "Projects",
+            "EnhancedInput"
         });
     }
 }
