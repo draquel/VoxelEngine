@@ -1255,7 +1255,7 @@ void UVoxelChunkSubsystem::ApplyEditStamp(const FVoxelEditStamp& S)
 
 	// ✅ Expand by 1 voxel step (halo) so neighbor chunks rebuild and seams match
 	// Use the smallest relevant step (LOD0 base step) so we don't miss a seam.
-	const float Halo = Settings.MarchingSettings.BaseCellSizeWS; // or Settings.BaseStepSize if that’s your name
+	const float Halo = GetPickStepSizeWS();
 	StampBox = StampBox.ExpandBy(Halo);
 
 	const uint32 NewEpoch = EditLayer->Epoch;
@@ -1417,7 +1417,18 @@ float UVoxelChunkSubsystem::GetPickStepSizeWS() const
 {
 	// Use LOD0 cell size as the sampling step parameter
 	// Adjust if your SampleDensity_Terrain_Noise expects something else.
-	return Settings.MarchingSettings.BaseCellSizeWS;
+	if (IsGreedyMesherPolicy(SpatialPolicy))
+	{
+		return Settings.GreedySettings.BaseCellSizeWS / FMath::Max(1, Settings.GreedySettings.CellsPerAxis);
+	}
+
+	if (IsMarchingCubesPolicy(SpatialPolicy))
+	{
+		return Settings.MarchingSettings.BaseCellSizeWS / FMath::Max(1, Settings.MarchingSettings.CellsPerAxis);
+	}
+
+	// Surface grid (2.5D) fallback: spacing between verts.
+	return Settings.SurfaceSettings.BaseTileSizeWS / FMath::Max(1, Settings.SurfaceSettings.VertsPerSide - 1);
 }
 
 uint32 UVoxelChunkSubsystem::GetEditStampCount_RenderThreadSafe() const
