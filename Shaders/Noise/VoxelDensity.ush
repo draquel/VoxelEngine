@@ -310,7 +310,7 @@ float SampleDensity_Terrain_Noise(
 
     float d = d0;
     // d += Density_OverhangPerturb(Pws, NP, seed, d0);
-    // d += Density_CavesCarve(Pws, NP, seed, d0, StepSizeWS);
+    d += Density_CavesCarve(Pws, NP, seed, d0, StepSizeWS);
 
     d = ApplyEditStamps(Pws, d);
     
