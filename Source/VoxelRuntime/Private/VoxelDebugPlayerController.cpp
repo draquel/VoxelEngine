@@ -127,11 +127,9 @@ void AVoxelDebugPlayerController::DoStamp(bool bCarve)
 	}
 
 	FVector RayOriginWS, RayDirWS;
-	if (!DeprojectMousePositionToWorld(RayOriginWS, RayDirWS))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("VoxelDebugPC: DeprojectMousePositionToWorld failed."));
-		return;
-	}
+	FRotator ViewRot;
+	GetPlayerViewPoint(RayOriginWS, ViewRot);
+	RayDirWS = ViewRot.Vector();
 
 	RayDirWS = RayDirWS.GetSafeNormal();
 	RayOriginWS += RayDirWS * PickStepWS;
