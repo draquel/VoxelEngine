@@ -12,11 +12,11 @@ void AVoxelDebugPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	bShowMouseCursor = true;
-	bEnableClickEvents = true;
-	bEnableMouseOverEvents = true;
+	bShowMouseCursor = false;
+	bEnableClickEvents = false;
+	bEnableMouseOverEvents = false;
 
-	// Reliable for mouse buttons: GameOnly, cursor visible.
+	// Reliable for mouse buttons: GameOnly, cursor hidden.
 	// (GameAndUI can cause clicks to be “UI handled” unless you configure it carefully.)
 	FInputModeGameOnly Mode;
 	SetInputMode(Mode);
