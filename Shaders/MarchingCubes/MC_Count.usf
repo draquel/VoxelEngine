@@ -1,34 +1,33 @@
 ﻿// /Plugin/Voxel/MarchingCubes/MC_Count.usf
 
 #include "/Engine/Private/Common.ush"
-#include "../Noise/VoxelDensity.ush"
 #include "MC_Tables.ush"
 
 float3 ChunkOriginWS;
 float  StepSizeWS;
 uint   CellsPerAxis;
+uint   SamplesPerAxis;
 float  IsoLevel;
 uint   ChunkSeed;   // unused for now
 uint   Padding0;  
 
-StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
+StructuredBuffer<float> DensityField;
 
 RWStructuredBuffer<uint> OutTriCountPerCell;   // NumCells
 RWStructuredBuffer<uint> OutVertCountPerCell;  // NumCells
 RWStructuredBuffer<uint> OutCaseIndexPerCell;  // NumCells
 RWStructuredBuffer<float4> OutDebugDensity;    // 4x float4
 
-uint ComputeCaseIndex(float3 cellMinWS)
+uint ComputeCaseIndex(uint3 cell)
 {
     uint caseIndex = 0;
 
     [unroll]
     for (uint i = 0; i < 8; ++i)
     {
-        float3 p = cellMinWS + CornerOfs[i] * StepSizeWS;
-        FVoxelNoiseParams NP = NoiseParamsBuf[0];
-        float d = SampleDensity_Terrain_Noise(p,NP,ChunkSeed,StepSizeWS);
-        // float d = Density(p,NP,ChunkSeed);
+        const uint3 s = cell + (uint3)CornerOfs[i];
+        const uint si = s.x + s.y * SamplesPerAxis + s.z * SamplesPerAxis * SamplesPerAxis;
+        const float d = DensityField[si];
 
         // "inside" if d < IsoLevel
         caseIndex |= (d < IsoLevel) ? (1u << i) : 0u;
@@ -60,32 +59,22 @@ void Main(uint3 DTid : SV_DispatchThreadID)
     if (x >= CellsPerAxis || y >= CellsPerAxis || z >= CellsPerAxis)
         return;
 
-    float3 cellMinWS = ChunkOriginWS + float3(x, y, z) * StepSizeWS;
+    uint3 cell = uint3(x, y, z);
     uint cellIndex = x + y * CellsPerAxis + z * CellsPerAxis * CellsPerAxis;
 
 	if (x == 0 && y == 0 && z == 0)
 	{
-		FVoxelNoiseParams NP = NoiseParamsBuf[0];
-		float d0 = Density_HeightField(cellMinWS, NP, ChunkSeed);
-		float d  = SampleDensity_Terrain_Noise(cellMinWS, NP, ChunkSeed, StepSizeWS);
+        const uint si = 0;
+        float d0 = DensityField[si];
+        float d  = DensityField[si];
 		OutDebugDensity[0] = float4(StepSizeWS, (float)CellsPerAxis, IsoLevel, (float)ChunkSeed);
-		OutDebugDensity[1] = float4(NP.CaveFreq, NP.CaveAmp, NP.CaveThreshold, NP.CaveSoftness);
-		OutDebugDensity[2] = float4(d0, d, d - d0, NP.CaveWarpAmp);
-		OutDebugDensity[3] = float4(NP.WorldScale.x, NP.WorldScale.y, NP.WorldScale.z, 0.0f);
+		OutDebugDensity[1] = float4(0, 0, 0, 0);
+		OutDebugDensity[2] = float4(d0, d, d - d0, 0);
+		OutDebugDensity[3] = float4(0, 0, 0, 0);
 	}
 
     // Compute case index exactly once
-    uint caseIndex = 0;
-    [unroll]
-    for (uint i = 0; i < 8; ++i)
-    {
-        float3 p = cellMinWS + CornerOfs[i] * StepSizeWS;
-        // float d  = SampleDensityWS(p,NoiseParams.Seed);
-        FVoxelNoiseParams NP = NoiseParamsBuf[0];
-        float d = SampleDensity_Terrain_Noise(p,NP,ChunkSeed,StepSizeWS);
-        // float d = Density(p,NP,ChunkSeed);
-        caseIndex |= (d < IsoLevel) ? (1u << i) : 0u;
-    }
+    uint caseIndex = ComputeCaseIndex(cell);
 
     OutCaseIndexPerCell[cellIndex] = caseIndex;
 

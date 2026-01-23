@@ -1,5 +1,4 @@
 ﻿#include "/Engine/Private/Common.ush"
-#include "../Noise/VoxelDensity.ush"
 #include "MC_Tables.ush"
 
 // If you have a matching .ush for noise params, you can include it too,
@@ -10,12 +9,14 @@
 float3 ChunkOriginWS;
 float  StepSizeWS;
 uint   CellsPerAxis;
+uint   SamplesPerAxis;
 float  IsoLevel;
 uint   ChunkSeed;
 uint   MaxVerts;
 uint   bUseCaseIndexPerCell;
 
-StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
+StructuredBuffer<float> DensityField;
+StructuredBuffer<uint>  MaterialField;
 
 // From Count + Scan
 StructuredBuffer<uint> VertCountPerCell; // N cells, verts-per-cell (triCount*3)
@@ -24,6 +25,50 @@ StructuredBuffer<uint> CaseIndexPerCell;
 
 // Output
 RWBuffer<float4> OutVertices;  // sized to NumCells*15 on CPU; only [0..TotalVerts) is valid
+RWBuffer<uint>   OutMaterialIds;
+RWBuffer<uint>   OutVertexColors;
+
+static const uint MAT_Air   = 0u;
+static const uint MAT_Grass = 1u;
+static const uint MAT_Dirt  = 2u;
+static const uint MAT_Stone = 3u;
+static const uint MAT_Sand  = 4u;
+
+uint PackColor(uint r, uint g, uint b, uint a)
+{
+	return (b) | (g << 8) | (r << 16) | (a << 24);
+}
+
+uint MaterialIdToColor(uint material)
+{
+	switch (material)
+	{
+	case MAT_Grass: return PackColor(32, 200, 64, 255);
+	case MAT_Dirt:  return PackColor(120, 72, 32, 255);
+	case MAT_Stone: return PackColor(128, 128, 128, 255);
+	case MAT_Sand:  return PackColor(210, 190, 80, 255);
+	default:        return PackColor(10, 10, 10, 255);
+	}
+}
+
+uint SelectDominantMaterial(uint3 cell, float cd[8])
+{
+	uint bestId = MAT_Air;
+	float bestDensity = 3.4e38f;
+
+	[unroll] for (uint i = 0; i < 8; ++i)
+	{
+		if (cd[i] < IsoLevel && cd[i] < bestDensity)
+		{
+			const uint3 s = cell + (uint3)CornerOfs[i];
+			const uint si = s.x + s.y * SamplesPerAxis + s.z * SamplesPerAxis * SamplesPerAxis;
+			bestDensity = cd[i];
+			bestId = MaterialField[si];
+		}
+	}
+
+	return bestId;
+}
 
 float3 VertexInterp(float iso, float3 p0, float3 p1, float d0, float d1)
 {
@@ -33,15 +78,15 @@ float3 VertexInterp(float iso, float3 p0, float3 p1, float d0, float d1)
 	return lerp(p0, p1, t);
 }
 
-uint ComputeCaseIndex(float3 cellMinWS, out float3 cpos[8], out float cd[8])
+uint ComputeCaseIndex(uint3 cell, out float3 cpos[8], out float cd[8])
 {
 	uint caseIndex = 0;
 	[unroll] for (uint i = 0; i < 8; ++i)
 	{
-		cpos[i] = cellMinWS + CornerOfs[i] * StepSizeWS;
-		FVoxelNoiseParams NP = NoiseParamsBuf[0];
-		cd[i] = SampleDensity_Terrain_Noise(cpos[i],NP,ChunkSeed,StepSizeWS);
-		// cd[i] = Density(cpos[i],NP,ChunkSeed);
+		const uint3 s = cell + (uint3)CornerOfs[i];
+		const uint si = s.x + s.y * SamplesPerAxis + s.z * SamplesPerAxis * SamplesPerAxis;
+		cpos[i] = ChunkOriginWS + float3(s) * StepSizeWS;
+		cd[i] = DensityField[si];
 		
 		caseIndex |= (cd[i] < IsoLevel) ? (1u << i) : 0u;
 	}
@@ -72,19 +117,20 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 	const uint base = VertOffsets[cellIndex];
 	
 	// Compute densities at corners
-	float3 cellMinWS = ChunkOriginWS + float3(x, y, z) * StepSizeWS;
+	uint3 cell = uint3(x, y, z);
 
-	uint caseIndex = CaseIndexPerCell[cellIndex]; // authoritative
+	uint caseIndex = CaseIndexPerCell[cellIndex];
 	if (caseIndex == 0 || caseIndex == 255) return;
 
 	float3 cpos[8];
 	float  cd[8];
-	[unroll] for (uint i=0;i<8;++i)
+	if (bUseCaseIndexPerCell == 0)
 	{
-		cpos[i] = cellMinWS + CornerOfs[i]*StepSizeWS;
-		FVoxelNoiseParams NP = NoiseParamsBuf[0];
-		cd[i]   = SampleDensity_Terrain_Noise(cpos[i],NP,ChunkSeed,StepSizeWS);
-		// cd[i]   = Density(cpos[i],NP,ChunkSeed);
+		caseIndex = ComputeCaseIndex(cell, cpos, cd);
+	}
+	else
+	{
+		ComputeCaseIndex(cell, cpos, cd);
 	}
 
 	// For safety: if count/scatter disagree, refuse to emit.
@@ -110,6 +156,9 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 	// Emit vertices in triangle order.
 	// Because your current index pass is "indexless" (0..TotalVerts-1),
 	// we MUST keep vertex ordering such that every 3 vertices = one triangle.
+	const uint materialId = SelectDominantMaterial(cell, cd);
+	const uint color = MaterialIdToColor(materialId);
+
 	uint outV = 0;
 
 	[unroll] for (uint t = 0; t < 16; t += 3)
@@ -132,6 +181,14 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 		OutVertices[base + outV + 0] = float4(p0L, 1.0f);
 		OutVertices[base + outV + 1] = float4(p1L, 1.0f);
 		OutVertices[base + outV + 2] = float4(p2L, 1.0f);
+
+		OutMaterialIds[base + outV + 0] = materialId;
+		OutMaterialIds[base + outV + 1] = materialId;
+		OutMaterialIds[base + outV + 2] = materialId;
+
+		OutVertexColors[base + outV + 0] = color;
+		OutVertexColors[base + outV + 1] = color;
+		OutVertexColors[base + outV + 2] = color;
 
 		outV += 3;
 	}

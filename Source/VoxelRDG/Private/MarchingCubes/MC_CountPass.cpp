@@ -22,11 +22,12 @@ public:
 		SHADER_PARAMETER(FVector3f, ChunkOriginWS)
 		SHADER_PARAMETER(float,    StepSizeWS)
 		SHADER_PARAMETER(uint32,   CellsPerAxis)
+		SHADER_PARAMETER(uint32,   SamplesPerAxis)
 		SHADER_PARAMETER(float,    IsoLevel)
 		SHADER_PARAMETER(uint32,   ChunkSeed)
 		SHADER_PARAMETER(uint32,   Padding0)
 	
-		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelNoiseParams>, NoiseParamsBuf)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<float>, DensityField)
 
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint32>, OutTriCountPerCell)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint32>, OutVertCountPerCell)
@@ -43,11 +44,11 @@ uint32 FMC_CountPass::CeilDivU32(uint32 a, uint32 b)
 }
 
 FMCCountPassOutputs FMC_CountPass::AddMC_CountPass(
-    FRDGBuilder& GraphBuilder,
-    const FMCChunkParamsCPU& ChunkParams,
-	const FVoxelNoiseParamsCPU& NoiseParamsCPU,
-	const FVoxelEditParams& EditParams
-	)
+	FRDGBuilder& GraphBuilder,
+	const FMCChunkParamsCPU& ChunkParams,
+	FRDGBufferRef DensityField,
+	uint32 SamplesPerAxis,
+	const FVoxelEditParams& EditParams)
 {
     FMCCountPassOutputs Out;
 
@@ -83,21 +84,12 @@ FMCCountPassOutputs FMC_CountPass::AddMC_CountPass(
 	PassParams->ChunkOriginWS = FVector3f(ChunkParams.ChunkOriginWS);
 	PassParams->StepSizeWS    = ChunkParams.StepSizeWS;
 	PassParams->CellsPerAxis  = ChunkParams.CellsPerAxis;
+	PassParams->SamplesPerAxis = SamplesPerAxis;
 	PassParams->IsoLevel      = ChunkParams.IsoLevel;
 	PassParams->ChunkSeed     = ChunkParams.ChunkSeed;
 	PassParams->Padding0      = 0;
 
-	const FVoxelNoiseParams NoiseParamsGPU = MakeVoxelNoiseParams(NoiseParamsCPU);
-	FRDGBufferRef NoiseParamsBuffer =
-		CreateStructuredBuffer(
-			GraphBuilder,
-			TEXT("Voxel.NoiseParams"),
-			sizeof(FVoxelNoiseParams),
-			1,
-			&NoiseParamsGPU,
-			sizeof(FVoxelNoiseParams));
-	FRDGBufferSRVRef NoiseParamsSRV = GraphBuilder.CreateSRV(NoiseParamsBuffer);
-	PassParams->NoiseParamsBuf = NoiseParamsSRV;
+	PassParams->DensityField = GraphBuilder.CreateSRV(DensityField);
 	
 	PassParams->EditStampCount = EditParams.EditStampCount;
 	PassParams->EditStamps = GraphBuilder.CreateSRV(EditParams.EditStamps);
