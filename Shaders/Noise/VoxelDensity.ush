@@ -80,12 +80,12 @@ float VolumetricCaveStrength(float3 Pws)
     // Example: between -200km and +200km (effectively everywhere)
     return 1.0f;
 }
+
 // ------------------------------------------------------------
 // Density building blocks (all parameterized)
 // Convention: density < 0 => "inside", density > 0 => "outside"
 // iso = 0 is the surface for SDF-style fields.
 // ------------------------------------------------------------
-
 float NoiseHeight(float3 Pws, FVoxelNoiseParams NP, uint seed)
 {
     return FBM3_Seeded(Pws*NP.WorldScale*NP.HeightFreq,NP.HeightOctaves,2.0f,NP.HeightGain,seed) * NP.HeightAmp;
@@ -113,21 +113,43 @@ float Density_HeightField(float3 Pws, const FVoxelNoiseParams NP, uint seed)
 }
 
 // Overhang perturbation: add 3D ridged noise into density to create lateral features.
-float Density_OverhangPerturb(float3 Pws, const FVoxelNoiseParams NP, uint seed, float baseDensity)
+float Density_OverhangPerturb(float3 Pws, const FVoxelNoiseParams NP, uint seed, float baseDensity, float StepSizeWS)
 {
     float3 pN = Pws * NP.WorldScale;
 
-    float surfaceMask = SurfaceBandMask(baseDensity, NP.OverhangSurfaceBand);
+    // Make the "surface band" thick enough in *voxels* to form topology.
+    // If OverhangSurfaceBand is too small, it just textures the surface.
+    float bandCm = max(NP.OverhangSurfaceBand, 8.0f * StepSizeWS); // >= ~8 voxels
 
-    // Ridged FBM is ~[0,1]. Make it sparse so it creates shelves/bridges, not chatter.
-    float o = RidgedFBM3_Seeded(pN * NP.OverhangFreq, (int)NP.OverhangOctaves, 2.0f, 0.5f, seed ^ 0xBADC0DEu);
+    // Surface-centered mask: 1 near surface, 0 away
+    float surfaceMask = 1.0f - saturate(abs(baseDensity) / max(1e-4f, bandCm));
 
-    // Bias to only keep strong ridges (tweak these two numbers to control sparsity)
-    o = smoothstep(0.60f, 0.90f, o); // 0..1 sparse
+    // Also bias to below-surface so shelves form "out of" the terrain, not floating above it.
+    float depth = -baseDensity; // cm underground
+    float belowMask = smoothstep(1.0f * StepSizeWS, 6.0f * StepSizeWS, depth); // off at surface, on a few voxels down
 
-    // Apply as positive-only push. This tends to create lateral features more reliably than ± noise.
-    // If you want symmetric, change to (o*2-1) but that usually reintroduces surface chatter.
-    return o * NP.OverhangAmp * surfaceMask;
+    // Low-frequency region selector so overhangs happen in patches, not everywhere
+    float sel = FBM3_Seeded(pN * (NP.OverhangFreq * 0.25f), 2, 2.0f, 0.5f, seed ^ 0xCA7E123u);
+    float region = smoothstep(0.20f, 0.55f, sel); // tune for coverage
+
+    // Main 3D ridged field for shelves
+    float r = RidgedFBM3_Seeded(pN * NP.OverhangFreq, (int)NP.OverhangOctaves, 2.0f, 0.5f, seed ^ 0xBADC0DEu); // ~[0,1]
+
+    // Sparsify (only strongest ridges)
+    float ridge = smoothstep(0.60f, 0.90f, r); // 0..1 sparse
+
+    // Convert to signed displacement around 0:
+    // - positive -> pushes density positive (more air)
+    // - negative -> pushes density negative (more solid)
+    float signedDisp = (ridge - 0.5f) * 2.0f; // ~[-1,1] but sparse
+
+    // Optional: skew so we get more "solid push" than "carve"
+    // This encourages ledges protruding outward more than random holes.
+    signedDisp = signedDisp * 0.7f - 0.15f; // bias slightly toward negative (solid)
+
+    region      = 1;
+    
+    return signedDisp * NP.OverhangAmp * surfaceMask * belowMask * region;
 }
 
 float CaveMask_VerticalBand(float z, float minZ, float maxZ, float softness)
@@ -261,6 +283,7 @@ float SampleDensity_Sphere(float3 Pws, float3 CenterWS, float RadiusWS)
 {
     return Density_SphereSDF(Pws, CenterWS, RadiusWS);
 }
+
 // Example: sphere centered in chunk, parameterized by chunk info.
 // Note: CellsPerAxis and StepSizeWS must be passed by caller (count/scatter already have them).
 float SampleDensityWS_SphereInChunk(float3 Pws, float3 ChunkOriginWS, float StepSizeWS, uint CellsPerAxis, float RadiusScale01)
@@ -279,13 +302,12 @@ float SampleDensity_Sphere_Noise(float3 Pws, float3 CenterWS, float RadiusWS, co
     float d0 = Density_SphereSDF(Pws, CenterWS, RadiusWS);
 
     float d = d0;
-    d += Density_OverhangPerturb(Pws, NP, seed, d0);
+    // d += Density_OverhangPerturb(Pws, NP, seed, d0);
     d += Density_CavesCarve(Pws, NP, seed, d0, StepSizeWS);
     d = ApplyEditStamps(Pws, d);
     
     return d;
 }
-
 
 // Example: sphere centered in chunk, parameterized by chunk info.
 // Note: CellsPerAxis and StepSizeWS must be passed by caller (count/scatter already have them).
@@ -308,9 +330,10 @@ float SampleDensity_Terrain_Noise(
 {
     float d0 = Density_HeightField(Pws, NP, seed);
 
-    float d = d0;
-    // d += Density_OverhangPerturb(Pws, NP, seed, d0);
-    d += Density_CavesCarve(Pws, NP, seed, d0, StepSizeWS);
+    // float d = d0;
+    float d = -400.0f;
+    d += Density_OverhangPerturb(Pws, NP, seed, d0, StepSizeWS);
+    // d += Density_CavesCarve(Pws, NP, seed, d0, StepSizeWS);
 
     d = ApplyEditStamps(Pws, d);
     
