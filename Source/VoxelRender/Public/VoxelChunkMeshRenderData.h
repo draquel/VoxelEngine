@@ -19,11 +19,13 @@ namespace VoxelRender
 		FBufferRHIRef NormalBufferRHI;
 		FBufferRHIRef IndexBufferRHI;
 		FBufferRHIRef TangentBasisBufferRHI;                 // 2x FPackedNormal per vertex (8 bytes/vertex)
+		FBufferRHIRef ColorBufferRHI;
 		
 		TRefCountPtr<FRDGPooledBuffer> VertexPooled;
 		TRefCountPtr<FRDGPooledBuffer> IndexPooled;
 		TRefCountPtr<FRDGPooledBuffer> NormalsPooled; // optional
 		TRefCountPtr<FRDGPooledBuffer> TangentBasisPooled;   // optional (lifetime)
+		TRefCountPtr<FRDGPooledBuffer> ColorPooled; // optional (vertex colors / debug)
 		
 		uint32 VertexCount = 0;
 		uint32 IndexCount  = 0;
@@ -37,6 +39,7 @@ namespace VoxelRender
 		FShaderResourceViewRHIRef PositionSRV;
 		FShaderResourceViewRHIRef NormalSRV;
 		FShaderResourceViewRHIRef TangentBasisSRV;           // typed SRV PF_R8G8B8A8_SNORM
+		FShaderResourceViewRHIRef ColorSRV;
 		
 		// Optional: declare what "normals" mean for this payload
 		EChunkNormalFormat NormalFormat = EChunkNormalFormat::None;
@@ -53,6 +56,7 @@ namespace VoxelRender
 			const TRefCountPtr<FRDGPooledBuffer>& Nor,
 			const TRefCountPtr<FRDGPooledBuffer>& Ind,
 			const TRefCountPtr<FRDGPooledBuffer>& Tan,
+			const TRefCountPtr<FRDGPooledBuffer>& Col,
 			EChunkNormalFormat InFormat,
 			uint32 InNumVerts,
 			uint32 InNumIndices, const FVector& InChunkOriginWS, float InChunkSizeWS);

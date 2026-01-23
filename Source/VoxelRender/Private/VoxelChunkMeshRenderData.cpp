@@ -9,6 +9,7 @@ namespace VoxelRender
 	const TRefCountPtr<FRDGPooledBuffer>& Nor,
 	const TRefCountPtr<FRDGPooledBuffer>& Ind,
 	const TRefCountPtr<FRDGPooledBuffer>& Tan,
+	const TRefCountPtr<FRDGPooledBuffer>& Col,
 	EChunkNormalFormat InFormat,
 	uint32 InNumVerts,
 	uint32 InNumIndices,
@@ -21,6 +22,7 @@ namespace VoxelRender
 		NormalsPooled = Nor;
 		IndexPooled   = Ind;
 		TangentBasisPooled = Tan;
+		ColorPooled = Col;
 		NormalFormat = InFormat;
 
 		VertexCount = InNumVerts;
@@ -79,6 +81,17 @@ namespace VoxelRender
 			NormalSRV.SafeRelease();
 		}
 
+		if (ColorPooled.IsValid())
+		{
+			ColorBufferRHI = ColorPooled->GetRHI();
+			check(ColorBufferRHI.IsValid());
+		}
+		else
+		{
+			ColorBufferRHI.SafeRelease();
+			ColorSRV.SafeRelease();
+		}
+
 		// ---- Typed SRVs (float4) ----
 		// IMPORTANT: This assumes your Position + Normal buffers are PF_A32B32G32R32F typed buffers.
 		// If you ever change formats, encode them in the metadata/contract and pass them in.
@@ -87,14 +100,13 @@ namespace VoxelRender
 
 		FRHICommandListBase& RHICmdList = FRHICommandListExecutor::GetImmediateCommandList();
 
-		PositionSRV = RHICmdList.CreateShaderResourceView(PositionBufferRHI, Float4Stride, Float4Format);
-		check(PositionSRV.IsValid());
+		PositionSRV = GNullVertexBuffer.VertexBufferSRV;
 
 		if (NormalBufferRHI.IsValid())
 		{
-			NormalSRV = RHICmdList.CreateShaderResourceView(NormalBufferRHI, Float4Stride, Float4Format);
-			check(NormalSRV.IsValid());
+			NormalSRV = GNullVertexBuffer.VertexBufferSRV;
 		}
+
 		
 		if (NormalFormat == EChunkNormalFormat::PackedTangentBasis)
 		{
@@ -175,16 +187,19 @@ namespace VoxelRender
 		PositionSRV.SafeRelease();
 		NormalSRV.SafeRelease();
 		TangentBasisSRV.SafeRelease();
+		ColorSRV.SafeRelease();
 
 		PositionBufferRHI.SafeRelease();
 		NormalBufferRHI.SafeRelease();
 		IndexBufferRHI.SafeRelease();
 		TangentBasisBufferRHI.SafeRelease();
+		ColorBufferRHI.SafeRelease();
 
 		VertexPooled.SafeRelease();
 		IndexPooled.SafeRelease();
 		NormalsPooled.SafeRelease();
 		TangentBasisPooled.SafeRelease();
+		ColorPooled.SafeRelease();
 
 		BoundsWS = FBoxSphereBounds(ForceInit);
 		ChunkOriginWS = FVector::ZeroVector;
