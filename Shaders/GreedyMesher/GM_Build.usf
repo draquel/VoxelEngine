@@ -1,24 +1,61 @@
 ﻿// /Plugin/Voxel/GreedyMesher/GM_Build.usf
 
 #include "/Engine/Private/Common.ush"
-#include "../Noise/VoxelDensity.ush"
 
 float3 ChunkOriginWS;
 float  ChunkSizeWS;
 float  StepSizeWS;
 uint   CellsPerAxis;
+uint   SamplesPerAxis;
 float  IsoLevel;
 uint   ChunkSeed;
 uint   MaxVertices;
 uint   MaxIndices;
 
-StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
+StructuredBuffer<float> DensityField;
+StructuredBuffer<uint>  MaterialField;
 
 RWBuffer<float4> OutVertices;
 RWBuffer<uint>   OutIndices;
 RWBuffer<float4> OutNormals;
+RWBuffer<uint>   OutMaterialIds;
+RWBuffer<uint>   OutVertexColors;
 RWStructuredBuffer<uint> OutVertexCount;
 RWStructuredBuffer<uint> OutIndexCount;
+
+static const uint MAT_Air   = 0u;
+static const uint MAT_Grass = 1u;
+static const uint MAT_Dirt  = 2u;
+static const uint MAT_Stone = 3u;
+static const uint MAT_Sand  = 4u;
+
+uint PackColor(uint r, uint g, uint b, uint a)
+{
+	return (b) | (g << 8) | (r << 16) | (a << 24);
+}
+
+uint MaterialIdToColor(uint material)
+{
+	switch (material)
+	{
+	case MAT_Grass: return PackColor(32, 200, 64, 255);
+	case MAT_Dirt:  return PackColor(120, 72, 32, 255);
+	case MAT_Stone: return PackColor(128, 128, 128, 255);
+	case MAT_Sand:  return PackColor(210, 190, 80, 255);
+	default:        return PackColor(10, 10, 10, 255);
+	}
+}
+
+static const int3 CornerOfs[8] = {
+	int3(0, 0, 0),
+	int3(1, 0, 0),
+	int3(1, 1, 0),
+	int3(0, 1, 0),
+	int3(0, 0, 1),
+	int3(1, 0, 1),
+	int3(1, 1, 1),
+	int3(0, 1, 1)
+};
 
 float GetDensity(int3 c)
 {
@@ -28,10 +65,48 @@ float GetDensity(int3 c)
 		// but we need to decide if we want to cap the chunk.
 		// Usually we want to cap if the neighbor chunk isn't solid.
 		// For simplicity, let's sample.
+		return IsoLevel + 1.0f;
 	}
-	float3 posWS = ChunkOriginWS + (float3(c) + 0.5f) * StepSizeWS;
-	FVoxelNoiseParams NP = NoiseParamsBuf[0];
-	return SampleDensity_Terrain_Noise(posWS, NP, ChunkSeed,StepSizeWS);
+
+	float bestDensity = 3.4e38f;
+	[unroll] for (uint i = 0; i < 8; ++i)
+	{
+		const uint3 s = uint3(c) + (uint3)CornerOfs[i];
+		const uint si = s.x + s.y * SamplesPerAxis + s.z * SamplesPerAxis * SamplesPerAxis;
+		bestDensity = min(bestDensity, DensityField[si]);
+	}
+	return bestDensity;
+}
+
+uint GetMaterialId(int3 c)
+{
+	if (any(c < 0) || any(c >= (int)CellsPerAxis))
+	{
+		return MAT_Air;
+	}
+	const uint3 s = uint3(c);
+	const uint si = s.x + s.y * SamplesPerAxis + s.z * SamplesPerAxis * SamplesPerAxis;
+	return MaterialField[si];
+}
+
+uint SelectDominantMaterial(int3 c)
+{
+	uint bestId = MAT_Air;
+	float bestDensity = 3.4e38f;
+
+	[unroll] for (uint i = 0; i < 8; ++i)
+	{
+		const uint3 s = uint3(c) + (uint3)CornerOfs[i];
+		const uint si = s.x + s.y * SamplesPerAxis + s.z * SamplesPerAxis * SamplesPerAxis;
+		const float d = DensityField[si];
+		if (d < IsoLevel && d < bestDensity)
+		{
+			bestDensity = d;
+			bestId = MaterialField[si];
+		}
+	}
+
+	return bestId;
 }
 
 // 0: -x, 1: +x, 2: -y, 3: +y, 4: -z, 5: +z
@@ -42,12 +117,48 @@ static const int3 NeighborOfs[6] = {
 };
 
 static const float3 Normals[6] = {
-	float3(1, 0, 0), float3(-1, 0, 0),
-	float3(0, 1, 0), float3(0, -1, 0),
-	float3(0, 0, 1), float3(0, 0, -1)
+	float3(-1, 0, 0), float3(1, 0, 0),
+	float3(0, -1, 0), float3(0, 1, 0),
+	float3(0, 0, -1), float3(0, 0, 1)
 };
 
-void EmitFace(int3 c, uint faceIdx)
+static const uint FaceCornerIdx[6][4] = {
+	{ 0, 3, 7, 4 }, // -x
+	{ 1, 2, 6, 5 }, // +x
+	{ 0, 1, 5, 4 }, // -y
+	{ 3, 2, 6, 7 }, // +y
+	{ 0, 1, 2, 3 }, // -z
+	{ 4, 5, 6, 7 }  // +z
+};
+
+bool FaceHasAirSample(int3 c, uint faceIdx)
+{
+	[unroll] for (uint i = 0; i < 4; ++i)
+	{
+		const uint cornerIdx = FaceCornerIdx[faceIdx][i];
+		const uint3 s = uint3(c) + (uint3)CornerOfs[cornerIdx];
+		const uint si = s.x + s.y * SamplesPerAxis + s.z * SamplesPerAxis * SamplesPerAxis;
+		if (DensityField[si] >= IsoLevel)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool IsNeighborEmpty(int3 c, uint faceIdx)
+{
+	const int3 n = c + NeighborOfs[faceIdx];
+	if (any(n < 0) || any(n >= (int)CellsPerAxis))
+	{
+		return FaceHasAirSample(c, faceIdx);
+	}
+
+	return GetDensity(n) >= IsoLevel;
+}
+
+void EmitFace(int3 c, uint faceIdx, uint materialId)
 {
 	uint vBase;
 	InterlockedAdd(OutVertexCount[0], 4, vBase);
@@ -96,19 +207,22 @@ void EmitFace(int3 c, uint faceIdx)
 	}
 
 	float3 n = Normals[faceIdx];
+	const uint color = MaterialIdToColor(materialId);
 
 	for (uint i = 0; i < 4; ++i)
 	{
 		OutVertices[vBase + i] = float4(v[i], 1.0f);
 		OutNormals[vBase + i]  = float4(n, 0.0f);
+		OutMaterialIds[vBase + i] = materialId;
+		OutVertexColors[vBase + i] = color;
 	}
 
 	OutIndices[iBase + 0] = vBase + 0;
-	OutIndices[iBase + 1] = vBase + 1;
-	OutIndices[iBase + 2] = vBase + 2;
+	OutIndices[iBase + 1] = vBase + 2;
+	OutIndices[iBase + 2] = vBase + 1;
 	OutIndices[iBase + 3] = vBase + 0;
-	OutIndices[iBase + 4] = vBase + 2;
-	OutIndices[iBase + 5] = vBase + 3;
+	OutIndices[iBase + 4] = vBase + 3;
+	OutIndices[iBase + 5] = vBase + 2;
 }
 
 [numthreads(4, 4, 4)]
@@ -119,14 +233,16 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 	int3 c = int3(DTid);
 	float d = GetDensity(c);
 
-	if (d < IsoLevel) return; // Empty
+	if (d >= IsoLevel) return; // Empty
+
+	const uint materialId = SelectDominantMaterial(c);
 
 	[unroll]
 	for (uint i = 0; i < 6; ++i)
 	{
-		if (GetDensity(c + NeighborOfs[i]) < IsoLevel)
+		if (IsNeighborEmpty(c, i))
 		{
-			EmitFace(c, i);
+			EmitFace(c, i, materialId);
 		}
 	}
 }

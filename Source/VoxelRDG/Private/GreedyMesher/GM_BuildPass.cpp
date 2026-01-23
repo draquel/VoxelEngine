@@ -4,6 +4,7 @@
 #include "RenderGraphBuilder.h"
 #include "RenderGraphUtils.h"
 #include "ShaderParameterStruct.h"
+#include "VoxelEditLayer.h"
 
 class FGreedyBuildCS : public FGlobalShader
 {
@@ -18,16 +19,20 @@ class FGreedyBuildCS : public FGlobalShader
 		SHADER_PARAMETER(float, ChunkSizeWS)
 		SHADER_PARAMETER(float, StepSizeWS)
 		SHADER_PARAMETER(uint32, CellsPerAxis)
+		SHADER_PARAMETER(uint32, SamplesPerAxis)
 		SHADER_PARAMETER(float, IsoLevel)
 		SHADER_PARAMETER(uint32, ChunkSeed)
 		SHADER_PARAMETER(uint32, MaxVertices)
 		SHADER_PARAMETER(uint32, MaxIndices)
 
-		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelNoiseParams>, NoiseParamsBuf)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<float>, DensityField)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, MaterialField)
 
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<FVector4f>, OutVertices)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutIndices)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<FVector4f>, OutNormals)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutMaterialIds)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutVertexColors)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutVertexCount)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutIndexCount)
 	END_SHADER_PARAMETER_STRUCT()
@@ -46,21 +51,28 @@ namespace GM_BuildPass
 		check(Inputs.NormalsBuffer);
 		check(Inputs.VertexCountBuffer);
 		check(Inputs.IndexCountBuffer);
-		check(Inputs.NoiseParamsSRV);
+		check(Inputs.DensityField);
+		check(Inputs.MaterialField);
+		check(Inputs.MaterialIdBuffer);
+		check(Inputs.VertexColorBuffer);
 
 		auto* Params = GraphBuilder.AllocParameters<FGreedyBuildCS::FParameters>();
 		Params->ChunkOriginWS = FVector3f(Inputs.ChunkParams.ChunkOriginWS);
 		Params->ChunkSizeWS = Inputs.ChunkParams.ChunkSizeWS;
 		Params->StepSizeWS = Inputs.ChunkParams.StepSizeWS;
 		Params->CellsPerAxis = Inputs.ChunkParams.CellsPerAxis;
+		Params->SamplesPerAxis = Inputs.SamplesPerAxis;
 		Params->IsoLevel = Inputs.ChunkParams.IsoLevel;
 		Params->ChunkSeed = Inputs.ChunkParams.ChunkSeed;
 		Params->MaxVertices = Inputs.ChunkParams.MaxVertices;
 		Params->MaxIndices = Inputs.ChunkParams.MaxIndices;
-		Params->NoiseParamsBuf = Inputs.NoiseParamsSRV;
+		Params->DensityField = GraphBuilder.CreateSRV(Inputs.DensityField);
+		Params->MaterialField = GraphBuilder.CreateSRV(Inputs.MaterialField);
 		Params->OutVertices = GraphBuilder.CreateUAV(Inputs.VertexBuffer, PF_A32B32G32R32F);
 		Params->OutIndices = GraphBuilder.CreateUAV(Inputs.IndexBuffer, PF_R32_UINT);
 		Params->OutNormals = GraphBuilder.CreateUAV(Inputs.NormalsBuffer, PF_A32B32G32R32F);
+		Params->OutMaterialIds = GraphBuilder.CreateUAV(Inputs.MaterialIdBuffer, PF_R32_UINT);
+		Params->OutVertexColors = GraphBuilder.CreateUAV(Inputs.VertexColorBuffer, PF_R32_UINT);
 		Params->OutVertexCount = GraphBuilder.CreateUAV(Inputs.VertexCountBuffer);
 		Params->OutIndexCount = GraphBuilder.CreateUAV(Inputs.IndexCountBuffer);
 		Params->EditStampCount = Inputs.EditStampCount;

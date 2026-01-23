@@ -6,10 +6,14 @@
 struct FGreedyMesherBuildPassInputs
 {
 	FGreedyMesherChunkParams ChunkParams;
-	FRDGBufferSRVRef NoiseParamsSRV = nullptr;
+	FRDGBufferRef DensityField = nullptr;
+	FRDGBufferRef MaterialField = nullptr;
+	uint32 SamplesPerAxis = 0;
 	FRDGBufferRef VertexBuffer = nullptr;
 	FRDGBufferRef IndexBuffer = nullptr;
 	FRDGBufferRef NormalsBuffer = nullptr;
+	FRDGBufferRef MaterialIdBuffer = nullptr;
+	FRDGBufferRef VertexColorBuffer = nullptr;
 	FRDGBufferRef VertexCountBuffer = nullptr;
 	FRDGBufferRef IndexCountBuffer = nullptr;
 	FRDGBufferRef EditStampBuffer = nullptr;
