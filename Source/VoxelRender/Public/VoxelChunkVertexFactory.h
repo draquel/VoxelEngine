@@ -26,9 +26,12 @@ namespace VoxelRender
 			: FLocalVertexFactory(InFeatureLevel, "VoxelRender::FChunkVertexFactory")
 		{}
 
-		void InitStreams_RenderThread(FRHICommandListBase& RHICmdList, FExternalVertexBuffer& PosVB, FExternalVertexBuffer* NormVBOrNull, FExternalTangentBasisBuffer
-		                              * TangentBasisOrNull, EChunkVFNormalBinding
-		                              Binding);
+		void InitStreams_RenderThread(
+			FRHICommandListBase& RHICmdList,
+			FExternalVertexBuffer& PosVB,
+			FExternalVertexBuffer* NormVBOrNull,
+			FExternalTangentBasisBuffer* TangentBasisOrNull,
+			FExternalColorBufferWithSRV* ColorVBOrNull,
+			EChunkVFNormalBinding Binding);
 	};
 }
-

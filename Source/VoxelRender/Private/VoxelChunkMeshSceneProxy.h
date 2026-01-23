@@ -72,6 +72,7 @@ namespace VoxelRender
 
 			TUniquePtr<FExternalVertexBuffer> PositionVB;
 			TUniquePtr<FExternalVertexBuffer> NormalVB;
+			TUniquePtr<FExternalColorBufferWithSRV> ColorVB;
 			TUniquePtr<FExternalIndexBuffer>  IndexIB;
 			TUniquePtr<FExternalTangentBasisBuffer> TangentBasisVB;
 			bool bHasPackedTangents = false;
@@ -155,5 +156,3 @@ namespace VoxelRender
 #endif
 	};
 }
-
-

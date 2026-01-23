@@ -185,6 +185,12 @@ namespace VoxelRender
 					PF_A32B32G32R32F);
 			}
 
+			if (Slot.Data->ColorBufferRHI.IsValid() && Slot.Data->VertexCount > 0)
+			{
+				Slot.ColorVB = MakeUnique<FExternalColorBufferWithSRV>();
+				Slot.ColorVB->SetSource(Slot.Data->ColorBufferRHI);
+			}
+
 			if (Slot.Data->IndexBufferRHI.IsValid() && Slot.Data->IndexCount > 0)
 			{
 				Slot.IndexIB->SetSource(Slot.Data->IndexBufferRHI);
@@ -276,11 +282,16 @@ namespace VoxelRender
 				continue;
 			}
 
-			if (Slot.NormalVB)
-			{
-				Slot.NormalVB->InitResource(RHICmdList);
-				// Don't fail the slot if normals init fails — optional path.
-			}
+				if (Slot.NormalVB)
+				{
+					Slot.NormalVB->InitResource(RHICmdList);
+					// Don't fail the slot if normals init fails — optional path.
+				}
+
+				if (Slot.ColorVB)
+				{
+					Slot.ColorVB->InitResource(RHICmdList);
+				}
 			
 			if (Slot.TangentBasisVB)
 			{
@@ -308,7 +319,13 @@ namespace VoxelRender
 					? EChunkVFNormalBinding::Float4NormalsDebug
 					: EChunkVFNormalBinding::None);
 
-			Slot.VF->InitStreams_RenderThread(RHICmdList, *Slot.PositionVB, Slot.NormalVB.Get(), Slot.TangentBasisVB.Get(), Binding);
+			Slot.VF->InitStreams_RenderThread(
+				RHICmdList,
+				*Slot.PositionVB,
+				Slot.NormalVB.Get(),
+				Slot.TangentBasisVB.Get(),
+				Slot.ColorVB.Get(),
+				Binding);
 
 			// --- Primitive uniform buffer ---
 			const FVector OriginWS = Slot.Data->ChunkOriginWS;
@@ -350,6 +367,7 @@ namespace VoxelRender
 			if (Slot.VF)          Slot.VF->ReleaseResource();
 			if (Slot.IndexIB)     Slot.IndexIB->ReleaseResource();
 			if (Slot.NormalVB)    Slot.NormalVB->ReleaseResource();
+			if (Slot.ColorVB)     Slot.ColorVB->ReleaseResource();
 			if (Slot.TangentBasisVB) Slot.TangentBasisVB->ReleaseResource();
 			if (Slot.PositionVB)  Slot.PositionVB->ReleaseResource();
 
@@ -357,6 +375,7 @@ namespace VoxelRender
 			Slot.VF.Reset();
 			Slot.IndexIB.Reset();
 			Slot.NormalVB.Reset();
+			Slot.ColorVB.Reset();
 			Slot.TangentBasisVB.Reset();
 			Slot.PositionVB.Reset();
 		}

@@ -25,14 +25,10 @@
 		virtual void InitRHI(FRHICommandListBase& RHICmdList) override
 		{
 			check(SourceBufferRHI.IsValid());
-			check(Format != PF_Unknown);
 
 			VertexBufferRHI = SourceBufferRHI;
 
-			// Typed SRV is REQUIRED if the VF uniform buffer expects a resource SRV.
-			// UE 5.7 has this overload:
-			ShaderResourceViewRHI = RHICmdList.CreateShaderResourceView(VertexBufferRHI, Stride, Format);
-			check(ShaderResourceViewRHI.IsValid());
+			ShaderResourceViewRHI = GNullVertexBuffer.VertexBufferSRV;
 		}
 
 		virtual void ReleaseRHI() override
@@ -104,4 +100,30 @@ public:
 private:
 	FBufferRHIRef SourceBufferRHI;
 	uint32 NumVerts = 0;
+};
+
+class FExternalColorBufferWithSRV final : public FVertexBufferWithSRV
+{
+public:
+	void SetSource(const FBufferRHIRef& InBuffer)
+	{
+		SourceBufferRHI = InBuffer;
+	}
+
+	virtual void InitRHI(FRHICommandListBase& RHICmdList) override
+	{
+		check(SourceBufferRHI.IsValid());
+		VertexBufferRHI = SourceBufferRHI;
+		ShaderResourceViewRHI = RHICmdList.CreateShaderResourceView(VertexBufferRHI, /*Stride=*/4, PF_R8G8B8A8);
+		check(ShaderResourceViewRHI.IsValid());
+	}
+
+	virtual void ReleaseRHI() override
+	{
+		FVertexBufferWithSRV::ReleaseRHI();
+		SourceBufferRHI.SafeRelease();
+	}
+
+private:
+	FBufferRHIRef SourceBufferRHI;
 };

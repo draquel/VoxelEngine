@@ -9,6 +9,7 @@ namespace VoxelRender
     FExternalVertexBuffer& PosVB,
     FExternalVertexBuffer* NormVBOrNull,
     FExternalTangentBasisBuffer* TangentBasisOrNull,
+    FExternalColorBufferWithSRV* ColorVBOrNull,
     EChunkVFNormalBinding Binding)
     {
         FLocalVertexFactory::FDataType InData;
@@ -43,12 +44,20 @@ namespace VoxelRender
         InData.NumTexCoords = 1;
         InData.TextureCoordinates.Empty();
         InData.TextureCoordinates.Add(FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_Float2));
-        InData.ColorComponent = FVertexStreamComponent(&GNullColorVertexBuffer, 0, 0, VET_Color);
+        if (ColorVBOrNull)
+        {
+            InData.ColorComponent = FVertexStreamComponent(ColorVBOrNull, 0, sizeof(uint32), VET_Color);
+            InData.ColorComponentsSRV = ColorVBOrNull->ShaderResourceViewRHI;
+        }
+        else
+        {
+            InData.ColorComponent = FVertexStreamComponent(&GNullColorVertexBuffer, 0, 0, VET_Color);
+            InData.ColorComponentsSRV = GNullColorVertexBuffer.VertexBufferSRV;
+        }
 
         InData.PositionComponentSRV = PosVB.ShaderResourceViewRHI;
         // Ensure SRVs are valid even if using null buffers
         InData.TextureCoordinatesSRV = GNullVertexBuffer.VertexBufferSRV;
-        InData.ColorComponentsSRV = GNullColorVertexBuffer.VertexBufferSRV;
 
         if (RHICmdList.IsImmediate())
         {
@@ -71,4 +80,3 @@ namespace VoxelRender
     }
 	
 }
-
