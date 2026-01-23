@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include "GreedyMesher/GreedyMesherDispatch.h"
-#include "VoxelNoiseParams.h"
 
 struct FGreedyMesherBuildPassInputs
 {
