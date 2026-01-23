@@ -12,6 +12,7 @@
 #include "VoxelChunkGPUResources.h"
 #include "VoxelEditLayer.h"
 #include "VoxelPickPass.h"
+#include "VoxelFieldPass.h"
 #include "MarchingCubes/MarchingCubesDispatch.h"
 #include "MarchingCubes/MC_CountPass.h"
 #include "MarchingCubes/MC_IndexPass.h"
@@ -294,6 +295,35 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	// ---- Dispatch by mode (your real calls go here) ----
 	if (Req.Mode == EVoxelMeshMode::MarchingCubes)
 	{
+		// Build chunk params for MC
+		FMCChunkParamsCPU ChunkParams;
+		ChunkParams.CellsPerAxis   = Req.Payload.CellsPerAxis;
+		ChunkParams.StepSizeWS     = Req.Payload.StepSizeWS;
+		ChunkParams.IsoLevel       = Req.Payload.IsoLevel;      // ensure FVoxelChunkBuildReq.Payload has this
+		ChunkParams.ChunkOriginWS  = Req.Payload.ChunkOriginWS;
+		ChunkParams.ChunkSeed      = (uint32)Req.Payload.Seed;
+
+		FVoxelEditParams EditParams= FVoxelEditParams();
+		EditParams.EditStamps = InOutResources->EditStampBufferRDG;
+		EditParams.EditStampCount = Req.Payload.EditStampCount;
+
+		const FVoxelFieldPassOutputs FieldOutputs =
+			FVoxelFieldPass::AddFieldPass(
+				GraphBuilder,
+				ChunkParams,
+				Req.Payload.NoiseParameters,
+				EditParams);
+
+		InOutResources->DensityFieldRDG = FieldOutputs.DensityField;
+		InOutResources->MaterialFieldRDG = FieldOutputs.MaterialField;
+		InOutResources->FieldLayout.CellsPerAxis = ChunkParams.CellsPerAxis;
+		InOutResources->FieldLayout.SamplesPerAxis = FieldOutputs.SamplesPerAxis;
+		InOutResources->FieldLayout.NumSamples = FieldOutputs.NumSamples;
+		InOutResources->FieldMeta.ChunkOriginWS = FVector3f(ChunkParams.ChunkOriginWS);
+		InOutResources->FieldMeta.StepSizeWS = ChunkParams.StepSizeWS;
+		InOutResources->FieldMeta.Seed = ChunkParams.ChunkSeed;
+		InOutResources->FieldMeta.IsoLevel = ChunkParams.IsoLevel;
+
 		// const FVoxelNoiseParamsCPU& NoiseCPU = Req.Payload.NoiseParameters;
 		// UE_LOG(LogTemp, Log, TEXT("[VoxelBuild][MC] ChunkOrigin=%s StepSizeWS=%.3f CellsPerAxis=%u Iso=%.3f Seed=%u Noise(CaveAmp=%.3f CaveFreq=%.3f CaveThreshold=%.3f WorldScale=%s)"),
 		// 	*Req.Payload.ChunkOriginWS.ToString(),
@@ -306,19 +336,12 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		// 	NoiseCPU.CaveThreshold,
 		// 	*NoiseCPU.WorldScale.ToString());
 
-		// Build chunk params for MC
-		FMCChunkParamsCPU ChunkParams;
-		ChunkParams.CellsPerAxis   = Req.Payload.CellsPerAxis;
-		ChunkParams.StepSizeWS     = Req.Payload.StepSizeWS;
-		ChunkParams.IsoLevel       = Req.Payload.IsoLevel;      // ensure FVoxelChunkBuildReq.Payload has this
-		ChunkParams.ChunkOriginWS  = Req.Payload.ChunkOriginWS;
-		ChunkParams.ChunkSeed      = (uint32)Req.Payload.Seed;
-		
-		FVoxelEditParams EditParams= FVoxelEditParams();
-		EditParams.EditStamps = InOutResources->EditStampBufferRDG;
-		EditParams.EditStampCount = Req.Payload.EditStampCount;
-
-		const FMCCountPassOutputs Count = FMC_CountPass::AddMC_CountPass(GraphBuilder, ChunkParams, Req.Payload.NoiseParameters, EditParams);
+		const FMCCountPassOutputs Count = FMC_CountPass::AddMC_CountPass(
+			GraphBuilder,
+			ChunkParams,
+			FieldOutputs.DensityField,
+			FieldOutputs.SamplesPerAxis,
+			EditParams);
 
 		const uint32 NumCells = Count.CellsPerAxis * Count.CellsPerAxis * Count.CellsPerAxis;
 
@@ -338,8 +361,10 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 			FMC_ScatterPass::AddMC_ScatterPass(
 				GraphBuilder,
 				ChunkParams,
-				Req.Payload.NoiseParameters,
 				EditParams,
+				FieldOutputs.DensityField,
+				FieldOutputs.MaterialField,
+				FieldOutputs.SamplesPerAxis,
 				Scan.VertOffsets,
 				Count.VertCountPerCell,
 				Count.CaseIndexPerCell,
@@ -421,16 +446,33 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		const uint32 MaxFaces = FMath::Min<uint32>(EstimatedFaces, 1000000);
 		const uint32 MaxVerts = MaxFaces * 4;
 
-		const FVoxelNoiseParams NoiseParamsGPU = MakeVoxelNoiseParams(Req.Payload.NoiseParameters);
-		FRDGBufferRef NoiseParamsBuffer =
-			CreateStructuredBuffer(
+		FVoxelEditParams EditParams= FVoxelEditParams();
+		EditParams.EditStamps = InOutResources->EditStampBufferRDG;
+		EditParams.EditStampCount = Req.Payload.EditStampCount;
+
+		FMCChunkParamsCPU FieldChunkParams;
+		FieldChunkParams.CellsPerAxis = Req.Payload.CellsPerAxis;
+		FieldChunkParams.StepSizeWS = Req.Payload.StepSizeWS;
+		FieldChunkParams.IsoLevel = Req.Payload.IsoLevel;
+		FieldChunkParams.ChunkOriginWS = Req.Payload.ChunkOriginWS;
+		FieldChunkParams.ChunkSeed = (uint32)Req.Payload.Seed;
+
+		const FVoxelFieldPassOutputs FieldOutputs =
+			FVoxelFieldPass::AddFieldPass(
 				GraphBuilder,
-				TEXT("Voxel.NoiseParams.Greedy"),
-				sizeof(FVoxelNoiseParams),
-				1,
-				&NoiseParamsGPU,
-				sizeof(FVoxelNoiseParams));
-		FRDGBufferSRVRef NoiseSRV = GraphBuilder.CreateSRV(NoiseParamsBuffer);
+				FieldChunkParams,
+				Req.Payload.NoiseParameters,
+				EditParams);
+
+		InOutResources->DensityFieldRDG = FieldOutputs.DensityField;
+		InOutResources->MaterialFieldRDG = FieldOutputs.MaterialField;
+		InOutResources->FieldLayout.CellsPerAxis = FieldChunkParams.CellsPerAxis;
+		InOutResources->FieldLayout.SamplesPerAxis = FieldOutputs.SamplesPerAxis;
+		InOutResources->FieldLayout.NumSamples = FieldOutputs.NumSamples;
+		InOutResources->FieldMeta.ChunkOriginWS = FVector3f(FieldChunkParams.ChunkOriginWS);
+		InOutResources->FieldMeta.StepSizeWS = FieldChunkParams.StepSizeWS;
+		InOutResources->FieldMeta.Seed = FieldChunkParams.ChunkSeed;
+		InOutResources->FieldMeta.IsoLevel = FieldChunkParams.IsoLevel;
 
 		FGreedyMesherBuildPassInputs Inputs;
 		Inputs.ChunkParams.ChunkOriginWS = Req.Payload.ChunkOriginWS;
@@ -441,10 +483,14 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		Inputs.ChunkParams.ChunkSeed = (uint32)Req.Payload.Seed;
 		Inputs.ChunkParams.MaxVertices = MaxVerts;
 		Inputs.ChunkParams.MaxIndices = MaxFaces * 6;
-		Inputs.NoiseParamsSRV = NoiseSRV;
+		Inputs.DensityField = FieldOutputs.DensityField;
+		Inputs.MaterialField = FieldOutputs.MaterialField;
+		Inputs.SamplesPerAxis = FieldOutputs.SamplesPerAxis;
 		Inputs.VertexBuffer = InOutResources->VertexBufferRDG;
 		Inputs.IndexBuffer = InOutResources->IndexBufferRDG;
 		Inputs.NormalsBuffer = InOutResources->NormalsBufferRDG;
+		Inputs.MaterialIdBuffer = InOutResources->VertexMaterialIdRDG;
+		Inputs.VertexColorBuffer = InOutResources->VertexColorRDG;
 		Inputs.VertexCountBuffer = InOutResources->VertexCountRDG;
 		Inputs.IndexCountBuffer = InOutResources->IndexCountRDG;
 		Inputs.EditStampBuffer = InOutResources->EditStampBufferRDG;

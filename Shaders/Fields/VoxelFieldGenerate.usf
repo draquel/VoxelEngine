@@ -1,0 +1,66 @@
+﻿// /Plugin/Voxel/Fields/VoxelFieldGenerate.usf
+
+#include "/Engine/Private/Common.ush"
+#include "../Noise/VoxelDensity.ush"
+
+float3 ChunkOriginWS;
+float  StepSizeWS;
+uint   CellsPerAxis;
+uint   SamplesPerAxis;
+float  IsoLevel;
+uint   ChunkSeed;
+
+StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
+
+RWStructuredBuffer<float> OutDensity;
+RWStructuredBuffer<uint>  OutMaterial;
+
+static const uint MAT_Air   = 0u;
+static const uint MAT_Grass = 1u;
+static const uint MAT_Dirt  = 2u;
+static const uint MAT_Stone = 3u;
+static const uint MAT_Sand  = 4u;
+
+uint SelectMaterialId(float density, float3 posWS)
+{
+	if (density >= IsoLevel)
+	{
+		return MAT_Air;
+	}
+
+	const float height = posWS.z;
+	if (height > 2000.0f)
+	{
+		return MAT_Grass;
+	}
+	if (height > 500.0f)
+	{
+		return MAT_Dirt;
+	}
+	if (height > -500.0f)
+	{
+		return MAT_Stone;
+	}
+	return MAT_Sand;
+}
+
+[numthreads(8,8,8)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	const uint x = DTid.x;
+	const uint y = DTid.y;
+	const uint z = DTid.z;
+
+	if (x >= SamplesPerAxis || y >= SamplesPerAxis || z >= SamplesPerAxis)
+		return;
+
+	const uint idx = x + y * SamplesPerAxis + z * SamplesPerAxis * SamplesPerAxis;
+	const float3 posWS = ChunkOriginWS + float3(x, y, z) * StepSizeWS;
+	const FVoxelNoiseParams NP = NoiseParamsBuf[0];
+
+	const float density = SampleDensity_Terrain_Noise(posWS, NP, ChunkSeed, StepSizeWS);
+	const uint material = SelectMaterialId(density, posWS);
+
+	OutDensity[idx] = density;
+	OutMaterial[idx] = material;
+}
