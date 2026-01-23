@@ -147,8 +147,6 @@ float Density_OverhangPerturb(float3 Pws, const FVoxelNoiseParams NP, uint seed,
     // This encourages ledges protruding outward more than random holes.
     signedDisp = signedDisp * 0.7f - 0.15f; // bias slightly toward negative (solid)
 
-    region      = 1;
-    
     return signedDisp * NP.OverhangAmp * surfaceMask * belowMask * region;
 }
 
@@ -330,10 +328,9 @@ float SampleDensity_Terrain_Noise(
 {
     float d0 = Density_HeightField(Pws, NP, seed);
 
-    // float d = d0;
-    float d = -400.0f;
-    d += Density_OverhangPerturb(Pws, NP, seed, d0, StepSizeWS);
-    // d += Density_CavesCarve(Pws, NP, seed, d0, StepSizeWS);
+    float d = d0;
+    // d += Density_OverhangPerturb(Pws, NP, seed, d0, StepSizeWS);
+    d += Density_CavesCarve(Pws, NP, seed, d0, StepSizeWS);
 
     d = ApplyEditStamps(Pws, d);
     
