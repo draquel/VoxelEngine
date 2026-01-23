@@ -180,6 +180,13 @@ static void AllocateChunkBuffers(
 	const FVoxelChunkBuildRequest& Req,
 	FVoxelChunkGPUResources& Res)
 {
+	Res.DensityFieldRDG = nullptr;
+	Res.MaterialFieldRDG = nullptr;
+	Res.VertexMaterialIdRDG = nullptr;
+	Res.VertexColorRDG = nullptr;
+	Res.FieldLayout = Voxel::Contracts::FVoxelChunkFieldLayout{};
+	Res.FieldMeta = Voxel::Contracts::FVoxelChunkFieldMetadata{};
+
 	// Always allocate counts (contract)
 	Res.VertexCountRDG = GraphBuilder.CreateBuffer(
 		FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), 1),
@@ -267,6 +274,14 @@ static void AllocateChunkBuffers(
 		FRDGBufferDesc NDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(FVector4f), MaxVerts);
 		NDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource;
 		Res.NormalsBufferRDG = GraphBuilder.CreateBuffer(NDesc, TEXT("Voxel.Greedy.Normals"));
+
+		FRDGBufferDesc MIDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), MaxVerts);
+		MIDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource;
+		Res.VertexMaterialIdRDG = GraphBuilder.CreateBuffer(MIDesc, TEXT("Voxel.Greedy.MaterialIds"));
+
+		FRDGBufferDesc ColorDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), MaxVerts);
+		ColorDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
+		Res.VertexColorRDG = GraphBuilder.CreateBuffer(ColorDesc, TEXT("Voxel.Greedy.VertexColors"));
 	}
 
 	AllocateEditStampBuffer(GraphBuilder,Req.Payload.EditStamps, Res.EditStampBufferRDG);
@@ -404,6 +419,8 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		InOutResources->IndexBufferRDG  = Indices;
 		InOutResources->NormalsBufferRDG = Normals.Normals;
 		InOutResources->TangentBasisBufferRDG = Tangents;
+		InOutResources->VertexMaterialIdRDG = Scatter.MaterialIds;
+		InOutResources->VertexColorRDG = Scatter.VertexColors;
 
 		// Copy totals -> contract counts (IndexCount = TotalTris*3)
 		{
@@ -631,6 +648,10 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	if (InOutResources->IndexBufferRDG)   GraphBuilder.QueueBufferExtraction(InOutResources->IndexBufferRDG,   &InOutResources->IndexPooled);
 	if (InOutResources->NormalsBufferRDG) GraphBuilder.QueueBufferExtraction(InOutResources->NormalsBufferRDG, &InOutResources->NormalsPooled);
 	if (InOutResources->TangentBasisBufferRDG) GraphBuilder.QueueBufferExtraction(InOutResources->TangentBasisBufferRDG, &InOutResources->TangentBasisPooled);
+	if (InOutResources->VertexMaterialIdRDG) GraphBuilder.QueueBufferExtraction(InOutResources->VertexMaterialIdRDG, &InOutResources->VertexMaterialIdPooled);
+	if (InOutResources->VertexColorRDG) GraphBuilder.QueueBufferExtraction(InOutResources->VertexColorRDG, &InOutResources->VertexColorPooled);
+	if (InOutResources->DensityFieldRDG) GraphBuilder.QueueBufferExtraction(InOutResources->DensityFieldRDG, &InOutResources->DensityFieldPooled);
+	if (InOutResources->MaterialFieldRDG) GraphBuilder.QueueBufferExtraction(InOutResources->MaterialFieldRDG, &InOutResources->MaterialFieldPooled);
 
 	GraphBuilder.QueueBufferExtraction(InOutResources->VertexCountRDG, &InOutResources->VertexCountPooled);
 	GraphBuilder.QueueBufferExtraction(InOutResources->IndexCountRDG,  &InOutResources->IndexCountPooled);

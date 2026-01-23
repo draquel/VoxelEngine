@@ -64,6 +64,8 @@ struct FMCVertexCPU
 struct FMCScatterOutputs
 {
 	FRDGBufferRef Vertices = nullptr;   // float4[MaxVerts]
+	FRDGBufferRef MaterialIds = nullptr;
+	FRDGBufferRef VertexColors = nullptr;
 	uint32 MaxVerts = 0;
 };
 
