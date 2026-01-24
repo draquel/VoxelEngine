@@ -17,7 +17,7 @@ struct VOXELRDG_API FVoxelChunkGPUResources
     FRDGBufferRef VertexBufferRDG = nullptr;
     FRDGBufferRef IndexBufferRDG  = nullptr;
     FRDGBufferRef NormalsBufferRDG  = nullptr;
-    FRDGBufferRef TangentBasisBufferRDG = nullptr; // ✅ NEW
+    FRDGBufferRef TangentBasisBufferRDG = nullptr;
     FRDGBufferRef VertexMaterialIdRDG = nullptr;
     FRDGBufferRef VertexColorRDG = nullptr;
     FRDGBufferRef VertexCountRDG  = nullptr;
@@ -29,7 +29,7 @@ struct VOXELRDG_API FVoxelChunkGPUResources
     TRefCountPtr<FRDGPooledBuffer> VertexPooled;
     TRefCountPtr<FRDGPooledBuffer> IndexPooled;
     TRefCountPtr<FRDGPooledBuffer> NormalsPooled;
-    TRefCountPtr<FRDGPooledBuffer> TangentBasisPooled; // ✅ NEW
+    TRefCountPtr<FRDGPooledBuffer> TangentBasisPooled;
     TRefCountPtr<FRDGPooledBuffer> VertexMaterialIdPooled;
     TRefCountPtr<FRDGPooledBuffer> VertexColorPooled;
     TRefCountPtr<FRDGPooledBuffer> VertexCountPooled;
@@ -39,7 +39,7 @@ struct VOXELRDG_API FVoxelChunkGPUResources
     TUniquePtr<FRHIGPUBufferReadback> VertexReadback;
     TUniquePtr<FRHIGPUBufferReadback> IndexReadback;
     TUniquePtr<FRHIGPUBufferReadback> NormalsReadback;
-    TUniquePtr<FRHIGPUBufferReadback> TangentBasisReadback; // optional
+    TUniquePtr<FRHIGPUBufferReadback> TangentBasisReadback;
     TUniquePtr<FRHIGPUBufferReadback> VertexCountReadback;
     TUniquePtr<FRHIGPUBufferReadback> IndexCountReadback;
     
