@@ -5,6 +5,11 @@ StructuredBuffer<uint4> VoxelMaterialTable;
 uint VoxelMaterialTableSize;
 uint VoxelUseTableDebugColor;
 
+Texture2DArray VoxelSurfaceAlbedoArray;
+SamplerState VoxelSurfaceAlbedoSampler;
+float VoxelTriPlanarScale;
+float VoxelTriPlanarBlendSharpness;
+
 struct FVoxelMaterialData
 {
 	float3 DebugColor;
@@ -58,6 +63,43 @@ float4 VoxelResolveDebugColor(uint MaterialId, float4 VertexColor)
 	}
 
 	return VertexColor;
+}
+
+float3 VoxelTriPlanarWeights(float3 WorldNormal, float BlendSharpness)
+{
+	const float3 AbsNormal = abs(WorldNormal);
+	float3 Weights = pow(AbsNormal, BlendSharpness);
+	const float WeightSum = max(Weights.x + Weights.y + Weights.z, 1e-4f);
+	return Weights / WeightSum;
+}
+
+float3 VoxelSampleTriPlanarAlbedo(float3 WorldPosition, float3 WorldNormal, uint MaterialId)
+{
+	const FVoxelMaterialData Mat = VoxelLookupMaterial(MaterialId);
+	const float LayerIndex = float(Mat.SurfaceLayerIndex);
+	const float InvScale = (VoxelTriPlanarScale > 0.0f) ? (1.0f / VoxelTriPlanarScale) : 1.0f;
+	const float3 Weights = VoxelTriPlanarWeights(WorldNormal, max(VoxelTriPlanarBlendSharpness, 1.0f));
+
+	const float2 UVx = WorldPosition.yz * InvScale;
+	const float2 UVy = WorldPosition.xz * InvScale;
+	const float2 UVz = WorldPosition.xy * InvScale;
+
+	const float3 SampleX = VoxelSurfaceAlbedoArray.Sample(VoxelSurfaceAlbedoSampler, float3(UVx, LayerIndex)).rgb;
+	const float3 SampleY = VoxelSurfaceAlbedoArray.Sample(VoxelSurfaceAlbedoSampler, float3(UVy, LayerIndex)).rgb;
+	const float3 SampleZ = VoxelSurfaceAlbedoArray.Sample(VoxelSurfaceAlbedoSampler, float3(UVz, LayerIndex)).rgb;
+
+	return SampleX * Weights.x + SampleY * Weights.y + SampleZ * Weights.z;
+}
+
+float4 VoxelResolveSurfaceColor(float3 WorldPosition, float3 WorldNormal, uint MaterialId, float4 VertexColor)
+{
+	if (VoxelUseTableDebugColor != 0)
+	{
+		const FVoxelMaterialData Mat = VoxelLookupMaterial(MaterialId);
+		return float4(Mat.DebugColor, 1.0f);
+	}
+
+	return float4(VoxelSampleTriPlanarAlbedo(WorldPosition, WorldNormal, MaterialId), 1.0f);
 }
 
 #endif
