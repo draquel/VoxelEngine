@@ -21,27 +21,146 @@ static const uint MAT_Dirt  = 2u;
 static const uint MAT_Stone = 3u;
 static const uint MAT_Sand  = 4u;
 
-uint SelectMaterialId(float density, float3 posWS)
+#ifndef VOXEL_DEBUG_BIOME
+#define VOXEL_DEBUG_BIOME 0
+#endif
+
+float2 ApplyBiomeDomainWarp(float2 posWS, uint seed)
 {
-	if (density >= IsoLevel)
+	if (BiomeDomainWarpAmplitude <= 0.0f)
 	{
-		return MAT_Air;
+		return posWS;
 	}
 
-	const float height = posWS.z;
-	if (height > 2000.0f)
+	const float2 pN = posWS * BiomeDomainWarpFrequency;
+	const float warpX = FBM3_Seeded(float3(pN.x, pN.y, 0.0f), 2, 2.0f, 0.5f, seed ^ 0x45C9u);
+	const float warpY = FBM3_Seeded(float3(pN.x + 51.7f, pN.y - 19.3f, 0.0f), 2, 2.0f, 0.5f, seed ^ 0x97B3u);
+	return posWS + float2(warpX, warpY) * BiomeDomainWarpAmplitude;
+}
+
+float SampleBiomeNoise(float2 posWS, float frequency, float2 offset, uint seed)
+{
+	const float2 p = posWS * frequency + offset;
+	const float n = FBM3_Seeded(float3(p.x, p.y, 0.0f), 3, 2.0f, 0.5f, seed);
+	return saturate(0.5f + 0.5f * n);
+}
+
+uint ResolveBiomeId(float temperature, float moisture)
+{
+	if (temperature <= BiomeColdTemperature)
 	{
-		return MAT_Grass;
+		return 2u;
 	}
-	if (height > 500.0f)
+
+	if (temperature >= BiomeHotTemperature && moisture <= BiomeDryMoisture)
 	{
-		return MAT_Dirt;
+		return 0u;
 	}
-	if (height > -500.0f)
+
+	return 1u;
+}
+
+uint BiomeDebugMaterial(uint biomeId)
+{
+	if (biomeId == 0u) return MAT_Sand;
+	if (biomeId == 1u) return MAT_Grass;
+	return MAT_Stone;
+}
+
+bool IsNearSurface(float3 posWS, const FVoxelNoiseParams NP, uint seed)
+{
+	const float3 offsets[6] = {
+		float3(-1, 0, 0),
+		float3(1, 0, 0),
+		float3(0, -1, 0),
+		float3(0, 1, 0),
+		float3(0, 0, -1),
+		float3(0, 0, 1)
+	};
+
+	[unroll] for (uint i = 0; i < 6; ++i)
 	{
-		return MAT_Stone;
+		const float3 samplePos = posWS + offsets[i] * StepSizeWS;
+		const float sampleDensity = SampleDensity_Terrain_Noise(samplePos, NP, seed, StepSizeWS);
+		if (sampleDensity >= IsoLevel)
+		{
+			return true;
+		}
 	}
-	return MAT_Sand;
+
+	return false;
+}
+
+uint ComputeBaseMaterial(uint biomeId, float worldZ, bool bNearSurface)
+{
+	uint surfaceMaterial = PlainsSurfaceMaterialId;
+	uint subsurfaceMaterial = PlainsSubsurfaceMaterialId;
+	uint deepMaterial = PlainsDeepMaterialId;
+	float2 subsurfaceRange = PlainsSubsurfaceZRange;
+
+	if (biomeId == 0u)
+	{
+		surfaceMaterial = DesertSurfaceMaterialId;
+		subsurfaceMaterial = DesertSubsurfaceMaterialId;
+		deepMaterial = DesertDeepMaterialId;
+		subsurfaceRange = DesertSubsurfaceZRange;
+	}
+	else if (biomeId == 2u)
+	{
+		surfaceMaterial = TundraSurfaceMaterialId;
+		subsurfaceMaterial = TundraSubsurfaceMaterialId;
+		deepMaterial = TundraDeepMaterialId;
+		subsurfaceRange = TundraSubsurfaceZRange;
+	}
+
+	if (bNearSurface)
+	{
+		return surfaceMaterial;
+	}
+
+	if (worldZ >= subsurfaceRange.x && worldZ <= subsurfaceRange.y)
+	{
+		return subsurfaceMaterial;
+	}
+
+	return deepMaterial;
+}
+
+uint ApplyOreOverlay(uint baseMaterial, float density, float3 posWS)
+{
+	if (bHasOre == 0u || density >= IsoLevel)
+	{
+		return baseMaterial;
+	}
+
+	if (baseMaterial != OreBaseMaterialId)
+	{
+		return baseMaterial;
+	}
+
+	if (posWS.z < OreDepthZRange.x || posWS.z > OreDepthZRange.y)
+	{
+		return baseMaterial;
+	}
+
+	float3 p = posWS * OreVeinFrequency;
+	const float vein = FBM3_Seeded(p, 3, 2.0f, 0.5f, OreSeed ^ 0x1E35u);
+	float v = saturate(0.5f + 0.5f * vein);
+
+	if (OreNodeSizeWS > 1.0f)
+	{
+		const float nodeFreq = 1.0f / max(1.0f, OreNodeSizeWS);
+		const float node = FBM3_Seeded(posWS * nodeFreq, 2, 2.0f, 0.5f, OreSeed ^ 0x5D1Bu);
+		v *= saturate(0.5f + 0.5f * node);
+	}
+
+	const float rarityBias = saturate(1.0f - OreRarity) * 0.25f;
+	if (v > (OreVeinThreshold + rarityBias))
+	{
+		return OreMaterialId;
+	}
+
+	return baseMaterial;
 }
 
 [numthreads(8,8,8)]
@@ -59,7 +178,25 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 	const FVoxelNoiseParams NP = NoiseParamsBuf[0];
 
 	const float density = SampleDensity_Terrain_Noise(posWS, NP, ChunkSeed, StepSizeWS);
-	const uint material = SelectMaterialId(density, posWS);
+	uint material = MAT_Air;
+	if (density < IsoLevel)
+	{
+		const float2 warpedPos = ApplyBiomeDomainWarp(posWS.xy, BiomeSeed);
+		const float temperatureBase = SampleBiomeNoise(warpedPos, BiomeTempMoistureFreq.x, BiomeTempOffset, BiomeSeed ^ 0x1349u);
+		const float moistureBase = SampleBiomeNoise(warpedPos, BiomeTempMoistureFreq.y, BiomeMoistureOffset, BiomeSeed ^ 0x8C35u);
+		float temperature = temperatureBase - (posWS.z - BiomeSeaLevel) * BiomeTempMoistureHeightInfluence.x;
+		float moisture = moistureBase - (posWS.z - BiomeSeaLevel) * BiomeTempMoistureHeightInfluence.y;
+		temperature = saturate(temperature);
+		moisture = saturate(moisture);
+
+		const uint biomeId = ResolveBiomeId(temperature, moisture);
+		const bool bNearSurface = IsNearSurface(posWS, NP, ChunkSeed);
+		material = ComputeBaseMaterial(biomeId, posWS.z, bNearSurface);
+#if VOXEL_DEBUG_BIOME
+		material = BiomeDebugMaterial(biomeId);
+#endif
+		material = ApplyOreOverlay(material, density, posWS);
+	}
 
 	OutDensity[idx] = density;
 	OutMaterial[idx] = material;
