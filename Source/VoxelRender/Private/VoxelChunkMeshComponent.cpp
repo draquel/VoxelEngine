@@ -2,11 +2,14 @@
 
 #include "VoxelChunkMeshRenderData.h"
 #include "VoxelChunkMeshSceneProxy.h"
+#include "VoxelMaterialTable.h"
+#include "VoxelMaterialTableGPU.h"
 
 UVoxelChunkMeshComponent::UVoxelChunkMeshComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MaterialTableGPU = MakeShared<VoxelRender::FVoxelMaterialTableGPU>();
 }
 
 void UVoxelChunkMeshComponent::SetChunkRenderData_GameThread(int32 Slot, TSharedPtr<VoxelRender::FChunkMeshRenderData> InData)
@@ -66,6 +69,19 @@ void UVoxelChunkMeshComponent::ClearChunk_GameThread(int32 Slot)
 	
 }
 
+void UVoxelChunkMeshComponent::SetMaterialTable(UVoxelMaterialTable* InMaterialTable)
+{
+	check(IsInGameThread());
+	MaterialTable = InMaterialTable;
+
+	if (MaterialTableGPU.IsValid())
+	{
+		MaterialTableGPU->EnqueueUpdate(MaterialTable, bUseMaterialTableDebugColor);
+	}
+
+	MarkRenderStateDirty();
+}
+
 FPrimitiveSceneProxy* UVoxelChunkMeshComponent::CreateSceneProxy()
 {
 	// If no renderable data yet, don't create a proxy.
@@ -80,7 +96,7 @@ FPrimitiveSceneProxy* UVoxelChunkMeshComponent::CreateSceneProxy()
 		}
 	}
 	if (!bHasAny) return nullptr;
-	return new VoxelRender::FChunkMeshSceneProxy(this, SlotDataGT);
+	return new VoxelRender::FChunkMeshSceneProxy(this, SlotDataGT, MaterialTableGPU);
 }
 
 int32 UVoxelChunkMeshComponent::GetNumMaterials() const
@@ -112,8 +128,14 @@ void UVoxelChunkMeshComponent::PostEditChangeProperty(FPropertyChangedEvent& Pro
 	{
 		const FName PropertyName = PropertyChangedEvent.Property->GetFName();
 		if (PropertyName == GET_MEMBER_NAME_CHECKED(UVoxelChunkMeshComponent, ChunkMaterial) ||
-			PropertyName == GET_MEMBER_NAME_CHECKED(UVoxelChunkMeshComponent, DebugUnlitMaterial))
+			PropertyName == GET_MEMBER_NAME_CHECKED(UVoxelChunkMeshComponent, DebugUnlitMaterial) ||
+			PropertyName == GET_MEMBER_NAME_CHECKED(UVoxelChunkMeshComponent, MaterialTable) ||
+			PropertyName == GET_MEMBER_NAME_CHECKED(UVoxelChunkMeshComponent, bUseMaterialTableDebugColor))
 		{
+			if (MaterialTableGPU.IsValid())
+			{
+				MaterialTableGPU->EnqueueUpdate(MaterialTable, bUseMaterialTableDebugColor);
+			}
 			MarkRenderStateDirty();
 		}
 	}
@@ -136,4 +158,3 @@ FBoxSphereBounds UVoxelChunkMeshComponent::CalcBounds(const FTransform& LocalToW
 
 	return FBoxSphereBounds(Box).TransformBy(LocalToWorld);
 }
-

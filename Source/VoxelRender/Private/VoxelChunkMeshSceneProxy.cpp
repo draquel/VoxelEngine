@@ -117,11 +117,13 @@ namespace VoxelRender
 	}
 #endif
 	
-	FChunkMeshSceneProxy::FChunkMeshSceneProxy(
+FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 	const UPrimitiveComponent* InComponent,
-	const TArray<TSharedPtr<FChunkMeshRenderData>>& InSlotDataGT)
+	const TArray<TSharedPtr<FChunkMeshRenderData>>& InSlotDataGT,
+	TSharedPtr<FVoxelMaterialTableGPU> InMaterialTableGPU)
 	: FPrimitiveSceneProxy(InComponent)
-	{
+	, MaterialTableGPU(MoveTemp(InMaterialTableGPU))
+{
 		const UVoxelChunkMeshComponent* VoxelComponent = Cast<UVoxelChunkMeshComponent>(InComponent);
 
 		DefaultMaterial = (VoxelComponent && VoxelComponent->ChunkMaterial) 

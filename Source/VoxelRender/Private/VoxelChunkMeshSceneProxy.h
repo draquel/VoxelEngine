@@ -36,12 +36,15 @@ namespace VoxelRender
 		CountsInvalid, // redundancy: index%3, etc.
 	};
 
+	class FVoxelMaterialTableGPU;
+
 	class FChunkMeshSceneProxy final : public FPrimitiveSceneProxy
 	{
 	public:
 		FChunkMeshSceneProxy(
 			const UPrimitiveComponent* InComponent,
-			const TArray<TSharedPtr<FChunkMeshRenderData>>& InSlotDataGT);
+			const TArray<TSharedPtr<FChunkMeshRenderData>>& InSlotDataGT,
+			TSharedPtr<FVoxelMaterialTableGPU> InMaterialTableGPU);
 
 		virtual ~FChunkMeshSceneProxy();
 		
