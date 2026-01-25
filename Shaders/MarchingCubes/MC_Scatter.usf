@@ -33,6 +33,8 @@ static const uint MAT_Grass = 1u;
 static const uint MAT_Dirt  = 2u;
 static const uint MAT_Stone = 3u;
 static const uint MAT_Sand  = 4u;
+static const uint MAT_Snow  = 5u;
+static const uint MAT_Ore   = 6u;
 
 #ifndef VOXEL_MC_MATERIAL_MODE
 #define VOXEL_MC_MATERIAL_MODE 1
@@ -63,6 +65,8 @@ uint MaterialIdToColor(uint material)
 	case MAT_Dirt:  return PackColor(120, 72, 32, 255);
 	case MAT_Stone: return PackColor(128, 128, 128, 255);
 	case MAT_Sand:  return PackColor(210, 190, 80, 255);
+	case MAT_Snow:  return PackColor(220, 230, 245, 255);
+	case MAT_Ore:   return PackColor(220, 120, 64, 255);
 	default:        return PackColor(10, 10, 10, 255);
 	}
 }
@@ -417,4 +421,3 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 		outV += 3;
 	}
 }
-
