@@ -75,6 +75,7 @@ namespace VoxelRender
 
 			TUniquePtr<FExternalVertexBuffer> PositionVB;
 			TUniquePtr<FExternalVertexBuffer> NormalVB;
+			TUniquePtr<FExternalVertexBuffer> MaterialIdVB;
 			TUniquePtr<FExternalColorBufferWithSRV> ColorVB;
 			TUniquePtr<FExternalIndexBuffer>  IndexIB;
 			TUniquePtr<FExternalTangentBasisBuffer> TangentBasisVB;
@@ -152,6 +153,7 @@ namespace VoxelRender
 		
 		TArray<FSlotRT> SlotsRT;
 		UMaterialInterface* DefaultMaterial = nullptr;
+		TSharedPtr<FVoxelMaterialTableGPU> MaterialTableGPU;
 		
 #if !UE_BUILD_SHIPPING
 		mutable TSet<uint64> LoggedDrawFailures;
