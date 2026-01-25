@@ -5,6 +5,7 @@
 #include "RenderGraphUtils.h"
 #include "ShaderParameterStruct.h"
 #include "VoxelNoiseParams.h"
+#include "VoxelMaterialGenerationSettings.h"
 #include "VoxelEditLayer.h"
 #include "MarchingCubes/MarchingCubesDispatch.h"
 
@@ -27,6 +28,44 @@ public:
 
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelNoiseParams>, NoiseParamsBuf)
 
+		SHADER_PARAMETER(FVector2f, BiomeTempMoistureFreq)
+		SHADER_PARAMETER(FVector2f, BiomeTempOffset)
+		SHADER_PARAMETER(FVector2f, BiomeMoistureOffset)
+		SHADER_PARAMETER(FVector2f, BiomeTempMoistureHeightInfluence)
+		SHADER_PARAMETER(float, BiomeDomainWarpFrequency)
+		SHADER_PARAMETER(float, BiomeDomainWarpAmplitude)
+		SHADER_PARAMETER(float, BiomeSeaLevel)
+		SHADER_PARAMETER(float, BiomeColdTemperature)
+		SHADER_PARAMETER(float, BiomeHotTemperature)
+		SHADER_PARAMETER(float, BiomeDryMoisture)
+		SHADER_PARAMETER(float, BiomeWetMoisture)
+		SHADER_PARAMETER(uint32, BiomeSeed)
+
+		SHADER_PARAMETER(uint32, DesertSurfaceMaterialId)
+		SHADER_PARAMETER(uint32, DesertSubsurfaceMaterialId)
+		SHADER_PARAMETER(uint32, DesertDeepMaterialId)
+		SHADER_PARAMETER(FVector2f, DesertSubsurfaceZRange)
+
+		SHADER_PARAMETER(uint32, PlainsSurfaceMaterialId)
+		SHADER_PARAMETER(uint32, PlainsSubsurfaceMaterialId)
+		SHADER_PARAMETER(uint32, PlainsDeepMaterialId)
+		SHADER_PARAMETER(FVector2f, PlainsSubsurfaceZRange)
+
+		SHADER_PARAMETER(uint32, TundraSurfaceMaterialId)
+		SHADER_PARAMETER(uint32, TundraSubsurfaceMaterialId)
+		SHADER_PARAMETER(uint32, TundraDeepMaterialId)
+		SHADER_PARAMETER(FVector2f, TundraSubsurfaceZRange)
+
+		SHADER_PARAMETER(uint32, bHasOre)
+		SHADER_PARAMETER(uint32, OreMaterialId)
+		SHADER_PARAMETER(uint32, OreBaseMaterialId)
+		SHADER_PARAMETER(FVector2f, OreDepthZRange)
+		SHADER_PARAMETER(float, OreVeinFrequency)
+		SHADER_PARAMETER(float, OreVeinThreshold)
+		SHADER_PARAMETER(float, OreRarity)
+		SHADER_PARAMETER(float, OreNodeSizeWS)
+		SHADER_PARAMETER(uint32, OreSeed)
+
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<float>, OutDensity)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>,  OutMaterial)
 	END_SHADER_PARAMETER_STRUCT()
@@ -38,6 +77,7 @@ FVoxelFieldPassOutputs FVoxelFieldPass::AddFieldPass(
 	FRDGBuilder& GraphBuilder,
 	const FMCChunkParamsCPU& ChunkParams,
 	const FVoxelNoiseParamsCPU& NoiseParamsCPU,
+	const FVoxelMaterialGenerationSettings& MaterialSettings,
 	const FVoxelEditParams& EditParams)
 {
 	FVoxelFieldPassOutputs Out;
@@ -78,6 +118,50 @@ FVoxelFieldPassOutputs FVoxelFieldPass::AddFieldPass(
 
 	PassParams->EditStampCount = EditParams.EditStampCount;
 	PassParams->EditStamps = GraphBuilder.CreateSRV(EditParams.EditStamps);
+
+	const FVoxelBiomeMapSettings& BiomeMap = MaterialSettings.BiomeMapSettings;
+	const FVoxelBiomeThresholds& BiomeThresholds = MaterialSettings.BiomeThresholds;
+	const FVoxelBiomeMaterialRules& BiomeRules = MaterialSettings.BiomeMaterialRules;
+
+	PassParams->BiomeTempMoistureFreq = FVector2f(BiomeMap.TemperatureFrequency, BiomeMap.MoistureFrequency);
+	PassParams->BiomeTempOffset = BiomeMap.TemperatureOffset;
+	PassParams->BiomeMoistureOffset = BiomeMap.MoistureOffset;
+	PassParams->BiomeTempMoistureHeightInfluence = FVector2f(BiomeMap.TemperatureHeightInfluence, BiomeMap.MoistureHeightInfluence);
+	PassParams->BiomeDomainWarpFrequency = BiomeMap.DomainWarpFrequency;
+	PassParams->BiomeDomainWarpAmplitude = BiomeMap.DomainWarpAmplitude;
+	PassParams->BiomeSeaLevel = BiomeThresholds.SeaLevel;
+	PassParams->BiomeColdTemperature = BiomeThresholds.ColdTemperature;
+	PassParams->BiomeHotTemperature = BiomeThresholds.HotTemperature;
+	PassParams->BiomeDryMoisture = BiomeThresholds.DryMoisture;
+	PassParams->BiomeWetMoisture = BiomeThresholds.WetMoisture;
+	PassParams->BiomeSeed = static_cast<uint32>(ChunkParams.ChunkSeed) ^ static_cast<uint32>(BiomeMap.SeedSalt);
+
+	PassParams->DesertSurfaceMaterialId = BiomeRules.Desert.SurfaceMaterialId;
+	PassParams->DesertSubsurfaceMaterialId = BiomeRules.Desert.SubsurfaceMaterialId;
+	PassParams->DesertDeepMaterialId = BiomeRules.Desert.DeepMaterialId;
+	PassParams->DesertSubsurfaceZRange = FVector2f(BiomeRules.Desert.SubsurfaceMinZ, BiomeRules.Desert.SubsurfaceMaxZ);
+
+	PassParams->PlainsSurfaceMaterialId = BiomeRules.Plains.SurfaceMaterialId;
+	PassParams->PlainsSubsurfaceMaterialId = BiomeRules.Plains.SubsurfaceMaterialId;
+	PassParams->PlainsDeepMaterialId = BiomeRules.Plains.DeepMaterialId;
+	PassParams->PlainsSubsurfaceZRange = FVector2f(BiomeRules.Plains.SubsurfaceMinZ, BiomeRules.Plains.SubsurfaceMaxZ);
+
+	PassParams->TundraSurfaceMaterialId = BiomeRules.Tundra.SurfaceMaterialId;
+	PassParams->TundraSubsurfaceMaterialId = BiomeRules.Tundra.SubsurfaceMaterialId;
+	PassParams->TundraDeepMaterialId = BiomeRules.Tundra.DeepMaterialId;
+	PassParams->TundraSubsurfaceZRange = FVector2f(BiomeRules.Tundra.SubsurfaceMinZ, BiomeRules.Tundra.SubsurfaceMaxZ);
+
+	const bool bHasOre = MaterialSettings.OreSettings.Num() > 0;
+	PassParams->bHasOre = bHasOre ? 1u : 0u;
+	const FVoxelOreSettings Ore = bHasOre ? MaterialSettings.OreSettings[0] : FVoxelOreSettings();
+	PassParams->OreMaterialId = Ore.MaterialId;
+	PassParams->OreBaseMaterialId = Ore.BaseMaterialId;
+	PassParams->OreDepthZRange = FVector2f(Ore.DepthMinZ, Ore.DepthMaxZ);
+	PassParams->OreVeinFrequency = Ore.VeinFrequency;
+	PassParams->OreVeinThreshold = Ore.VeinThreshold;
+	PassParams->OreRarity = Ore.Rarity;
+	PassParams->OreNodeSizeWS = Ore.NodeSizeWS;
+	PassParams->OreSeed = static_cast<uint32>(ChunkParams.ChunkSeed) ^ static_cast<uint32>(Ore.SeedSalt);
 
 	PassParams->OutDensity = GraphBuilder.CreateUAV(Out.DensityField);
 	PassParams->OutMaterial = GraphBuilder.CreateUAV(Out.MaterialField);

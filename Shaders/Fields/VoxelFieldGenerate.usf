@@ -12,6 +12,44 @@ uint   ChunkSeed;
 
 StructuredBuffer<FVoxelNoiseParams> NoiseParamsBuf;
 
+float2 BiomeTempMoistureFreq;
+float2 BiomeTempOffset;
+float2 BiomeMoistureOffset;
+float2 BiomeTempMoistureHeightInfluence;
+float  BiomeDomainWarpFrequency;
+float  BiomeDomainWarpAmplitude;
+float  BiomeSeaLevel;
+float  BiomeColdTemperature;
+float  BiomeHotTemperature;
+float  BiomeDryMoisture;
+float  BiomeWetMoisture;
+uint   BiomeSeed;
+
+uint   DesertSurfaceMaterialId;
+uint   DesertSubsurfaceMaterialId;
+uint   DesertDeepMaterialId;
+float2 DesertSubsurfaceZRange;
+
+uint   PlainsSurfaceMaterialId;
+uint   PlainsSubsurfaceMaterialId;
+uint   PlainsDeepMaterialId;
+float2 PlainsSubsurfaceZRange;
+
+uint   TundraSurfaceMaterialId;
+uint   TundraSubsurfaceMaterialId;
+uint   TundraDeepMaterialId;
+float2 TundraSubsurfaceZRange;
+
+uint   bHasOre;
+uint   OreMaterialId;
+uint   OreBaseMaterialId;
+float2 OreDepthZRange;
+float  OreVeinFrequency;
+float  OreVeinThreshold;
+float  OreRarity;
+float  OreNodeSizeWS;
+uint   OreSeed;
+
 RWStructuredBuffer<float> OutDensity;
 RWStructuredBuffer<uint>  OutMaterial;
 

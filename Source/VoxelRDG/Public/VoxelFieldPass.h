@@ -8,6 +8,7 @@ class FRDGBuilder;
 struct FVoxelNoiseParamsCPU;
 struct FVoxelEditParams;
 struct FMCChunkParamsCPU;
+struct FVoxelMaterialGenerationSettings;
 
 struct FVoxelFieldPassOutputs
 {
@@ -24,5 +25,6 @@ public:
 		FRDGBuilder& GraphBuilder,
 		const FMCChunkParamsCPU& ChunkParams,
 		const FVoxelNoiseParamsCPU& NoiseParamsCPU,
+		const FVoxelMaterialGenerationSettings& MaterialSettings,
 		const FVoxelEditParams& EditParams);
 };
