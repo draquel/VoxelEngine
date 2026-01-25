@@ -11,6 +11,10 @@ Texture2DArray VoxelSurfaceNormalArray;
 SamplerState VoxelSurfaceNormalSampler;
 Texture2DArray VoxelSurfaceORMArray;
 SamplerState VoxelSurfaceORMSampler;
+Texture2D VoxelBlockAtlasAlbedo;
+SamplerState VoxelBlockAtlasSampler;
+uint VoxelBlockAtlasTilesX;
+uint VoxelBlockAtlasTilesY;
 float VoxelTriPlanarScale;
 float VoxelTriPlanarBlendSharpness;
 float VoxelTriPlanarNormalStrength;
@@ -229,6 +233,64 @@ float4 VoxelResolveSurfaceColor(float3 WorldPosition, float3 WorldNormal, uint M
 	}
 
 	return float4(VoxelSampleTriPlanarAlbedo(WorldPosition, WorldNormal, MaterialId), 1.0f);
+}
+
+float2 VoxelComputeBlockFaceUV(float3 WorldPosition, float3 WorldNormal)
+{
+	const float3 AbsNormal = abs(WorldNormal);
+	float2 FaceUV = float2(0.0f, 0.0f);
+
+	if (AbsNormal.x >= AbsNormal.y && AbsNormal.x >= AbsNormal.z)
+	{
+		FaceUV = frac(WorldPosition.zy);
+	}
+	else if (AbsNormal.y >= AbsNormal.z)
+	{
+		FaceUV = frac(WorldPosition.xz);
+	}
+	else
+	{
+		FaceUV = frac(WorldPosition.xy);
+	}
+
+	return FaceUV;
+}
+
+float2 VoxelComputeBlockAtlasUV(float2 InFaceUV, uint BlockAtlasIndex)
+{
+	const uint TilesX = max(VoxelBlockAtlasTilesX, 1u);
+	const uint TilesY = max(VoxelBlockAtlasTilesY, 1u);
+	const uint TileX = BlockAtlasIndex % TilesX;
+	const uint TileY = BlockAtlasIndex / TilesX;
+	const float2 Tiles = float2(TilesX, TilesY);
+
+	return (float2(TileX, TileY) + InFaceUV) / Tiles;
+}
+
+void VoxelResolveBlockSurface(
+	uint MaterialId,
+	float2 InFaceUV,
+	out float3 OutBaseColor,
+	out float OutAO,
+	out float OutRoughness,
+	out float OutMetallic)
+{
+	const FVoxelMaterialData Mat = VoxelLookupMaterial(MaterialId);
+
+	if (VoxelUseTableDebugColor != 0)
+	{
+		OutBaseColor = Mat.DebugColor;
+		OutAO = 1.0f;
+		OutRoughness = 0.8f;
+		OutMetallic = 0.0f;
+		return;
+	}
+
+	const float2 AtlasUV = VoxelComputeBlockAtlasUV(InFaceUV, Mat.BlockAtlasIndex);
+	OutBaseColor = VoxelBlockAtlasAlbedo.Sample(VoxelBlockAtlasSampler, AtlasUV).rgb;
+	OutAO = 1.0f;
+	OutRoughness = Mat.Roughness;
+	OutMetallic = Mat.Metallic;
 }
 
 #endif
