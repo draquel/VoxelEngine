@@ -18,6 +18,7 @@ struct VOXELRDG_API FVoxelChunkGPUResources
     FRDGBufferRef IndexBufferRDG  = nullptr;
     FRDGBufferRef NormalsBufferRDG  = nullptr;
     FRDGBufferRef TangentBasisBufferRDG = nullptr;
+    FRDGBufferRef VertexUV0RDG = nullptr;
     FRDGBufferRef VertexMaterialIdRDG = nullptr;
     FRDGBufferRef VertexColorRDG = nullptr;
     FRDGBufferRef VertexCountRDG  = nullptr;
@@ -30,6 +31,7 @@ struct VOXELRDG_API FVoxelChunkGPUResources
     TRefCountPtr<FRDGPooledBuffer> IndexPooled;
     TRefCountPtr<FRDGPooledBuffer> NormalsPooled;
     TRefCountPtr<FRDGPooledBuffer> TangentBasisPooled;
+    TRefCountPtr<FRDGPooledBuffer> VertexUV0Pooled;
     TRefCountPtr<FRDGPooledBuffer> VertexMaterialIdPooled;
     TRefCountPtr<FRDGPooledBuffer> VertexColorPooled;
     TRefCountPtr<FRDGPooledBuffer> VertexCountPooled;
@@ -45,4 +47,3 @@ struct VOXELRDG_API FVoxelChunkGPUResources
     
     bool bReadbackEnqueued = false;
 };
-

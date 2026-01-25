@@ -10,6 +10,7 @@ void FChunkMeshRenderData::InitFromPooled(
 	const TRefCountPtr<FRDGPooledBuffer>& Ind,
 	const TRefCountPtr<FRDGPooledBuffer>& Tan,
 	const TRefCountPtr<FRDGPooledBuffer>& Col,
+	const TRefCountPtr<FRDGPooledBuffer>& UV0,
 	const TRefCountPtr<FRDGPooledBuffer>& Mat,
 	EChunkNormalFormat InFormat,
 	uint32 InNumVerts,
@@ -24,6 +25,7 @@ void FChunkMeshRenderData::InitFromPooled(
 	IndexPooled   = Ind;
 	TangentBasisPooled = Tan;
 	ColorPooled = Col;
+	UV0Pooled = UV0;
 	MaterialIdPooled = Mat;
 	NormalFormat = InFormat;
 
@@ -92,6 +94,17 @@ void FChunkMeshRenderData::InitFromPooled(
 	{
 		ColorBufferRHI.SafeRelease();
 		ColorSRV.SafeRelease();
+	}
+
+	if (UV0Pooled.IsValid())
+	{
+		UV0BufferRHI = UV0Pooled->GetRHI();
+		check(UV0BufferRHI.IsValid());
+	}
+	else
+	{
+		UV0BufferRHI.SafeRelease();
+		UV0SRV.SafeRelease();
 	}
 
 	if (MaterialIdPooled.IsValid())
@@ -201,6 +214,7 @@ void FChunkMeshRenderData::InitFromPooled(
 	NormalSRV.SafeRelease();
 	TangentBasisSRV.SafeRelease();
 	ColorSRV.SafeRelease();
+	UV0SRV.SafeRelease();
 	MaterialIdSRV.SafeRelease();
 
 	PositionBufferRHI.SafeRelease();
@@ -208,6 +222,7 @@ void FChunkMeshRenderData::InitFromPooled(
 	IndexBufferRHI.SafeRelease();
 	TangentBasisBufferRHI.SafeRelease();
 	ColorBufferRHI.SafeRelease();
+	UV0BufferRHI.SafeRelease();
 	MaterialIdBufferRHI.SafeRelease();
 
 	VertexPooled.SafeRelease();
@@ -215,6 +230,7 @@ void FChunkMeshRenderData::InitFromPooled(
 	NormalsPooled.SafeRelease();
 	TangentBasisPooled.SafeRelease();
 	ColorPooled.SafeRelease();
+	UV0Pooled.SafeRelease();
 	MaterialIdPooled.SafeRelease();
 
 		BoundsWS = FBoxSphereBounds(ForceInit);

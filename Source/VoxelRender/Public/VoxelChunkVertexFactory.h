@@ -32,6 +32,7 @@ namespace VoxelRender
 			FExternalVertexBuffer* NormVBOrNull,
 			FExternalTangentBasisBuffer* TangentBasisOrNull,
 			FExternalColorBufferWithSRV* ColorVBOrNull,
+			FExternalVertexBuffer* UV0VBOrNull,
 			FExternalVertexBuffer* MaterialIdVBOrNull,
 			EChunkVFNormalBinding Binding);
 	};

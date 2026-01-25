@@ -11,6 +11,7 @@ struct FGreedyMesherBuildPassInputs
 	FRDGBufferRef VertexBuffer = nullptr;
 	FRDGBufferRef IndexBuffer = nullptr;
 	FRDGBufferRef NormalsBuffer = nullptr;
+	FRDGBufferRef UV0Buffer = nullptr;
 	FRDGBufferRef MaterialIdBuffer = nullptr;
 	FRDGBufferRef VertexColorBuffer = nullptr;
 	FRDGBufferRef VertexCountBuffer = nullptr;

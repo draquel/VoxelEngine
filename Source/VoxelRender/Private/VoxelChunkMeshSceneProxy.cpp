@@ -193,6 +193,16 @@ FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 				Slot.ColorVB->SetSource(Slot.Data->ColorBufferRHI);
 			}
 
+			if (Slot.Data->UV0BufferRHI.IsValid() && Slot.Data->VertexCount > 0)
+			{
+				Slot.UV0VB = MakeUnique<FExternalVertexBuffer>();
+				Slot.UV0VB->SetSource(
+					Slot.Data->UV0BufferRHI,
+					sizeof(FVector2f),
+					Slot.Data->VertexCount,
+					PF_G32R32F);
+			}
+
 			if (Slot.Data->MaterialIdBufferRHI.IsValid() && Slot.Data->VertexCount > 0)
 			{
 				Slot.MaterialIdVB = MakeUnique<FExternalVertexBuffer>();
@@ -305,6 +315,11 @@ FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 					Slot.ColorVB->InitResource(RHICmdList);
 				}
 
+				if (Slot.UV0VB)
+				{
+					Slot.UV0VB->InitResource(RHICmdList);
+				}
+
 				if (Slot.MaterialIdVB)
 				{
 					Slot.MaterialIdVB->InitResource(RHICmdList);
@@ -342,6 +357,7 @@ FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 				Slot.NormalVB.Get(),
 				Slot.TangentBasisVB.Get(),
 				Slot.ColorVB.Get(),
+				Slot.UV0VB.Get(),
 				Slot.MaterialIdVB.Get(),
 				Binding);
 
@@ -386,6 +402,7 @@ FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 			if (Slot.IndexIB)     Slot.IndexIB->ReleaseResource();
 			if (Slot.NormalVB)    Slot.NormalVB->ReleaseResource();
 			if (Slot.ColorVB)     Slot.ColorVB->ReleaseResource();
+			if (Slot.UV0VB)       Slot.UV0VB->ReleaseResource();
 			if (Slot.MaterialIdVB) Slot.MaterialIdVB->ReleaseResource();
 			if (Slot.TangentBasisVB) Slot.TangentBasisVB->ReleaseResource();
 			if (Slot.PositionVB)  Slot.PositionVB->ReleaseResource();
@@ -395,6 +412,7 @@ FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 			Slot.IndexIB.Reset();
 			Slot.NormalVB.Reset();
 			Slot.ColorVB.Reset();
+			Slot.UV0VB.Reset();
 			Slot.MaterialIdVB.Reset();
 			Slot.TangentBasisVB.Reset();
 			Slot.PositionVB.Reset();

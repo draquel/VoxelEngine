@@ -15,6 +15,7 @@ Texture2D VoxelBlockAtlasAlbedo;
 SamplerState VoxelBlockAtlasSampler;
 uint VoxelBlockAtlasTilesX;
 uint VoxelBlockAtlasTilesY;
+float VoxelBlockAtlasPadUV;
 float VoxelTriPlanarScale;
 float VoxelTriPlanarBlendSharpness;
 float VoxelTriPlanarNormalStrength;
@@ -263,6 +264,8 @@ float2 VoxelComputeBlockAtlasUV(float2 InFaceUV, uint BlockAtlasIndex)
 	const uint TileX = BlockAtlasIndex % TilesX;
 	const uint TileY = BlockAtlasIndex / TilesX;
 	const float2 Tiles = float2(TilesX, TilesY);
+	const float PadUV = (VoxelBlockAtlasPadUV > 0.0f) ? VoxelBlockAtlasPadUV : 0.002f;
+	InFaceUV = lerp(PadUV.xx, (1.0f - PadUV).xx, InFaceUV);
 
 	return (float2(TileX, TileY) + InFaceUV) / Tiles;
 }

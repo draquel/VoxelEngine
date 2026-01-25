@@ -18,6 +18,7 @@ StructuredBuffer<uint>  MaterialField;
 RWBuffer<float4> OutVertices;
 RWBuffer<uint>   OutIndices;
 RWBuffer<float4> OutNormals;
+RWBuffer<float2> OutUV0;
 RWBuffer<uint>   OutMaterialIds;
 RWBuffer<uint>   OutVertexColors;
 RWStructuredBuffer<uint> OutVertexCount;
@@ -212,11 +213,18 @@ void EmitFace(int3 c, uint faceIdx, uint materialId)
 
 	float3 n = Normals[faceIdx];
 	const uint color = MaterialIdToColor(materialId);
+	const float2 uv[4] = {
+		float2(0.0f, 0.0f),
+		float2(1.0f, 0.0f),
+		float2(1.0f, 1.0f),
+		float2(0.0f, 1.0f)
+	};
 
 	for (uint i = 0; i < 4; ++i)
 	{
 		OutVertices[vBase + i] = float4(v[i], 1.0f);
 		OutNormals[vBase + i]  = float4(n, 0.0f);
+		OutUV0[vBase + i] = uv[i];
 		OutMaterialIds[vBase + i] = materialId;
 		OutVertexColors[vBase + i] = color;
 	}

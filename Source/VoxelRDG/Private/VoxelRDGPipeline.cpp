@@ -200,6 +200,7 @@ static void AllocateChunkBuffers(
 	Res.IndexBufferRDG         = nullptr;
 	Res.NormalsBufferRDG       = nullptr;
 	Res.TangentBasisBufferRDG  = nullptr;
+	Res.VertexUV0RDG           = nullptr;
 
 	if (Req.Mode == EVoxelMeshMode::DebugGrid)
 	{
@@ -274,6 +275,10 @@ static void AllocateChunkBuffers(
 		FRDGBufferDesc NDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(FVector4f), MaxVerts);
 		NDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource;
 		Res.NormalsBufferRDG = GraphBuilder.CreateBuffer(NDesc, TEXT("Voxel.Greedy.Normals"));
+
+		FRDGBufferDesc UVDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(FVector2f), MaxVerts);
+		UVDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
+		Res.VertexUV0RDG = GraphBuilder.CreateBuffer(UVDesc, TEXT("Voxel.Greedy.UV0"));
 
 		FRDGBufferDesc MIDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), MaxVerts);
 		MIDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
@@ -508,6 +513,7 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		Inputs.VertexBuffer = InOutResources->VertexBufferRDG;
 		Inputs.IndexBuffer = InOutResources->IndexBufferRDG;
 		Inputs.NormalsBuffer = InOutResources->NormalsBufferRDG;
+		Inputs.UV0Buffer = InOutResources->VertexUV0RDG;
 		Inputs.MaterialIdBuffer = InOutResources->VertexMaterialIdRDG;
 		Inputs.VertexColorBuffer = InOutResources->VertexColorRDG;
 		Inputs.VertexCountBuffer = InOutResources->VertexCountRDG;
@@ -650,6 +656,7 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 	if (InOutResources->IndexBufferRDG)   GraphBuilder.QueueBufferExtraction(InOutResources->IndexBufferRDG,   &InOutResources->IndexPooled);
 	if (InOutResources->NormalsBufferRDG) GraphBuilder.QueueBufferExtraction(InOutResources->NormalsBufferRDG, &InOutResources->NormalsPooled);
 	if (InOutResources->TangentBasisBufferRDG) GraphBuilder.QueueBufferExtraction(InOutResources->TangentBasisBufferRDG, &InOutResources->TangentBasisPooled);
+	if (InOutResources->VertexUV0RDG) GraphBuilder.QueueBufferExtraction(InOutResources->VertexUV0RDG, &InOutResources->VertexUV0Pooled);
 	if (InOutResources->VertexMaterialIdRDG) GraphBuilder.QueueBufferExtraction(InOutResources->VertexMaterialIdRDG, &InOutResources->VertexMaterialIdPooled);
 	if (InOutResources->VertexColorRDG) GraphBuilder.QueueBufferExtraction(InOutResources->VertexColorRDG, &InOutResources->VertexColorPooled);
 	if (InOutResources->DensityFieldRDG) GraphBuilder.QueueBufferExtraction(InOutResources->DensityFieldRDG, &InOutResources->DensityFieldPooled);

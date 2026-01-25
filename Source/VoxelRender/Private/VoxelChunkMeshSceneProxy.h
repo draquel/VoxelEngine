@@ -75,6 +75,7 @@ namespace VoxelRender
 
 			TUniquePtr<FExternalVertexBuffer> PositionVB;
 			TUniquePtr<FExternalVertexBuffer> NormalVB;
+			TUniquePtr<FExternalVertexBuffer> UV0VB;
 			TUniquePtr<FExternalVertexBuffer> MaterialIdVB;
 			TUniquePtr<FExternalColorBufferWithSRV> ColorVB;
 			TUniquePtr<FExternalIndexBuffer>  IndexIB;

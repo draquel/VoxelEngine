@@ -10,6 +10,7 @@ namespace VoxelRender
     FExternalVertexBuffer* NormVBOrNull,
     FExternalTangentBasisBuffer* TangentBasisOrNull,
     FExternalColorBufferWithSRV* ColorVBOrNull,
+    FExternalVertexBuffer* UV0VBOrNull,
     FExternalVertexBuffer* MaterialIdVBOrNull,
     EChunkVFNormalBinding Binding)
     {
@@ -44,7 +45,14 @@ namespace VoxelRender
         // Standard materials often expect at least one UV set.
         InData.NumTexCoords = MaterialIdVBOrNull ? 2 : 1;
         InData.TextureCoordinates.Empty();
-        InData.TextureCoordinates.Add(FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_Float2));
+        if (UV0VBOrNull)
+        {
+            InData.TextureCoordinates.Add(FVertexStreamComponent(UV0VBOrNull, 0, sizeof(FVector2f), VET_Float2));
+        }
+        else
+        {
+            InData.TextureCoordinates.Add(FVertexStreamComponent(&GNullVertexBuffer, 0, 0, VET_Float2));
+        }
         if (MaterialIdVBOrNull)
         {
             InData.TextureCoordinates.Add(FVertexStreamComponent(MaterialIdVBOrNull, 0, sizeof(uint32), VET_UInt));

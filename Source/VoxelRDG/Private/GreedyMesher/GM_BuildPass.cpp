@@ -31,6 +31,7 @@ class FGreedyBuildCS : public FGlobalShader
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<FVector4f>, OutVertices)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutIndices)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<FVector4f>, OutNormals)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<FVector2f>, OutUV0)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutMaterialIds)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutVertexColors)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutVertexCount)
@@ -55,6 +56,7 @@ namespace GM_BuildPass
 		check(Inputs.MaterialField);
 		check(Inputs.MaterialIdBuffer);
 		check(Inputs.VertexColorBuffer);
+		check(Inputs.UV0Buffer);
 
 		auto* Params = GraphBuilder.AllocParameters<FGreedyBuildCS::FParameters>();
 		Params->ChunkOriginWS = FVector3f(Inputs.ChunkParams.ChunkOriginWS);
@@ -71,6 +73,7 @@ namespace GM_BuildPass
 		Params->OutVertices = GraphBuilder.CreateUAV(Inputs.VertexBuffer, PF_A32B32G32R32F);
 		Params->OutIndices = GraphBuilder.CreateUAV(Inputs.IndexBuffer, PF_R32_UINT);
 		Params->OutNormals = GraphBuilder.CreateUAV(Inputs.NormalsBuffer, PF_A32B32G32R32F);
+		Params->OutUV0 = GraphBuilder.CreateUAV(Inputs.UV0Buffer, PF_G32R32F);
 		Params->OutMaterialIds = GraphBuilder.CreateUAV(Inputs.MaterialIdBuffer, PF_R32_UINT);
 		Params->OutVertexColors = GraphBuilder.CreateUAV(Inputs.VertexColorBuffer, PF_R32_UINT);
 		Params->OutVertexCount = GraphBuilder.CreateUAV(Inputs.VertexCountBuffer);
