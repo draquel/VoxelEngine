@@ -34,6 +34,22 @@ static const uint MAT_Dirt  = 2u;
 static const uint MAT_Stone = 3u;
 static const uint MAT_Sand  = 4u;
 
+#ifndef VOXEL_MC_MATERIAL_MODE
+#define VOXEL_MC_MATERIAL_MODE 1
+#endif
+
+#ifndef VOXEL_MC_MAT_TIEBREAK_PRIORITY
+#define VOXEL_MC_MAT_TIEBREAK_PRIORITY 0
+#endif
+
+#ifndef VOXEL_MC_MAT_TIEBREAK_DEEP
+#define VOXEL_MC_MAT_TIEBREAK_DEEP 0
+#endif
+
+#if VOXEL_MC_MAT_TIEBREAK_PRIORITY && VOXEL_MC_MAT_TIEBREAK_DEEP
+#error "VOXEL_MC_MAT_TIEBREAK_PRIORITY and VOXEL_MC_MAT_TIEBREAK_DEEP are mutually exclusive."
+#endif
+
 uint PackColor(uint r, uint g, uint b, uint a)
 {
 	return (b) | (g << 8) | (r << 16) | (a << 24);
@@ -51,7 +67,14 @@ uint MaterialIdToColor(uint material)
 	}
 }
 
-uint SelectDominantMaterial(uint3 cell, float cd[8])
+uint SampleIndex(uint3 s)
+{
+	return s.x + s.y * SamplesPerAxis + s.z * SamplesPerAxis * SamplesPerAxis;
+}
+
+// Old baseline selection: pick the most "solid" corner by density.
+// Updated: ignore MAT_Air materials for compare-mode usefulness.
+uint SelectCornerMaterial(uint3 cell, float cd[8])
 {
 	uint bestId = MAT_Air;
 	float bestDensity = 3.4e38f;
@@ -61,9 +84,183 @@ uint SelectDominantMaterial(uint3 cell, float cd[8])
 		if (cd[i] < IsoLevel && cd[i] < bestDensity)
 		{
 			const uint3 s = cell + (uint3)CornerOfs[i];
-			const uint si = s.x + s.y * SamplesPerAxis + s.z * SamplesPerAxis * SamplesPerAxis;
+			const uint si = SampleIndex(s);
+			const uint mat = MaterialField[si];
+
+			// If material is Air, keep searching (compare mode is more meaningful)
+			if (mat == MAT_Air)
+				continue;
+
 			bestDensity = cd[i];
-			bestId = MaterialField[si];
+			bestId = mat;
+		}
+	}
+
+	return bestId;
+}
+
+uint MaterialPriority(uint material)
+{
+#if VOXEL_MC_MAT_TIEBREAK_PRIORITY
+	switch (material)
+	{
+	case MAT_Stone: return 3u;
+	case MAT_Dirt:  return 2u;
+	case MAT_Sand:  return 1u;
+	case MAT_Grass: return 0u;
+	default:        return 0u;
+	}
+#else
+	return 0u;
+#endif
+}
+
+#if VOXEL_MC_MAT_TIEBREAK_DEEP
+float BestSolidCornerZForMaterial(uint mat, float3 cpos[8], float cd[8], uint cornerMats[8])
+{
+	// Lower Z => "deeper". Consider only SOLID corners for that material.
+	float bestZ = 3.4e38f;
+	[unroll] for (uint i = 0; i < 8; ++i)
+	{
+		if (cornerMats[i] == mat && cd[i] < IsoLevel)
+		{
+			bestZ = min(bestZ, cpos[i].z);
+		}
+	}
+	return bestZ;
+}
+#endif
+
+#if VOXEL_MC_MAT_TIEBREAK_DEEP
+uint ComputeDominantMaterial8(
+	uint m0, uint m1, uint m2, uint m3,
+	uint m4, uint m5, uint m6, uint m7,
+	float3 cpos[8], float cd[8], uint cornerMats[8])
+#else
+uint ComputeDominantMaterial8(
+	uint m0, uint m1, uint m2, uint m3,
+	uint m4, uint m5, uint m6, uint m7)
+#endif
+{
+	// 8-bucket vote: handles up to 8 unique materials (no silent overflow).
+	uint ids[8]    = { 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u };
+	uint counts[8] = { 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u };
+
+	uint nonAirCount = 0u;
+	uint mats[8] = { m0, m1, m2, m3, m4, m5, m6, m7 };
+
+	[unroll] for (uint i = 0; i < 8; ++i)
+	{
+		const uint mat = mats[i];
+		if (mat != MAT_Air) nonAirCount += 1u;
+
+		bool matched = false;
+
+		// Match existing bucket
+		[unroll] for (uint b = 0; b < 8; ++b)
+		{
+			if (counts[b] > 0 && ids[b] == mat)
+			{
+				counts[b] += 1u;
+				matched = true;
+				break;
+			}
+		}
+
+		// Insert into first empty bucket
+		if (!matched)
+		{
+			[unroll] for (uint b = 0; b < 8; ++b)
+			{
+				if (counts[b] == 0)
+				{
+					ids[b] = mat;
+					counts[b] = 1u;
+					matched = true;
+					break;
+				}
+			}
+		}
+	}
+
+	// If any non-air exists, exclude Air from candidates.
+	if (nonAirCount > 0)
+	{
+		[unroll] for (uint b = 0; b < 8; ++b)
+		{
+			if (counts[b] > 0 && ids[b] == MAT_Air)
+			{
+				counts[b] = 0u;
+			}
+		}
+	}
+
+	// Initialize best to first non-empty bucket (deterministic).
+	uint bestId = MAT_Air;
+	uint bestCount = 0u;
+	uint bestPriority = 0u;
+#if VOXEL_MC_MAT_TIEBREAK_DEEP
+	float bestZ = 3.4e38f;
+#endif
+
+	[unroll] for (uint b = 0; b < 8; ++b)
+	{
+		if (counts[b] == 0) continue;
+		bestId = ids[b];
+		bestCount = counts[b];
+		bestPriority = MaterialPriority(bestId);
+#if VOXEL_MC_MAT_TIEBREAK_DEEP
+		bestZ = BestSolidCornerZForMaterial(bestId, cpos, cd, cornerMats);
+#endif
+		break;
+	}
+
+	// Select best by count; on ties apply optional tie-breaks (otherwise keep first-seen).
+	[unroll] for (uint b = 0; b < 8; ++b)
+	{
+		if (counts[b] == 0)
+			continue;
+
+		const uint candId = ids[b];
+		const uint candCount = counts[b];
+
+		if (candCount > bestCount)
+		{
+			bestId = candId;
+			bestCount = candCount;
+			bestPriority = MaterialPriority(bestId);
+#if VOXEL_MC_MAT_TIEBREAK_DEEP
+			bestZ = BestSolidCornerZForMaterial(bestId, cpos, cd, cornerMats);
+#endif
+			continue;
+		}
+
+		if (candCount == bestCount && candId != bestId)
+		{
+#if VOXEL_MC_MAT_TIEBREAK_PRIORITY
+			const uint candPriority = MaterialPriority(candId);
+			if (candPriority > bestPriority)
+			{
+				bestId = candId;
+				bestPriority = candPriority;
+#if VOXEL_MC_MAT_TIEBREAK_DEEP
+				bestZ = BestSolidCornerZForMaterial(bestId, cpos, cd, cornerMats);
+#endif
+				continue;
+			}
+#endif
+
+#if VOXEL_MC_MAT_TIEBREAK_DEEP
+			// Prefer deeper solid material on ties: lower solid-corner Z wins.
+			const float candZ = BestSolidCornerZForMaterial(candId, cpos, cd, cornerMats);
+			if (candZ < bestZ)
+			{
+				bestId = candId;
+				bestZ = candZ;
+				bestPriority = MaterialPriority(bestId);
+				continue;
+			}
+#endif
 		}
 	}
 
@@ -84,10 +281,10 @@ uint ComputeCaseIndex(uint3 cell, out float3 cpos[8], out float cd[8])
 	[unroll] for (uint i = 0; i < 8; ++i)
 	{
 		const uint3 s = cell + (uint3)CornerOfs[i];
-		const uint si = s.x + s.y * SamplesPerAxis + s.z * SamplesPerAxis * SamplesPerAxis;
+		const uint si = SampleIndex(s);
 		cpos[i] = ChunkOriginWS + float3(s) * StepSizeWS;
 		cd[i] = DensityField[si];
-		
+
 		caseIndex |= (cd[i] < IsoLevel) ? (1u << i) : 0u;
 	}
 	return caseIndex;
@@ -104,7 +301,7 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 
 	if (x >= CellsPerAxis || y >= CellsPerAxis || z >= CellsPerAxis)
 		return;
-	
+
 	const uint cellsPerSlice = CellsPerAxis * CellsPerAxis;
 	const uint cellIndex = x + y * CellsPerAxis + z * cellsPerSlice;
 
@@ -115,7 +312,7 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 
 	// Base output index from scan (exclusive prefix sum)
 	const uint base = VertOffsets[cellIndex];
-	
+
 	// Compute densities at corners
 	uint3 cell = uint3(x, y, z);
 
@@ -134,7 +331,6 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 	}
 
 	// For safety: if count/scatter disagree, refuse to emit.
-	// (Plane should not create these cases if your count matches.)
 	if (caseIndex == 0 || caseIndex == 255)
 		return;
 
@@ -153,11 +349,39 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 		}
 	}
 
-	// Emit vertices in triangle order.
-	// Because your current index pass is "indexless" (0..TotalVerts-1),
-	// we MUST keep vertex ordering such that every 3 vertices = one triangle.
-	const uint materialId = SelectDominantMaterial(cell, cd);
+	// Old vs new material selection
+	const uint oldMaterialId = SelectCornerMaterial(cell, cd);
+
+	uint cornerMaterials[8];
+	[unroll] for (uint i = 0; i < 8; ++i)
+	{
+		const uint3 s = cell + (uint3)CornerOfs[i];
+		cornerMaterials[i] = MaterialField[SampleIndex(s)];
+	}
+
+#if VOXEL_MC_MAT_TIEBREAK_DEEP
+	const uint dominantMaterialId = ComputeDominantMaterial8(
+		cornerMaterials[0], cornerMaterials[1], cornerMaterials[2], cornerMaterials[3],
+		cornerMaterials[4], cornerMaterials[5], cornerMaterials[6], cornerMaterials[7],
+		cpos, cd, cornerMaterials);
+#else
+	const uint dominantMaterialId = ComputeDominantMaterial8(
+		cornerMaterials[0], cornerMaterials[1], cornerMaterials[2], cornerMaterials[3],
+		cornerMaterials[4], cornerMaterials[5], cornerMaterials[6], cornerMaterials[7]);
+#endif
+
+#if VOXEL_MC_MATERIAL_MODE == 0
+	const uint materialId = oldMaterialId;
 	const uint color = MaterialIdToColor(materialId);
+#elif VOXEL_MC_MATERIAL_MODE == 1
+	const uint materialId = dominantMaterialId;
+	const uint color = MaterialIdToColor(materialId);
+#else
+	const uint materialId = dominantMaterialId;
+	const uint color = (oldMaterialId == dominantMaterialId)
+		? PackColor(0, 200, 0, 255)
+		: PackColor(220, 32, 32, 255);
+#endif
 
 	uint outV = 0;
 
@@ -172,7 +396,7 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 		// Don't write past what Count said for this cell.
 		if (outV + 3 > vc)
 			break;
-		
+
 		// Convert to LOCAL space for PMC: subtract ChunkOriginWS
 		const float3 p0L = epos[e0] - ChunkOriginWS;
 		const float3 p1L = epos[e1] - ChunkOriginWS;
@@ -193,3 +417,4 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 		outV += 3;
 	}
 }
+
