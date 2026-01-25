@@ -1,0 +1,63 @@
+#ifndef VOXEL_MATERIAL_TABLE_USH
+#define VOXEL_MATERIAL_TABLE_USH
+
+StructuredBuffer<uint4> VoxelMaterialTable;
+uint VoxelMaterialTableSize;
+uint VoxelUseTableDebugColor;
+
+struct FVoxelMaterialData
+{
+	float3 DebugColor;
+	uint SurfaceLayerIndex;
+	uint BlockAtlasIndex;
+	float Roughness;
+	float Metallic;
+	float NormalStrength;
+};
+
+uint VoxelExtractByte(uint Packed, uint Shift)
+{
+	return (Packed >> Shift) & 0xFFu;
+}
+
+float VoxelByteToFloat(uint Value)
+{
+	return float(Value) / 255.0f;
+}
+
+FVoxelMaterialData VoxelLookupMaterial(uint MaterialId)
+{
+	FVoxelMaterialData OutData;
+
+	const uint ClampedId = (VoxelMaterialTableSize > 0) ? min(MaterialId, VoxelMaterialTableSize - 1) : 0;
+	const uint4 Packed = VoxelMaterialTable[ClampedId];
+
+	const uint PackedColor = Packed.z;
+	OutData.SurfaceLayerIndex = Packed.x;
+	OutData.BlockAtlasIndex = Packed.y;
+
+	OutData.DebugColor = float3(
+		VoxelByteToFloat(VoxelExtractByte(PackedColor, 16)),
+		VoxelByteToFloat(VoxelExtractByte(PackedColor, 8)),
+		VoxelByteToFloat(VoxelExtractByte(PackedColor, 0)));
+
+	const uint PackedParams = Packed.w;
+	OutData.Roughness = VoxelByteToFloat(VoxelExtractByte(PackedParams, 0));
+	OutData.Metallic = VoxelByteToFloat(VoxelExtractByte(PackedParams, 8));
+	OutData.NormalStrength = VoxelByteToFloat(VoxelExtractByte(PackedParams, 16));
+
+	return OutData;
+}
+
+float4 VoxelResolveDebugColor(uint MaterialId, float4 VertexColor)
+{
+	if (VoxelUseTableDebugColor != 0)
+	{
+		const FVoxelMaterialData Mat = VoxelLookupMaterial(MaterialId);
+		return float4(Mat.DebugColor, 1.0f);
+	}
+
+	return VertexColor;
+}
+
+#endif
