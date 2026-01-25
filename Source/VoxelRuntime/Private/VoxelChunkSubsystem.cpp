@@ -864,6 +864,7 @@ void UVoxelChunkSubsystem::ScheduleGeneration(const FVector& CameraWS)
 		}
 		Inputs.EditStamps = GPUStamps;
 		Inputs.EditStampCount = GPUStamps.Num();
+		Inputs.MaterialGeneration = Settings.MaterialGenerationSettings;
 
 		if (!Rec->GPU.IsValid())
 			Rec->GPU = MakeShared<FVoxelChunkGPUResources>();

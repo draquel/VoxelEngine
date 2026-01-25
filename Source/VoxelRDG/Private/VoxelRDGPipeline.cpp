@@ -327,6 +327,7 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 				GraphBuilder,
 				ChunkParams,
 				Req.Payload.NoiseParameters,
+				Req.Payload.MaterialGeneration,
 				EditParams);
 
 		InOutResources->DensityFieldRDG = FieldOutputs.DensityField;
@@ -479,6 +480,7 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 				GraphBuilder,
 				FieldChunkParams,
 				Req.Payload.NoiseParameters,
+				Req.Payload.MaterialGeneration,
 				EditParams);
 
 		InOutResources->DensityFieldRDG = FieldOutputs.DensityField;
