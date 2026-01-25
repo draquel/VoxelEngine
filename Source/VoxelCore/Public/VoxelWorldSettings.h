@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "VoxelNoiseParams.h"
 #include "VoxelMaterialGenerationSettings.h"
+#include "VoxelMaterialTable.h"
 #include "VoxelSpatialPolicyTypes.h"
 #include "VoxelWorldSettings.generated.h"
 
@@ -110,6 +111,9 @@ struct FVoxelWorldSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") FVoxelNoiseParamsCPU NoiseParams;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") FVoxelMaterialGenerationSettings MaterialGenerationSettings;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
+	TObjectPtr<UVoxelMaterialTable> MaterialTable = nullptr;
 	
 	//Debug
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableQuadTreeDebug = false;	
@@ -117,4 +121,3 @@ struct FVoxelWorldSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableDemandDebug = false;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel") bool bEnableOcTreeDebug = false;
 };
-

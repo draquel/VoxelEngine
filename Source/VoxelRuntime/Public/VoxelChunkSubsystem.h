@@ -63,6 +63,7 @@ public:
 	void CancelCoarserOverlaps_DemandTime(const TArray<FVoxelChunkDemand>& Demands);
 
 	FVoxelWorldSettings GetWorldSettings() const { return Settings; }
+	TObjectPtr<UVoxelMaterialTable> GetMaterialTable() const { return Settings.MaterialTable; }
 	TObjectPtr<UVoxelEditLayer> GetEditLayer() const { return EditLayer; }
 	
 	// Call from PC / debug input

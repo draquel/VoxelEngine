@@ -104,6 +104,7 @@ void AVoxelWorldActor::BeginPlay()
 				[this](const FVoxelChunkKey& Key, uint64 BuiltBuildId){ if (ChunkSubsystem) ChunkSubsystem->OnConsumerBuilt(Key, BuiltBuildId); },
 				[this](const FVoxelChunkKey& Key){ if (ChunkSubsystem) ChunkSubsystem->OnConsumerRemoved(Key); }
 			);
+		VoxelMesh->SetMaterialTable(Settings.MaterialTable);
 		DebugPMC->SetVisibility(false, true);	
 	}
 
