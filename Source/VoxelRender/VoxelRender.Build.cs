@@ -15,6 +15,10 @@ public class VoxelRender : ModuleRules
             "ProceduralMeshComponent",
             "VoxelCore",
             "VoxelRDG",
+            "ApplicationCore",
+            "AudioPlatformConfiguration",
+            "AudioMixerCore",
+            "AudioExtensions",
         });
 
         PrivateDependencyModuleNames.AddRange(new[]
@@ -24,5 +28,14 @@ public class VoxelRender : ModuleRules
             "Renderer",
             "Projects",
         });
+
+        if (Target.bBuildEditor)
+        {
+            PublicDependencyModuleNames.AddRange(new[]
+            {
+                "UnrealEd",
+                "PropertyEditor",
+            });
+        }
     }
 }

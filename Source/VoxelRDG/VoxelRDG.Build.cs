@@ -13,6 +13,7 @@ public class VoxelRDG : ModuleRules
             "CoreUObject",
             "Engine",
             "VoxelCore",
+            "AudioPlatformConfiguration",
         });
 
         PrivateDependencyModuleNames.AddRange(new[]
@@ -22,5 +23,14 @@ public class VoxelRDG : ModuleRules
             "Renderer",
             "Projects",
         });
+
+        if (Target.bBuildEditor)
+        {
+            PublicDependencyModuleNames.AddRange(new[]
+            {
+                "UnrealEd",
+                "PropertyEditor",
+            });
+        }
     }
 }

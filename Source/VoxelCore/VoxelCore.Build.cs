@@ -13,7 +13,21 @@ public class VoxelCore : ModuleRules
                 "RenderCore",
                 "CoreUObject",
                 "Engine",
+                "ApplicationCore",
+                "AudioPlatformConfiguration",
+                "AudioMixerCore",
+                "AudioExtensions",
             }
         );
+
+        if (Target.bBuildEditor)
+        {
+            PublicDependencyModuleNames.AddRange(
+                new string[]
+                {
+                    "UnrealEd",
+                    "PropertyEditor",
+                });
+        }
     }
 }

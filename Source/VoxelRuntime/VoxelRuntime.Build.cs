@@ -14,7 +14,8 @@ public class VoxelRuntime : ModuleRules
             "ProceduralMeshComponent",
             "VoxelCore",
             "VoxelRDG",
-            "VoxelRender"
+            "VoxelRender",
+            "AudioPlatformConfiguration",
         });
 
         PrivateDependencyModuleNames.AddRange(new[]
@@ -24,5 +25,14 @@ public class VoxelRuntime : ModuleRules
             "Projects",
             "EnhancedInput"
         });
+
+        if (Target.bBuildEditor)
+        {
+            PublicDependencyModuleNames.AddRange(new[]
+            {
+                "UnrealEd",
+                "PropertyEditor",
+            });
+        }
     }
 }
