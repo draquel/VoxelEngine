@@ -3,6 +3,7 @@
 #include "VoxelChunkKey.h"
 #include "VoxelEditLayer.h"
 #include "VoxelNoiseParams.h"
+#include "VoxelMaterialGenerationSettings.h"
 
 class UVoxelEditLayer;
 struct FVoxelChunkGPUResources;
@@ -66,6 +67,7 @@ struct FVoxelChunkBuildPayload
 	// MC-specific knobs can live here too if you want:
 	float IsoLevel = 0.f;
 	FVoxelNoiseParamsCPU NoiseParameters;
+	FVoxelMaterialGenerationSettings MaterialGeneration;
 	FVoxelSurfaceGridParams Surface;
 	FVoxelMarchingGridParams MarchingCubes;
 };
