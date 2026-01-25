@@ -149,6 +149,22 @@ float3 VoxelSampleTriPlanarNormalWS(float3 WorldPosition, float3 WorldNormal, ui
 	return normalize(Blended);
 }
 
+float3 VoxelWorldNormalToTangent(float3 WorldN, float3x3 TangentToWorld)
+{
+	const float3 TangentN = mul(WorldN, transpose(TangentToWorld));
+	return normalize(TangentN);
+}
+
+float3 VoxelApplyTangentNormalDebug(float3 TangentNormal)
+{
+	if (VoxelUseTableDebugColor != 0)
+	{
+		return float3(0.0f, 0.0f, 1.0f);
+	}
+
+	return TangentNormal;
+}
+
 void VoxelResolveSurfaceShading(
 	float3 WorldPosition,
 	float3 WorldNormal,
@@ -176,6 +192,32 @@ void VoxelResolveSurfaceShading(
 	OutAO = ORM.x;
 	OutRoughness = ORM.y;
 	OutMetallic = ORM.z;
+}
+
+void VoxelResolveSurfaceShading_Tangent(
+	float3 WorldPosition,
+	float3 WorldNormal,
+	float3x3 TangentToWorld,
+	uint MaterialId,
+	out float3 OutBaseColor,
+	out float3 OutTangentNormal,
+	out float OutAO,
+	out float OutRoughness,
+	out float OutMetallic)
+{
+	float3 ResolvedWorldNormal = WorldNormal;
+	VoxelResolveSurfaceShading(
+		WorldPosition,
+		WorldNormal,
+		MaterialId,
+		OutBaseColor,
+		ResolvedWorldNormal,
+		OutAO,
+		OutRoughness,
+		OutMetallic);
+
+	OutTangentNormal = VoxelWorldNormalToTangent(ResolvedWorldNormal, TangentToWorld);
+	OutTangentNormal = VoxelApplyTangentNormalDebug(OutTangentNormal);
 }
 
 float4 VoxelResolveSurfaceColor(float3 WorldPosition, float3 WorldNormal, uint MaterialId, float4 VertexColor)
