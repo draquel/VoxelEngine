@@ -276,7 +276,7 @@ static void AllocateChunkBuffers(
 		Res.NormalsBufferRDG = GraphBuilder.CreateBuffer(NDesc, TEXT("Voxel.Greedy.Normals"));
 
 		FRDGBufferDesc MIDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), MaxVerts);
-		MIDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource;
+		MIDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
 		Res.VertexMaterialIdRDG = GraphBuilder.CreateBuffer(MIDesc, TEXT("Voxel.Greedy.MaterialIds"));
 
 		FRDGBufferDesc ColorDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), MaxVerts);

@@ -63,7 +63,7 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	Out.Vertices = GraphBuilder.CreateBuffer(VBDesc, TEXT("Voxel.MC.Vertices"));
 
 	FRDGBufferDesc MIDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), MaxVerts);
-	MIDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource;
+	MIDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
 	Out.MaterialIds = GraphBuilder.CreateBuffer(MIDesc, TEXT("Voxel.MC.MaterialIds"));
 
 	FRDGBufferDesc ColorDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), MaxVerts);

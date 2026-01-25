@@ -4,12 +4,13 @@
 
 namespace VoxelRender
 {
-	void FChunkMeshRenderData::InitFromPooled(
+void FChunkMeshRenderData::InitFromPooled(
 	const TRefCountPtr<FRDGPooledBuffer>& Pos,
 	const TRefCountPtr<FRDGPooledBuffer>& Nor,
 	const TRefCountPtr<FRDGPooledBuffer>& Ind,
 	const TRefCountPtr<FRDGPooledBuffer>& Tan,
 	const TRefCountPtr<FRDGPooledBuffer>& Col,
+	const TRefCountPtr<FRDGPooledBuffer>& Mat,
 	EChunkNormalFormat InFormat,
 	uint32 InNumVerts,
 	uint32 InNumIndices,
@@ -19,11 +20,12 @@ namespace VoxelRender
 		ResetRHI();
 
 		VertexPooled  = Pos;
-		NormalsPooled = Nor;
-		IndexPooled   = Ind;
-		TangentBasisPooled = Tan;
-		ColorPooled = Col;
-		NormalFormat = InFormat;
+	NormalsPooled = Nor;
+	IndexPooled   = Ind;
+	TangentBasisPooled = Tan;
+	ColorPooled = Col;
+	MaterialIdPooled = Mat;
+	NormalFormat = InFormat;
 
 		VertexCount = InNumVerts;
 		IndexCount  = InNumIndices;
@@ -81,16 +83,27 @@ namespace VoxelRender
 			NormalSRV.SafeRelease();
 		}
 
-		if (ColorPooled.IsValid())
-		{
-			ColorBufferRHI = ColorPooled->GetRHI();
-			check(ColorBufferRHI.IsValid());
-		}
-		else
-		{
-			ColorBufferRHI.SafeRelease();
-			ColorSRV.SafeRelease();
-		}
+	if (ColorPooled.IsValid())
+	{
+		ColorBufferRHI = ColorPooled->GetRHI();
+		check(ColorBufferRHI.IsValid());
+	}
+	else
+	{
+		ColorBufferRHI.SafeRelease();
+		ColorSRV.SafeRelease();
+	}
+
+	if (MaterialIdPooled.IsValid())
+	{
+		MaterialIdBufferRHI = MaterialIdPooled->GetRHI();
+		check(MaterialIdBufferRHI.IsValid());
+	}
+	else
+	{
+		MaterialIdBufferRHI.SafeRelease();
+		MaterialIdSRV.SafeRelease();
+	}
 
 		// ---- Typed SRVs (float4) ----
 		// IMPORTANT: This assumes your Position + Normal buffers are PF_A32B32G32R32F typed buffers.
@@ -100,12 +113,12 @@ namespace VoxelRender
 
 		FRHICommandListBase& RHICmdList = FRHICommandListExecutor::GetImmediateCommandList();
 
-		PositionSRV = GNullVertexBuffer.VertexBufferSRV;
+	PositionSRV = GNullVertexBuffer.VertexBufferSRV;
 
-		if (NormalBufferRHI.IsValid())
-		{
-			NormalSRV = GNullVertexBuffer.VertexBufferSRV;
-		}
+	if (NormalBufferRHI.IsValid())
+	{
+		NormalSRV = GNullVertexBuffer.VertexBufferSRV;
+	}
 
 		
 		if (NormalFormat == EChunkNormalFormat::PackedTangentBasis)
@@ -184,22 +197,25 @@ namespace VoxelRender
 
 	void FChunkMeshRenderData::ResetRHI()
 	{
-		PositionSRV.SafeRelease();
-		NormalSRV.SafeRelease();
-		TangentBasisSRV.SafeRelease();
-		ColorSRV.SafeRelease();
+	PositionSRV.SafeRelease();
+	NormalSRV.SafeRelease();
+	TangentBasisSRV.SafeRelease();
+	ColorSRV.SafeRelease();
+	MaterialIdSRV.SafeRelease();
 
-		PositionBufferRHI.SafeRelease();
-		NormalBufferRHI.SafeRelease();
-		IndexBufferRHI.SafeRelease();
-		TangentBasisBufferRHI.SafeRelease();
-		ColorBufferRHI.SafeRelease();
+	PositionBufferRHI.SafeRelease();
+	NormalBufferRHI.SafeRelease();
+	IndexBufferRHI.SafeRelease();
+	TangentBasisBufferRHI.SafeRelease();
+	ColorBufferRHI.SafeRelease();
+	MaterialIdBufferRHI.SafeRelease();
 
-		VertexPooled.SafeRelease();
-		IndexPooled.SafeRelease();
-		NormalsPooled.SafeRelease();
-		TangentBasisPooled.SafeRelease();
-		ColorPooled.SafeRelease();
+	VertexPooled.SafeRelease();
+	IndexPooled.SafeRelease();
+	NormalsPooled.SafeRelease();
+	TangentBasisPooled.SafeRelease();
+	ColorPooled.SafeRelease();
+	MaterialIdPooled.SafeRelease();
 
 		BoundsWS = FBoxSphereBounds(ForceInit);
 		ChunkOriginWS = FVector::ZeroVector;

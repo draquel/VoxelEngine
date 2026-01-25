@@ -143,11 +143,11 @@ namespace VoxelRender
 	    	// If empty, pass null pooled buffers; InitFromPooled will normalize and return early.
 	    	if (VCount == 0 || ICount == 0)
 	    	{
-	    		RD->InitFromPooled(nullptr, nullptr, nullptr, nullptr, nullptr, EChunkNormalFormat::None, 0, 0, P.ChunkOriginWS, P.ChunkSize);
+	    		RD->InitFromPooled(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, EChunkNormalFormat::None, 0, 0, P.ChunkOriginWS, P.ChunkSize);
 	    	}
 	    	else
 	    	{
-	    		RD->InitFromPooled(G.VertexPooled, G.NormalsPooled, G.IndexPooled, G.TangentBasisPooled, G.VertexColorPooled, Format, VCount, ICount, P.ChunkOriginWS, P.ChunkSize);
+	    		RD->InitFromPooled(G.VertexPooled, G.NormalsPooled, G.IndexPooled, G.TangentBasisPooled, G.VertexColorPooled, G.VertexMaterialIdPooled, Format, VCount, ICount, P.ChunkOriginWS, P.ChunkSize);
 	    	}
 
 	        const FVoxelChunkKey Key   = P.Key;
