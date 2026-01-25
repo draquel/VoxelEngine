@@ -7,8 +7,13 @@ uint VoxelUseTableDebugColor;
 
 Texture2DArray VoxelSurfaceAlbedoArray;
 SamplerState VoxelSurfaceAlbedoSampler;
+Texture2DArray VoxelSurfaceNormalArray;
+SamplerState VoxelSurfaceNormalSampler;
+Texture2DArray VoxelSurfaceORMArray;
+SamplerState VoxelSurfaceORMSampler;
 float VoxelTriPlanarScale;
 float VoxelTriPlanarBlendSharpness;
+float VoxelTriPlanarNormalStrength;
 
 struct FVoxelMaterialData
 {
@@ -89,6 +94,88 @@ float3 VoxelSampleTriPlanarAlbedo(float3 WorldPosition, float3 WorldNormal, uint
 	const float3 SampleZ = VoxelSurfaceAlbedoArray.Sample(VoxelSurfaceAlbedoSampler, float3(UVz, LayerIndex)).rgb;
 
 	return SampleX * Weights.x + SampleY * Weights.y + SampleZ * Weights.z;
+}
+
+float3 VoxelSampleTriPlanarORM(float3 WorldPosition, float3 WorldNormal, uint MaterialId)
+{
+	const FVoxelMaterialData Mat = VoxelLookupMaterial(MaterialId);
+	const float LayerIndex = float(Mat.SurfaceLayerIndex);
+	const float InvScale = (VoxelTriPlanarScale > 0.0f) ? (1.0f / VoxelTriPlanarScale) : 1.0f;
+	const float3 Weights = VoxelTriPlanarWeights(WorldNormal, max(VoxelTriPlanarBlendSharpness, 1.0f));
+
+	const float2 UVx = WorldPosition.yz * InvScale;
+	const float2 UVy = WorldPosition.xz * InvScale;
+	const float2 UVz = WorldPosition.xy * InvScale;
+
+	const float3 SampleX = VoxelSurfaceORMArray.Sample(VoxelSurfaceORMSampler, float3(UVx, LayerIndex)).rgb;
+	const float3 SampleY = VoxelSurfaceORMArray.Sample(VoxelSurfaceORMSampler, float3(UVy, LayerIndex)).rgb;
+	const float3 SampleZ = VoxelSurfaceORMArray.Sample(VoxelSurfaceORMSampler, float3(UVz, LayerIndex)).rgb;
+
+	return SampleX * Weights.x + SampleY * Weights.y + SampleZ * Weights.z;
+}
+
+float3 VoxelUnpackNormal(float3 PackedNormal, float Strength)
+{
+	float3 Normal = PackedNormal * 2.0f - 1.0f;
+	Normal.xy *= Strength;
+	return normalize(Normal);
+}
+
+float3 VoxelSampleTriPlanarNormalWS(float3 WorldPosition, float3 WorldNormal, uint MaterialId)
+{
+	const FVoxelMaterialData Mat = VoxelLookupMaterial(MaterialId);
+	const float LayerIndex = float(Mat.SurfaceLayerIndex);
+	const float InvScale = (VoxelTriPlanarScale > 0.0f) ? (1.0f / VoxelTriPlanarScale) : 1.0f;
+	const float3 Weights = VoxelTriPlanarWeights(WorldNormal, max(VoxelTriPlanarBlendSharpness, 1.0f));
+	const float NormalStrength = max(VoxelTriPlanarNormalStrength * Mat.NormalStrength, 0.0f);
+
+	const float2 UVx = WorldPosition.yz * InvScale;
+	const float2 UVy = WorldPosition.xz * InvScale;
+	const float2 UVz = WorldPosition.xy * InvScale;
+
+	const float3 SampleX = VoxelSurfaceNormalArray.Sample(VoxelSurfaceNormalSampler, float3(UVx, LayerIndex)).xyz;
+	const float3 SampleY = VoxelSurfaceNormalArray.Sample(VoxelSurfaceNormalSampler, float3(UVy, LayerIndex)).xyz;
+	const float3 SampleZ = VoxelSurfaceNormalArray.Sample(VoxelSurfaceNormalSampler, float3(UVz, LayerIndex)).xyz;
+
+	const float3 NormalX = VoxelUnpackNormal(SampleX, NormalStrength);
+	const float3 NormalY = VoxelUnpackNormal(SampleY, NormalStrength);
+	const float3 NormalZ = VoxelUnpackNormal(SampleZ, NormalStrength);
+
+	const float3 WorldFromX = normalize(float3(0.0f, NormalX.x, NormalX.y) + float3(NormalX.z, 0.0f, 0.0f));
+	const float3 WorldFromY = normalize(float3(NormalY.x, 0.0f, NormalY.y) + float3(0.0f, NormalY.z, 0.0f));
+	const float3 WorldFromZ = normalize(float3(NormalZ.x, NormalZ.y, 0.0f) + float3(0.0f, 0.0f, NormalZ.z));
+
+	const float3 Blended = WorldFromX * Weights.x + WorldFromY * Weights.y + WorldFromZ * Weights.z;
+	return normalize(Blended);
+}
+
+void VoxelResolveSurfaceShading(
+	float3 WorldPosition,
+	float3 WorldNormal,
+	uint MaterialId,
+	out float3 OutBaseColor,
+	out float3 OutWorldNormal,
+	out float OutAO,
+	out float OutRoughness,
+	out float OutMetallic)
+{
+	if (VoxelUseTableDebugColor != 0)
+	{
+		const FVoxelMaterialData Mat = VoxelLookupMaterial(MaterialId);
+		OutBaseColor = Mat.DebugColor;
+		OutWorldNormal = WorldNormal;
+		OutAO = 1.0f;
+		OutRoughness = 0.8f;
+		OutMetallic = 0.0f;
+		return;
+	}
+
+	OutBaseColor = VoxelSampleTriPlanarAlbedo(WorldPosition, WorldNormal, MaterialId);
+	OutWorldNormal = VoxelSampleTriPlanarNormalWS(WorldPosition, WorldNormal, MaterialId);
+	const float3 ORM = VoxelSampleTriPlanarORM(WorldPosition, WorldNormal, MaterialId);
+	OutAO = ORM.x;
+	OutRoughness = ORM.y;
+	OutMetallic = ORM.z;
 }
 
 float4 VoxelResolveSurfaceColor(float3 WorldPosition, float3 WorldNormal, uint MaterialId, float4 VertexColor)
