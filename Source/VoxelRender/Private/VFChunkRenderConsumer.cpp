@@ -130,6 +130,15 @@ namespace VoxelRender
 	        G.VertexCountReadback->Unlock();
 	        G.IndexCountReadback->Unlock();
 
+	        if (VCount > 0)
+	        {
+	        	UE_LOG(LogTemp, Log, TEXT("[VoxelRender] Greedy material id pooled valid=%s (LOD=%d Coord=%s VCount=%u)"),
+	        		G.VertexMaterialIdPooled.IsValid() ? TEXT("true") : TEXT("false"),
+	        		P.Key.LOD,
+	        		*P.Key.Coord.ToString(),
+	        		VCount);
+	        }
+
 	        // Build render data (RT safe — but install on GT)
 	        TSharedPtr<FChunkMeshRenderData> RD = MakeShared<FChunkMeshRenderData>();
 			RD->ChunkKey      = P.Key;

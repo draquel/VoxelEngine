@@ -70,7 +70,14 @@ namespace VoxelRender
 
         InData.PositionComponentSRV = PosVB.ShaderResourceViewRHI;
         // Ensure SRVs are valid even if using null buffers
-        InData.TextureCoordinatesSRV = GNullVertexBuffer.VertexBufferSRV;
+        if (UV0VBOrNull && UV0VBOrNull->ShaderResourceViewRHI.IsValid())
+        {
+            InData.TextureCoordinatesSRV = UV0VBOrNull->ShaderResourceViewRHI;
+        }
+        else
+        {
+            InData.TextureCoordinatesSRV = GNullVertexBuffer.VertexBufferSRV;
+        }
 
         if (RHICmdList.IsImmediate())
         {

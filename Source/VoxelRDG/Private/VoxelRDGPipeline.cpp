@@ -522,6 +522,11 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		Inputs.EditStampCount = Req.Payload.EditStampCount;
 
 		GM_BuildPass::AddGM_BuildPass(GraphBuilder, Inputs);
+
+		// Preserve the greedy material id buffer for extraction/binding.
+		ensureMsgf(InOutResources->VertexMaterialIdRDG, TEXT("Greedy material id buffer should be allocated."));
+		InOutResources->VertexMaterialIdRDG = Inputs.MaterialIdBuffer;
+		InOutResources->VertexColorRDG = Inputs.VertexColorBuffer;
 		
 		InOutResources->TangentBasisBufferRDG = FMC_TangentPass::AddMC_TangentPass(
 			GraphBuilder,
