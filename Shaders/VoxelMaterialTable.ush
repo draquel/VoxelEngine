@@ -97,6 +97,18 @@ FVoxelMaterialData VoxelLookupMaterial(uint MaterialId)
 	return OutData;
 }
 
+float3 VoxelLookupDebugColor(uint MaterialId)
+{
+	const uint ClampedId = (VoxelMaterialTableSize > 0) ? min(MaterialId, VoxelMaterialTableSize - 1) : 0;
+	const uint4 Packed = VoxelMaterialTable_Load(ClampedId);
+	uint PackedColor = Packed.z;	
+
+	return float3(
+		VoxelByteToFloat(VoxelExtractByte(PackedColor, 16)),
+		VoxelByteToFloat(VoxelExtractByte(PackedColor, 8)),
+		VoxelByteToFloat(VoxelExtractByte(PackedColor, 0)));          // use your existing unpack helper
+}
+
 float4 VoxelResolveDebugColor(uint MaterialId, float4 VertexColor)
 {
 	if (VoxelUseTableDebugColor != 0)
