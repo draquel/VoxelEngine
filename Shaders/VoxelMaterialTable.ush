@@ -274,22 +274,37 @@ float2 VoxelComputeBlockFaceUV(float3 WorldPosition, float3 WorldNormal)
 	return FaceUV;
 }
 
-float2 VoxelComputeBlockAtlasUV(float2 InFaceUV, uint BlockAtlasIndex)
+float2 VoxelComputeBlockAtlasUV(float2 InFaceUV, uint Tile, uint TilesX, uint TilesY, float PadUV)
+
 {
-	const uint TilesX = max(VoxelBlockAtlasTilesX, 1u);
-	const uint TilesY = max(VoxelBlockAtlasTilesY, 1u);
-	const uint TileX = BlockAtlasIndex % TilesX;
-	const uint TileY = BlockAtlasIndex / TilesX;
+	const uint TileX = Tile % TilesX;
+	const uint TileY = Tile / TilesX;
 	const float2 Tiles = float2(TilesX, TilesY);
-	const float PadUV = (VoxelBlockAtlasPadUV > 0.0f) ? VoxelBlockAtlasPadUV : 0.002f;
 	InFaceUV = lerp(PadUV.xx, (1.0f - PadUV).xx, InFaceUV);
 
 	return (float2(TileX, TileY) + InFaceUV) / Tiles;
 }
 
+uint VoxelSelectBlockTileIndex(uint MaterialId, float3 WorldNormal)
+{
+	const FVoxelMaterialData Mat = VoxelLookupMaterial(MaterialId);
+	const float3 Normal = normalize(WorldNormal);
+	const float3 AbsNormal = abs(Normal);
+
+	if (AbsNormal.z >= AbsNormal.x && AbsNormal.z >= AbsNormal.y)
+	{
+		return (Normal.z >= 0.0f) ? Mat.BlockAtlasTopIndex : Mat.BlockAtlasBottomIndex;
+	}
+
+	return Mat.BlockAtlasSideIndex;
+}
+
 void VoxelResolveBlockSurface(
 	uint MaterialId,
 	float2 InFaceUV,
+	float3 WorldNormal,
+	Texture2D BlockAtlasTex,
+	SamplerState BlockAtlasSamp,
 	out float3 OutBaseColor,
 	out float OutAO,
 	out float OutRoughness,
@@ -306,8 +321,11 @@ void VoxelResolveBlockSurface(
 		return;
 	}
 
-	const float2 AtlasUV = VoxelComputeBlockAtlasUV(InFaceUV, Mat.BlockAtlasIndex);
-	OutBaseColor = VoxelBlockAtlasAlbedo.Sample(VoxelBlockAtlasSampler, AtlasUV).rgb;
+	const uint BlockAtlasIndex = VoxelSelectBlockTileIndex(MaterialId, WorldNormal);
+	const float2 AtlasUV = VoxelComputeBlockAtlasUV(InFaceUV, BlockAtlasIndex, VoxelBlockAtlasTilesX, VoxelBlockAtlasTilesY, VoxelBlockAtlasPadUV);;
+
+	OutBaseColor = Texture2DSample(BlockAtlasTex, BlockAtlasSamp, AtlasUV).rgb;
+
 	OutAO = 1.0f;
 	OutRoughness = Mat.Roughness;
 	OutMetallic = Mat.Metallic;
