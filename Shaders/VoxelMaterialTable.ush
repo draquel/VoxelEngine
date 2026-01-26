@@ -40,16 +40,33 @@ float VoxelByteToFloat(uint Value)
 	return float(Value) / 255.0f;
 }
 
+uint VoxelUnpackLow16(uint Packed)
+{
+	return Packed & 0xFFFFu;
+}
+
+uint VoxelUnpackHigh16(uint Packed)
+{
+	return (Packed >> 16) & 0xFFFFu;
+}
+
 FVoxelMaterialData VoxelLookupMaterial(uint MaterialId)
 {
 	FVoxelMaterialData OutData;
 
 	const uint ClampedId = (VoxelMaterialTableSize > 0) ? min(MaterialId, VoxelMaterialTableSize - 1) : 0;
 	const uint4 Packed = VoxelMaterialTable[ClampedId];
+	// Packed layout:
+	// Packed.x = pack2x16(BlockAtlasTopIndex, BlockAtlasSideIndex)
+	// Packed.y = pack2x16(BlockAtlasBottomIndex, SurfaceLayerIndex)
+	// Packed.z = DebugColor ARGB8
+	// Packed.w = Params (Roughness, Metallic, NormalStrength) as 8-bit channels
 
 	const uint PackedColor = Packed.z;
-	OutData.SurfaceLayerIndex = Packed.x;
-	OutData.BlockAtlasIndex = Packed.y;
+	OutData.BlockAtlasTopIndex = VoxelUnpackLow16(Packed.x);
+	OutData.BlockAtlasSideIndex = VoxelUnpackHigh16(Packed.x);
+	OutData.BlockAtlasBottomIndex = VoxelUnpackLow16(Packed.y);
+	OutData.SurfaceLayerIndex = VoxelUnpackHigh16(Packed.y);
 
 	OutData.DebugColor = float3(
 		VoxelByteToFloat(VoxelExtractByte(PackedColor, 16)),

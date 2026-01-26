@@ -25,10 +25,23 @@ namespace
 
 		const uint32 SurfaceLayer = static_cast<uint32>(FMath::Clamp(Def.SurfaceLayerIndex, 0, 65535));
 		const uint32 BlockAtlas = static_cast<uint32>(FMath::Clamp(Def.BlockAtlasIndex, 0, 65535));
+		uint32 BlockAtlasTop = static_cast<uint32>(FMath::Clamp(Def.BlockAtlasTopIndex, 0, 65535));
+		uint32 BlockAtlasSide = static_cast<uint32>(FMath::Clamp(Def.BlockAtlasSideIndex, 0, 65535));
+		uint32 BlockAtlasBottom = static_cast<uint32>(FMath::Clamp(Def.BlockAtlasBottomIndex, 0, 65535));
+
+		if (BlockAtlasTop == 0 && BlockAtlasSide == 0 && BlockAtlasBottom == 0)
+		{
+			BlockAtlasTop = BlockAtlas;
+			BlockAtlasSide = BlockAtlas;
+			BlockAtlasBottom = BlockAtlas;
+		}
+
+		const uint32 PackedIndices0 = (BlockAtlasTop & 0xFFFFu) | ((BlockAtlasSide & 0xFFFFu) << 16);
+		const uint32 PackedIndices1 = (BlockAtlasBottom & 0xFFFFu) | ((SurfaceLayer & 0xFFFFu) << 16);
 
 		return FUintVector4(
-			SurfaceLayer,
-			BlockAtlas,
+			PackedIndices0,
+			PackedIndices1,
 			PackedColor.ToPackedARGB(),
 			PackedParams);
 	}

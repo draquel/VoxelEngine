@@ -16,11 +16,23 @@ void UVoxelMaterialTable::BuildDenseLookup(TArray<FVoxelMaterialDef>& OutDense) 
 		OutDense[Index].MaterialId = Index;
 	}
 
+	auto ApplyAtlasDefaults = [](FVoxelMaterialDef& Def)
+	{
+		if (Def.BlockAtlasTopIndex == 0 && Def.BlockAtlasSideIndex == 0 && Def.BlockAtlasBottomIndex == 0)
+		{
+			const int32 ClampedAtlas = FMath::Clamp(Def.BlockAtlasIndex, 0, 65535);
+			Def.BlockAtlasTopIndex = ClampedAtlas;
+			Def.BlockAtlasSideIndex = ClampedAtlas;
+			Def.BlockAtlasBottomIndex = ClampedAtlas;
+		}
+	};
+
 	for (const FVoxelMaterialDef& Def : Materials)
 	{
 		if (Def.MaterialId >= 0 && Def.MaterialId <= MaxMaterialId)
 		{
 			OutDense[Def.MaterialId] = Def;
+			ApplyAtlasDefaults(OutDense[Def.MaterialId]);
 		}
 	}
 }
