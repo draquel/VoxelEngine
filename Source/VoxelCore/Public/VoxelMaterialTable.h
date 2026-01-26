@@ -22,6 +22,15 @@ struct FVoxelMaterialDef
 	int32 BlockAtlasIndex = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
+	int32 BlockAtlasTopIndex = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
+	int32 BlockAtlasSideIndex = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
+	int32 BlockAtlasBottomIndex = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")
 	float Roughness = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxel")

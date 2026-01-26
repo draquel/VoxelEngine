@@ -24,7 +24,9 @@ struct FVoxelMaterialData
 {
 	float3 DebugColor;
 	uint SurfaceLayerIndex;
-	uint BlockAtlasIndex;
+	uint BlockAtlasTopIndex;
+	uint BlockAtlasSideIndex;
+	uint BlockAtlasBottomIndex;
 	float Roughness;
 	float Metallic;
 	float NormalStrength;
