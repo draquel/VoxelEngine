@@ -1,9 +1,23 @@
 #ifndef VOXEL_MATERIAL_TABLE_USH
 #define VOXEL_MATERIAL_TABLE_USH
 
+// Ray tracing material shaders don't allow StructuredBuffer parameters.
+// Provide a safe fallback for RT permutations.
+#if RAY_TRACING
+	// No StructuredBuffer allowed here.
+	uint VoxelMaterialTableSize = 0;
+uint VoxelUseTableDebugColor = 0;
+
+// Fallback “table read” returns zeros.
+uint4 VoxelMaterialTable_Load(uint Index) { return uint4(0,0,0,0); }
+
+#else
 StructuredBuffer<uint4> VoxelMaterialTable;
 uint VoxelMaterialTableSize;
 uint VoxelUseTableDebugColor;
+
+uint4 VoxelMaterialTable_Load(uint Index) { return VoxelMaterialTable[Index]; }
+#endif
 
 Texture2DArray VoxelSurfaceAlbedoArray;
 SamplerState VoxelSurfaceAlbedoSampler;
