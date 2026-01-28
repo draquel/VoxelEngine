@@ -1,0 +1,110 @@
+// /Plugin/Voxel/GreedyMesher/GM_Count.usf
+
+#include "/Engine/Private/Common.ush"
+#include "/Plugin/Voxel/Edits/VoxelEdits.ush"
+
+float3 ChunkOriginWS;
+float  StepSizeWS;
+uint   CellsPerAxis;
+uint   SamplesPerAxis;
+float  IsoLevel;
+uint   EditStampCount;
+
+StructuredBuffer<float> DensityField;
+StructuredBuffer<uint>  MaterialField;
+StructuredBuffer<FVoxelEditStampGPU> EditStamps;
+
+RWStructuredBuffer<uint> OutVertexCount;
+RWStructuredBuffer<uint> OutIndexCount;
+
+static const int3 CornerOfs[8] = {
+	int3(0, 0, 0),
+	int3(1, 0, 0),
+	int3(1, 1, 0),
+	int3(0, 1, 0),
+	int3(0, 0, 1),
+	int3(1, 0, 1),
+	int3(1, 1, 1),
+	int3(0, 1, 1)
+};
+
+// 0: -x, 1: +x, 2: -y, 3: +y, 4: -z, 5: +z
+static const int3 NeighborOfs[6] = {
+	int3(-1, 0, 0), int3(1, 0, 0),
+	int3(0, -1, 0), int3(0, 1, 0),
+	int3(0, 0, -1), int3(0, 0, 1)
+};
+
+static const uint FaceCornerIdx[6][4] = {
+	{ 0, 3, 7, 4 }, // -x
+	{ 1, 2, 6, 5 }, // +x
+	{ 0, 1, 5, 4 }, // -y
+	{ 3, 2, 6, 7 }, // +y
+	{ 0, 1, 2, 3 }, // -z
+	{ 4, 5, 6, 7 }  // +z
+};
+
+float GetDensity(int3 c)
+{
+	if (any(c < 0) || any(c >= (int)CellsPerAxis))
+	{
+		return IsoLevel + 1.0f;
+	}
+
+	float bestDensity = 3.4e38f;
+	[unroll] for (uint i = 0; i < 8; ++i)
+	{
+		const uint3 s = uint3(c) + (uint3)CornerOfs[i];
+		const uint si = s.x + s.y * SamplesPerAxis + s.z * SamplesPerAxis * SamplesPerAxis;
+		bestDensity = min(bestDensity, DensityField[si]);
+	}
+	return bestDensity;
+}
+
+bool FaceHasAirSample(int3 c, uint faceIdx)
+{
+	[unroll] for (uint i = 0; i < 4; ++i)
+	{
+		const uint cornerIdx = FaceCornerIdx[faceIdx][i];
+		const uint3 s = uint3(c) + (uint3)CornerOfs[cornerIdx];
+		const uint si = s.x + s.y * SamplesPerAxis + s.z * SamplesPerAxis * SamplesPerAxis;
+		if (DensityField[si] >= IsoLevel)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool IsNeighborEmpty(int3 c, uint faceIdx)
+{
+	const int3 n = c + NeighborOfs[faceIdx];
+	if (any(n < 0) || any(n >= (int)CellsPerAxis))
+	{
+		return FaceHasAirSample(c, faceIdx);
+	}
+
+	return GetDensity(n) >= IsoLevel;
+}
+
+[numthreads(4, 4, 4)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	if (any(DTid >= CellsPerAxis)) return;
+
+	const int3 c = int3(DTid);
+	const float d = GetDensity(c);
+
+	if (d >= IsoLevel) return;
+
+	[unroll]
+	for (uint i = 0; i < 6; ++i)
+	{
+		if (IsNeighborEmpty(c, i))
+		{
+			InterlockedAdd(OutVertexCount[0], 4);
+			InterlockedAdd(OutIndexCount[0], 6);
+		}
+	}
+}
