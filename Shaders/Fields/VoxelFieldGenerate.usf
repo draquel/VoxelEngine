@@ -237,5 +237,6 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 	}
 
 	OutDensity[idx] = density;
-	OutMaterial[idx] = material;
+	// OutMaterial[idx] = material;
+	OutMaterial[idx] = 1u;
 }

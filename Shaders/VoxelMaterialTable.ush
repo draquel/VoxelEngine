@@ -1,6 +1,8 @@
 #ifndef VOXEL_MATERIAL_TABLE_USH
 #define VOXEL_MATERIAL_TABLE_USH
 
+#include "/Engine/Private/Common.ush"
+
 // Ray tracing material shaders don't allow StructuredBuffer parameters.
 // Provide a safe fallback for RT permutations.
 #if RAY_TRACING
@@ -33,6 +35,7 @@ float VoxelBlockAtlasPadUV;
 float VoxelTriPlanarScale;
 float VoxelTriPlanarBlendSharpness;
 float VoxelTriPlanarNormalStrength;
+float VoxelBlockFaceUVScale;
 
 struct FVoxelMaterialData
 {
@@ -70,6 +73,27 @@ FVoxelMaterialData VoxelLookupMaterial(uint MaterialId)
 {
 	FVoxelMaterialData OutData;
 
+	if (VoxelMaterialTableSize == 0)
+	{
+		const float3 FallbackColor = (MaterialId == 1) ? float3(32.0f, 200.0f, 64.0f) / 255.0f :
+			(MaterialId == 2) ? float3(120.0f, 72.0f, 32.0f) / 255.0f :
+			(MaterialId == 3) ? float3(128.0f, 128.0f, 128.0f) / 255.0f :
+			(MaterialId == 4) ? float3(210.0f, 190.0f, 80.0f) / 255.0f :
+			(MaterialId == 5) ? float3(220.0f, 230.0f, 245.0f) / 255.0f :
+			(MaterialId == 6) ? float3(220.0f, 120.0f, 64.0f) / 255.0f :
+			float3(10.0f, 10.0f, 10.0f) / 255.0f;
+
+		OutData.DebugColor = FallbackColor;
+		OutData.BlockAtlasTopIndex = MaterialId;
+		OutData.BlockAtlasSideIndex = MaterialId;
+		OutData.BlockAtlasBottomIndex = MaterialId;
+		OutData.SurfaceLayerIndex = MaterialId;
+		OutData.Roughness = 0.8f;
+		OutData.Metallic = 0.0f;
+		OutData.NormalStrength = 1.0f;
+		return OutData;
+	}
+
 	const uint ClampedId = (VoxelMaterialTableSize > 0) ? min(MaterialId, VoxelMaterialTableSize - 1) : 0;
 	const uint4 Packed = VoxelMaterialTable[ClampedId];
 	// Packed layout:
@@ -99,14 +123,8 @@ FVoxelMaterialData VoxelLookupMaterial(uint MaterialId)
 
 float3 VoxelLookupDebugColor(uint MaterialId)
 {
-	const uint ClampedId = (VoxelMaterialTableSize > 0) ? min(MaterialId, VoxelMaterialTableSize - 1) : 0;
-	const uint4 Packed = VoxelMaterialTable_Load(ClampedId);
-	uint PackedColor = Packed.z;	
-
-	return float3(
-		VoxelByteToFloat(VoxelExtractByte(PackedColor, 16)),
-		VoxelByteToFloat(VoxelExtractByte(PackedColor, 8)),
-		VoxelByteToFloat(VoxelExtractByte(PackedColor, 0)));          // use your existing unpack helper
+	const FVoxelMaterialData Mat = VoxelLookupMaterial(MaterialId);
+	return Mat.DebugColor;
 }
 
 float4 VoxelResolveDebugColor(uint MaterialId, float4 VertexColor)
@@ -281,22 +299,33 @@ float4 VoxelResolveSurfaceColor(float3 WorldPosition, float3 WorldNormal, uint M
 	return float4(VoxelSampleTriPlanarAlbedo(WorldPosition, WorldNormal, MaterialId), 1.0f);
 }
 
+float3 VoxelGetAbsoluteWorldPosition(float3 WorldPosition)
+{
+#if defined(View)
+	return WorldPosition + View.PreViewTranslation;
+#else
+	return WorldPosition;
+#endif
+}
+
 float2 VoxelComputeBlockFaceUV(float3 WorldPosition, float3 WorldNormal)
 {
+	const float3 AbsoluteWorldPosition = VoxelGetAbsoluteWorldPosition(WorldPosition);
 	const float3 AbsNormal = abs(WorldNormal);
+	const float InvScale = (VoxelBlockFaceUVScale > 0.0f) ? (1.0f / VoxelBlockFaceUVScale) : 1.0f;
 	float2 FaceUV = float2(0.0f, 0.0f);
 
 	if (AbsNormal.x >= AbsNormal.y && AbsNormal.x >= AbsNormal.z)
 	{
-		FaceUV = frac(WorldPosition.zy);
+		FaceUV = frac(AbsoluteWorldPosition.zy * InvScale);
 	}
 	else if (AbsNormal.y >= AbsNormal.z)
 	{
-		FaceUV = frac(WorldPosition.xz);
+		FaceUV = frac(AbsoluteWorldPosition.xz * InvScale);
 	}
 	else
 	{
-		FaceUV = frac(WorldPosition.xy);
+		FaceUV = frac(AbsoluteWorldPosition.xy * InvScale);
 	}
 
 	return FaceUV;
@@ -308,9 +337,16 @@ float2 VoxelComputeBlockAtlasUV(float2 InFaceUV, uint Tile, uint TilesX, uint Ti
 	const uint TileX = Tile % TilesX;
 	const uint TileY = Tile / TilesX;
 	const float2 Tiles = float2(TilesX, TilesY);
+	InFaceUV = frac(InFaceUV);
 	InFaceUV = lerp(PadUV.xx, (1.0f - PadUV).xx, InFaceUV);
 
 	return (float2(TileX, TileY) + InFaceUV) / Tiles;
+}
+
+float2 VoxelComputeBlockAtlasUVFromWorld(float3 WorldPosition, float3 WorldNormal, uint Tile, uint TilesX, uint TilesY, float PadUV)
+{
+	const float2 FaceUV = VoxelComputeBlockFaceUV(WorldPosition, WorldNormal);
+	return VoxelComputeBlockAtlasUV(FaceUV, Tile, TilesX, TilesY, PadUV);
 }
 
 uint VoxelSelectBlockTileIndex(uint MaterialId, float3 WorldNormal)
@@ -327,8 +363,14 @@ uint VoxelSelectBlockTileIndex(uint MaterialId, float3 WorldNormal)
 	return Mat.BlockAtlasSideIndex;
 }
 
+uint VoxelSanitizeMaterialId(float MaterialId)
+{
+	const float Clamped = max(MaterialId, 0.0f);
+	return (uint)round(Clamped);
+}
+
 void VoxelResolveBlockSurface(
-	uint MaterialId,
+	float MaterialId,
 	float2 InFaceUV,
 	float3 WorldNormal,
 	Texture2D BlockAtlasTex,
@@ -338,7 +380,26 @@ void VoxelResolveBlockSurface(
 	out float OutRoughness,
 	out float OutMetallic)
 {
-	const FVoxelMaterialData Mat = VoxelLookupMaterial(MaterialId);
+	const uint MaterialIdInt = VoxelSanitizeMaterialId(MaterialId);
+	if (VoxelMaterialTableSize == 0)
+	{
+		OutBaseColor = float3(1.0f, 0.0f, 1.0f);
+		OutAO = 1.0f;
+		OutRoughness = 0.8f;
+		OutMetallic = 0.0f;
+		return;
+	}
+
+	if (MaterialIdInt == 0)
+	{
+		OutBaseColor = float3(1.0f, 0.0f, 1.0f);
+		OutAO = 1.0f;
+		OutRoughness = 0.8f;
+		OutMetallic = 0.0f;
+		return;
+	}
+
+	const FVoxelMaterialData Mat = VoxelLookupMaterial(MaterialIdInt);
 
 	if (VoxelUseTableDebugColor != 0)
 	{
@@ -349,7 +410,7 @@ void VoxelResolveBlockSurface(
 		return;
 	}
 
-	const uint BlockAtlasIndex = VoxelSelectBlockTileIndex(MaterialId, WorldNormal);
+	const uint BlockAtlasIndex = VoxelSelectBlockTileIndex(MaterialIdInt, WorldNormal);
 	const float2 AtlasUV = VoxelComputeBlockAtlasUV(InFaceUV, BlockAtlasIndex, VoxelBlockAtlasTilesX, VoxelBlockAtlasTilesY, VoxelBlockAtlasPadUV);;
 
 	OutBaseColor = Texture2DSample(BlockAtlasTex, BlockAtlasSamp, AtlasUV).rgb;
