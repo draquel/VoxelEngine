@@ -19,7 +19,7 @@ RWBuffer<float4> OutVertices;
 RWBuffer<uint>   OutIndices;
 RWBuffer<float4> OutNormals;
 RWBuffer<float2> OutUV0;
-RWBuffer<uint>   OutMaterialIds;
+RWBuffer<float2> OutMaterialIds;
 RWBuffer<uint>   OutVertexColors;
 RWStructuredBuffer<uint> OutVertexCount;
 RWStructuredBuffer<uint> OutIndexCount;
@@ -39,15 +39,16 @@ uint PackColor(uint r, uint g, uint b, uint a)
 
 uint MaterialIdToColor(uint material)
 {
+	const uint alpha = min(material, 255u);
 	switch (material)
 	{
-	case MAT_Grass: return PackColor(32, 200, 64, 255);
-	case MAT_Dirt:  return PackColor(120, 72, 32, 255);
-	case MAT_Stone: return PackColor(128, 128, 128, 255);
-	case MAT_Sand:  return PackColor(210, 190, 80, 255);
-	case MAT_Snow:  return PackColor(220, 230, 245, 255);
-	case MAT_Ore:   return PackColor(220, 120, 64, 255);
-	default:        return PackColor(10, 10, 10, 255);
+	case MAT_Grass: return PackColor(32, 200, 64, alpha);
+	case MAT_Dirt:  return PackColor(120, 72, 32, alpha);
+	case MAT_Stone: return PackColor(128, 128, 128, alpha);
+	case MAT_Sand:  return PackColor(210, 190, 80, alpha);
+	case MAT_Snow:  return PackColor(220, 230, 245, alpha);
+	case MAT_Ore:   return PackColor(220, 120, 64, alpha);
+	default:        return PackColor(10, 10, 10, alpha);
 	}
 }
 
@@ -225,7 +226,7 @@ void EmitFace(int3 c, uint faceIdx, uint materialId)
 		OutVertices[vBase + i] = float4(v[i], 1.0f);
 		OutNormals[vBase + i]  = float4(n, 0.0f);
 		OutUV0[vBase + i] = uv[i];
-		OutMaterialIds[vBase + i] = materialId;
+		OutMaterialIds[vBase + i] = float2((float)materialId, 0.0f);
 		OutVertexColors[vBase + i] = color;
 	}
 

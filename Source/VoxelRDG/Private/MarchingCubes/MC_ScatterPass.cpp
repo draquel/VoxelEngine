@@ -32,7 +32,7 @@ public:
 		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, CaseIndexPerCell)
 
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<float4>, OutVertices)
-		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutMaterialIds)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<FVector2f>, OutMaterialIds)
 		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, OutVertexColors)
 	END_SHADER_PARAMETER_STRUCT();
 
@@ -62,7 +62,7 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	VBDesc.Usage |= BUF_VertexBuffer | BUF_UnorderedAccess | BUF_ShaderResource;
 	Out.Vertices = GraphBuilder.CreateBuffer(VBDesc, TEXT("Voxel.MC.Vertices"));
 
-	FRDGBufferDesc MIDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), MaxVerts);
+	FRDGBufferDesc MIDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(FVector2f), MaxVerts);
 	MIDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
 	Out.MaterialIds = GraphBuilder.CreateBuffer(MIDesc, TEXT("Voxel.MC.MaterialIds"));
 
@@ -72,7 +72,7 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 
 	// Optional clear for debugging (not required)
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.Vertices, PF_A32B32G32R32F), 0);
-	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.MaterialIds, PF_R32_UINT), 0);
+	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.MaterialIds, PF_G32R32F), 0);
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(Out.VertexColors, PF_R32_UINT), 0);
 
 	auto* PassParams = GraphBuilder.AllocParameters<FMC_ScatterCS::FParameters>();
@@ -95,7 +95,7 @@ FMCScatterOutputs FMC_ScatterPass::AddMC_ScatterPass(
 	PassParams->VertCountPerCell = GraphBuilder.CreateSRV(VertCountPerCell);
 	PassParams->CaseIndexPerCell = GraphBuilder.CreateSRV(CaseIndexPerCell);
 	PassParams->OutVertices      = GraphBuilder.CreateUAV(Out.Vertices, PF_A32B32G32R32F);
-	PassParams->OutMaterialIds   = GraphBuilder.CreateUAV(Out.MaterialIds, PF_R32_UINT);
+	PassParams->OutMaterialIds   = GraphBuilder.CreateUAV(Out.MaterialIds, PF_G32R32F);
 	PassParams->OutVertexColors  = GraphBuilder.CreateUAV(Out.VertexColors, PF_R32_UINT);
 
 	TShaderMapRef<FMC_ScatterCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));

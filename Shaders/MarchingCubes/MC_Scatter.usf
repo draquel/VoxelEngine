@@ -25,7 +25,7 @@ StructuredBuffer<uint> CaseIndexPerCell;
 
 // Output
 RWBuffer<float4> OutVertices;  // sized to NumCells*15 on CPU; only [0..TotalVerts) is valid
-RWBuffer<uint>   OutMaterialIds;
+RWBuffer<float2> OutMaterialIds;
 RWBuffer<uint>   OutVertexColors;
 
 static const uint MAT_Air   = 0u;
@@ -59,15 +59,16 @@ uint PackColor(uint r, uint g, uint b, uint a)
 
 uint MaterialIdToColor(uint material)
 {
+	const uint alpha = min(material, 255u);
 	switch (material)
 	{
-	case MAT_Grass: return PackColor(32, 200, 64, 255);
-	case MAT_Dirt:  return PackColor(120, 72, 32, 255);
-	case MAT_Stone: return PackColor(128, 128, 128, 255);
-	case MAT_Sand:  return PackColor(210, 190, 80, 255);
-	case MAT_Snow:  return PackColor(220, 230, 245, 255);
-	case MAT_Ore:   return PackColor(220, 120, 64, 255);
-	default:        return PackColor(10, 10, 10, 255);
+	case MAT_Grass: return PackColor(32, 200, 64, alpha);
+	case MAT_Dirt:  return PackColor(120, 72, 32, alpha);
+	case MAT_Stone: return PackColor(128, 128, 128, alpha);
+	case MAT_Sand:  return PackColor(210, 190, 80, alpha);
+	case MAT_Snow:  return PackColor(220, 230, 245, alpha);
+	case MAT_Ore:   return PackColor(220, 120, 64, alpha);
+	default:        return PackColor(10, 10, 10, alpha);
 	}
 }
 
@@ -410,9 +411,9 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 		OutVertices[base + outV + 1] = float4(p1L, 1.0f);
 		OutVertices[base + outV + 2] = float4(p2L, 1.0f);
 
-		OutMaterialIds[base + outV + 0] = materialId;
-		OutMaterialIds[base + outV + 1] = materialId;
-		OutMaterialIds[base + outV + 2] = materialId;
+		OutMaterialIds[base + outV + 0] = float2((float)materialId, 0.0f);
+		OutMaterialIds[base + outV + 1] = float2((float)materialId, 0.0f);
+		OutMaterialIds[base + outV + 2] = float2((float)materialId, 0.0f);
 
 		OutVertexColors[base + outV + 0] = color;
 		OutVertexColors[base + outV + 1] = color;

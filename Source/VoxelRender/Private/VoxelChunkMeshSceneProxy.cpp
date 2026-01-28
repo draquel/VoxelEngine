@@ -208,9 +208,9 @@ FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 				Slot.MaterialIdVB = MakeUnique<FExternalVertexBuffer>();
 				Slot.MaterialIdVB->SetSource(
 					Slot.Data->MaterialIdBufferRHI,
-					sizeof(uint32),
+					sizeof(FVector2f),
 					Slot.Data->VertexCount,
-					PF_R32_UINT);
+					PF_G32R32F);
 			}
 
 			if (Slot.Data->IndexBufferRHI.IsValid() && Slot.Data->IndexCount > 0)

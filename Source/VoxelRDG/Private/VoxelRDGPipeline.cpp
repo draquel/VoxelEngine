@@ -280,7 +280,7 @@ static void AllocateChunkBuffers(
 		UVDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
 		Res.VertexUV0RDG = GraphBuilder.CreateBuffer(UVDesc, TEXT("Voxel.Greedy.UV0"));
 
-		FRDGBufferDesc MIDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(uint32), MaxVerts);
+		FRDGBufferDesc MIDesc = FRDGBufferDesc::CreateBufferDesc(sizeof(FVector2f), MaxVerts);
 		MIDesc.Usage |= BUF_UnorderedAccess | BUF_ShaderResource | BUF_VertexBuffer;
 		Res.VertexMaterialIdRDG = GraphBuilder.CreateBuffer(MIDesc, TEXT("Voxel.Greedy.MaterialIds"));
 
@@ -522,6 +522,12 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		Inputs.EditStampCount = Req.Payload.EditStampCount;
 
 		GM_BuildPass::AddGM_BuildPass(GraphBuilder, Inputs);
+
+		// Preserve the greedy material id buffer for extraction/binding.
+		ensureMsgf(InOutResources->VertexMaterialIdRDG, TEXT("Greedy material id buffer should be allocated."));
+		InOutResources->VertexMaterialIdRDG = Inputs.MaterialIdBuffer;
+		InOutResources->VertexColorRDG = Inputs.VertexColorBuffer;
+
 		
 		InOutResources->TangentBasisBufferRDG = FMC_TangentPass::AddMC_TangentPass(
 			GraphBuilder,

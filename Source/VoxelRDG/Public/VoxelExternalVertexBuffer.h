@@ -28,7 +28,15 @@
 
 			VertexBufferRHI = SourceBufferRHI;
 
-			ShaderResourceViewRHI = GNullVertexBuffer.VertexBufferSRV;
+			if (Format != PF_Unknown && Stride > 0)
+			{
+				ShaderResourceViewRHI = RHICmdList.CreateShaderResourceView(VertexBufferRHI, Stride, Format);
+				check(ShaderResourceViewRHI.IsValid());
+			}
+			else
+			{
+				ShaderResourceViewRHI = GNullVertexBuffer.VertexBufferSRV;
+			}
 		}
 
 		virtual void ReleaseRHI() override
