@@ -1,0 +1,19 @@
+// /Plugin/Voxel/GreedyMesher/GM_ClampCounts.usf
+
+#include "/Engine/Private/Common.ush"
+
+uint MaxVertices;
+uint MaxIndices;
+
+RWStructuredBuffer<uint> OutVertexCount;
+RWStructuredBuffer<uint> OutIndexCount;
+
+[numthreads(1, 1, 1)]
+void Main(uint3 DTid : SV_DispatchThreadID)
+{
+	const uint V = OutVertexCount[0];
+	const uint I = OutIndexCount[0];
+
+	OutVertexCount[0] = (V > MaxVertices) ? MaxVertices : V;
+	OutIndexCount[0] = (I > MaxIndices) ? MaxIndices : I;
+}
