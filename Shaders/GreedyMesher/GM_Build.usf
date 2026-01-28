@@ -173,6 +173,9 @@ void EmitFace(int3 c, uint faceIdx, uint materialId)
 
 	if (vBase + 4 > MaxVertices || iBase + 6 > MaxIndices)
 	{
+		// Roll back counts if we overflowed so the CPU draw counts match written data.
+		InterlockedAdd(OutVertexCount[0], 0xFFFFFFFCu); // -4
+		InterlockedAdd(OutIndexCount[0], 0xFFFFFFFAu);  // -6
 		return;
 	}
 

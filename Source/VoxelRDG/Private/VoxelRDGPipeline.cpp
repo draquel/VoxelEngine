@@ -74,6 +74,77 @@ class FMCCopyCountsCS : public FGlobalShader
 };
 IMPLEMENT_GLOBAL_SHADER(FMCCopyCountsCS, "/Plugin/Voxel/MarchingCubes/MC_CopyCounts.usf", "Main", SF_Compute);
 
+class FGMClampCountsCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FGMClampCountsCS);
+	SHADER_USE_PARAMETER_STRUCT(FGMClampCountsCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32, MaxVertices)
+		SHADER_PARAMETER(uint32, MaxIndices)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutVertexCount)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutIndexCount)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
+IMPLEMENT_GLOBAL_SHADER(FGMClampCountsCS, "/Plugin/Voxel/GreedyMesher/GM_ClampCounts.usf", "Main", SF_Compute);
+
+class FGMCountCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FGMCountCS);
+	SHADER_USE_PARAMETER_STRUCT(FGMCountCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER(uint32, EditStampCount)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<FVoxelEditStampGPU>, EditStamps)
+
+		SHADER_PARAMETER(FVector3f, ChunkOriginWS)
+		SHADER_PARAMETER(float, StepSizeWS)
+		SHADER_PARAMETER(uint32, CellsPerAxis)
+		SHADER_PARAMETER(uint32, SamplesPerAxis)
+		SHADER_PARAMETER(float, IsoLevel)
+
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<float>, DensityField)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, MaterialField)
+
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutVertexCount)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWStructuredBuffer<uint>, OutIndexCount)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
+IMPLEMENT_GLOBAL_SHADER(FGMCountCS, "/Plugin/Voxel/GreedyMesher/GM_Count.usf", "Main", SF_Compute);
+
+static TAutoConsoleVariable<int32> CVarVoxelGreedyFaceBudgetMultiplier(
+	TEXT("Voxel.Greedy.FaceBudgetMultiplier"),
+	48,
+	TEXT("Multiplier for greedy mesher face budget estimate (faces ~= CellsPerAxis^2 * Multiplier)."),
+	ECVF_Default);
+
+static TAutoConsoleVariable<int32> CVarVoxelGreedyMaxFacesCap(
+	TEXT("Voxel.Greedy.MaxFacesCap"),
+	2000000,
+	TEXT("Maximum greedy mesher faces to allocate per chunk."),
+	ECVF_Default);
+
+static TAutoConsoleVariable<int32> CVarVoxelGreedyUseExactCounts(
+	TEXT("Voxel.Greedy.UseExactCounts"),
+	1,
+	TEXT("Run a greedy count pass and allocate exact-sized buffers (costs an extra field pass)."),
+	ECVF_Default);
+
+static uint32 GetGreedyMaxFaces(uint32 CellsPerAxis, uint32 OverrideGreedyMaxFaces)
+{
+	if (OverrideGreedyMaxFaces > 0)
+	{
+		return OverrideGreedyMaxFaces;
+	}
+
+	const uint32 FaceMultiplier = (uint32)FMath::Max(1, CVarVoxelGreedyFaceBudgetMultiplier.GetValueOnAnyThread());
+	const uint32 EstimatedFaces = FMath::Max<uint32>(CellsPerAxis * CellsPerAxis * FaceMultiplier, 1024);
+	const uint32 MaxFacesCap = (uint32)FMath::Max(1, CVarVoxelGreedyMaxFacesCap.GetValueOnAnyThread());
+	return FMath::Min<uint32>(EstimatedFaces, MaxFacesCap);
+}
+
 //-- Surface Grid
 
 class FSurfaceGridVertCS : public FGlobalShader
@@ -178,7 +249,9 @@ static void AllocateEditStampBuffer(FRDGBuilder& GraphBuilder, const TArray<FVox
 static void AllocateChunkBuffers(
 	FRDGBuilder& GraphBuilder,
 	const FVoxelChunkBuildRequest& Req,
-	FVoxelChunkGPUResources& Res)
+	FVoxelChunkGPUResources& Res,
+	bool bGreedyCountOnly = false,
+	uint32 OverrideGreedyMaxFaces = 0)
 {
 	Res.DensityFieldRDG = nullptr;
 	Res.MaterialFieldRDG = nullptr;
@@ -252,14 +325,16 @@ static void AllocateChunkBuffers(
 
 	if (Req.Mode == EVoxelMeshMode::GreedyMesher)
 	{
+		if (bGreedyCountOnly)
+		{
+			AllocateEditStampBuffer(GraphBuilder, Req.Payload.EditStamps, Res.EditStampBufferRDG);
+			return;
+		}
+
 		const uint32 CellsPerAxis = Req.Payload.CellsPerAxis;
-		// Estimate max vertices based on surface area + noise.
-		// For a cube, surface faces = 6 * N^2.
-		// We'll use a safer multiplier (12) to account for some noise/roughness.
-		const uint32 EstimatedFaces = FMath::Max<uint32>(CellsPerAxis * CellsPerAxis * 12, 1024);
-		
-		// Cap to avoid unreasonable allocations if LODs go too high
-		const uint32 MaxFaces = FMath::Min<uint32>(EstimatedFaces, 1000000); 
+		// Estimate max faces based on surface area with a safety multiplier for noise/roughness.
+		// Worst-case per-cell is too expensive for large chunks, so keep a bounded budget.
+		const uint32 MaxFaces = GetGreedyMaxFaces(CellsPerAxis, OverrideGreedyMaxFaces);
 		
 		const uint32 MaxVerts = MaxFaces * 4;
 		const uint32 MaxIndices = MaxFaces * 6;
@@ -304,9 +379,88 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		InOutResources = MakeShared<FVoxelChunkGPUResources>();
 	}
 
+	uint32 OverrideGreedyMaxFaces = 0;
+	const bool bUseExactCounts = (Req.Mode == EVoxelMeshMode::GreedyMesher) &&
+		(CVarVoxelGreedyUseExactCounts.GetValueOnAnyThread() != 0);
+
+	if (bUseExactCounts)
+	{
+		FRDGBuilder CountBuilder(RHICmdList);
+
+		AllocateChunkBuffers(CountBuilder, Req, *InOutResources, /*bGreedyCountOnly=*/true);
+
+		AddClearUAVPass(CountBuilder, CountBuilder.CreateUAV(InOutResources->VertexCountRDG), 0);
+		AddClearUAVPass(CountBuilder, CountBuilder.CreateUAV(InOutResources->IndexCountRDG), 0);
+
+		const uint32 CellsPerAxis = Req.Payload.CellsPerAxis;
+
+		FVoxelEditParams EditParams;
+		EditParams.EditStamps = InOutResources->EditStampBufferRDG;
+		EditParams.EditStampCount = Req.Payload.EditStampCount;
+
+		FMCChunkParamsCPU FieldChunkParams;
+		FieldChunkParams.CellsPerAxis = Req.Payload.CellsPerAxis;
+		FieldChunkParams.StepSizeWS = Req.Payload.StepSizeWS;
+		FieldChunkParams.IsoLevel = Req.Payload.IsoLevel;
+		FieldChunkParams.ChunkOriginWS = Req.Payload.ChunkOriginWS;
+		FieldChunkParams.ChunkSeed = (uint32)Req.Payload.Seed;
+
+		const FVoxelFieldPassOutputs FieldOutputs =
+			FVoxelFieldPass::AddFieldPass(
+				CountBuilder,
+				FieldChunkParams,
+				Req.Payload.NoiseParameters,
+				Req.Payload.MaterialGeneration,
+				EditParams);
+
+		auto* Params = CountBuilder.AllocParameters<FGMCountCS::FParameters>();
+		Params->ChunkOriginWS = FVector3f(FieldChunkParams.ChunkOriginWS);
+		Params->StepSizeWS = FieldChunkParams.StepSizeWS;
+		Params->CellsPerAxis = FieldChunkParams.CellsPerAxis;
+		Params->SamplesPerAxis = FieldOutputs.SamplesPerAxis;
+		Params->IsoLevel = FieldChunkParams.IsoLevel;
+		Params->DensityField = CountBuilder.CreateSRV(FieldOutputs.DensityField);
+		Params->MaterialField = CountBuilder.CreateSRV(FieldOutputs.MaterialField);
+		Params->OutVertexCount = CountBuilder.CreateUAV(InOutResources->VertexCountRDG);
+		Params->OutIndexCount = CountBuilder.CreateUAV(InOutResources->IndexCountRDG);
+		Params->EditStampCount = EditParams.EditStampCount;
+		Params->EditStamps = CountBuilder.CreateSRV(EditParams.EditStamps);
+
+		TShaderMapRef<FGMCountCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		FComputeShaderUtils::AddPass(
+			CountBuilder,
+			RDG_EVENT_NAME("Voxel.Greedy.Count"),
+			CS,
+			Params,
+			FIntVector(
+				FMath::DivideAndRoundUp((int32)CellsPerAxis, 4),
+				FMath::DivideAndRoundUp((int32)CellsPerAxis, 4),
+				FMath::DivideAndRoundUp((int32)CellsPerAxis, 4)));
+
+		CountBuilder.QueueBufferExtraction(InOutResources->VertexCountRDG, &InOutResources->VertexCountPooled);
+		CountBuilder.QueueBufferExtraction(InOutResources->IndexCountRDG, &InOutResources->IndexCountPooled);
+		CountBuilder.Execute();
+
+		uint32 ExactVerts = 0;
+		uint32 ExactIndices = 0;
+		if (InOutResources->VertexCountPooled && InOutResources->IndexCountPooled)
+		{
+			void* VertData = RHICmdList.LockBuffer(InOutResources->VertexCountPooled->GetRHI(), 0, sizeof(uint32), RLM_ReadOnly);
+			void* IndexData = RHICmdList.LockBuffer(InOutResources->IndexCountPooled->GetRHI(), 0, sizeof(uint32), RLM_ReadOnly);
+			if (VertData) ExactVerts = *reinterpret_cast<uint32*>(VertData);
+			if (IndexData) ExactIndices = *reinterpret_cast<uint32*>(IndexData);
+			RHICmdList.UnlockBuffer(InOutResources->VertexCountPooled->GetRHI());
+			RHICmdList.UnlockBuffer(InOutResources->IndexCountPooled->GetRHI());
+		}
+
+		const uint32 FacesFromVerts = (ExactVerts > 0) ? FMath::DivideAndRoundUp(ExactVerts, 4u) : 0u;
+		const uint32 FacesFromIndices = (ExactIndices > 0) ? FMath::DivideAndRoundUp(ExactIndices, 6u) : 0u;
+		OverrideGreedyMaxFaces = FMath::Max(1u, FMath::Max(FacesFromVerts, FacesFromIndices));
+	}
+
 	FRDGBuilder GraphBuilder(RHICmdList);
 
-	AllocateChunkBuffers(GraphBuilder, Req, *InOutResources);
+	AllocateChunkBuffers(GraphBuilder, Req, *InOutResources, /*bGreedyCountOnly=*/false, OverrideGreedyMaxFaces);
 
 	// Clear only the count buffers here.
 	AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(InOutResources->VertexCountRDG), 0);
@@ -465,8 +619,7 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		check(InOutResources->NormalsBufferRDG);
 
 		const uint32 CellsPerAxis = Req.Payload.CellsPerAxis;
-		const uint32 EstimatedFaces = FMath::Max<uint32>(CellsPerAxis * CellsPerAxis * 12, 1024);
-		const uint32 MaxFaces = FMath::Min<uint32>(EstimatedFaces, 1000000);
+		const uint32 MaxFaces = GetGreedyMaxFaces(CellsPerAxis, OverrideGreedyMaxFaces);
 		const uint32 MaxVerts = MaxFaces * 4;
 
 		FVoxelEditParams EditParams= FVoxelEditParams();
@@ -528,6 +681,22 @@ void FVoxelRDGPipeline::BuildChunk_RenderThread(
 		InOutResources->VertexMaterialIdRDG = Inputs.MaterialIdBuffer;
 		InOutResources->VertexColorRDG = Inputs.VertexColorBuffer;
 
+		// Clamp counts to buffer sizes to avoid drawing unwritten data when overflow occurs.
+		{
+			auto* Params = GraphBuilder.AllocParameters<FGMClampCountsCS::FParameters>();
+			Params->MaxVertices = MaxVerts;
+			Params->MaxIndices = MaxFaces * 6;
+			Params->OutVertexCount = GraphBuilder.CreateUAV(InOutResources->VertexCountRDG);
+			Params->OutIndexCount = GraphBuilder.CreateUAV(InOutResources->IndexCountRDG);
+
+			TShaderMapRef<FGMClampCountsCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+			FComputeShaderUtils::AddPass(
+				GraphBuilder,
+				RDG_EVENT_NAME("Voxel.Greedy.ClampCounts"),
+				CS,
+				Params,
+				FIntVector(1, 1, 1));
+		}
 		
 		InOutResources->TangentBasisBufferRDG = FMC_TangentPass::AddMC_TangentPass(
 			GraphBuilder,
