@@ -74,6 +74,10 @@ void UVoxelChunkMeshComponent::SetMaterialTable(UVoxelMaterialTable* InMaterialT
 	check(IsInGameThread());
 	MaterialTable = InMaterialTable;
 
+	UE_LOG(LogTemp, Log, TEXT("[Voxel] SetMaterialTable: Table=%s Materials=%d"),
+		MaterialTable ? *MaterialTable->GetName() : TEXT("null"),
+		MaterialTable ? MaterialTable->Materials.Num() : 0);
+
 	if (MaterialTableGPU.IsValid())
 	{
 		MaterialTableGPU->EnqueueUpdate(MaterialTable, bUseMaterialTableDebugColor);

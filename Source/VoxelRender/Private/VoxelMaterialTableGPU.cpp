@@ -81,6 +81,12 @@ namespace VoxelRender
 		BuildPackedMaterialTable(Table, PackedData);
 
 		const uint32 TableHash = Table ? Table->GetTableHash() : 0u;
+		UE_LOG(LogTemp, Log, TEXT("[Voxel] Enqueue material table update: Table=%s Materials=%d Packed=%d Hash=%u DebugColor=%s"),
+			Table ? *Table->GetName() : TEXT("null"),
+			Table ? Table->Materials.Num() : 0,
+			PackedData.Num(),
+			TableHash,
+			bUseTableDebugColor ? TEXT("true") : TEXT("false"));
 		const TSharedRef<FVoxelMaterialTableGPU> SelfRef = AsShared();
 
 		ENQUEUE_RENDER_COMMAND(UpdateVoxelMaterialTable)(
@@ -109,6 +115,24 @@ namespace VoxelRender
 		NumEntries = PackedData.Num();
 		CachedHash = TableHash;
 		bCachedUseDebugColor = bUseTableDebugColor;
+
+		if (NumEntries > 0)
+		{
+			const int32 MaxDump = FMath::Min<int32>(NumEntries - 1, 6);
+			for (int32 Index = 1; Index <= MaxDump; ++Index)
+			{
+				const FUintVector4& Packed = PackedData[Index];
+				const uint32 Top = Packed.X & 0xFFFFu;
+				const uint32 Side = (Packed.X >> 16) & 0xFFFFu;
+				const uint32 Bottom = Packed.Y & 0xFFFFu;
+				UE_LOG(LogTemp, Log, TEXT("[Voxel] MaterialId=%d AtlasTop=%u AtlasSide=%u AtlasBottom=%u"), Index, Top, Side, Bottom);
+			}
+		}
+
+		if (NumEntries == 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Voxel] Material table is empty; falling back to magenta debug color."));
+		}
 
 		if (NumEntries > 0)
 		{
