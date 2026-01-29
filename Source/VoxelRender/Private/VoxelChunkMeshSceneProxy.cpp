@@ -3,6 +3,7 @@
 #include "VoxelChunkMeshRenderData.h"
 #include "VoxelChunkVertexFactory.h"
 #include "VoxelExternalVertexBuffer.h"
+#include "VoxelMaterialTableGPU.h"
 #include "Materials/Material.h"
 #include "MeshBatch.h"
 #include "SceneManagement.h"
@@ -157,13 +158,6 @@ FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 
 			
 			UMaterialInterface* TargetMaterial = Slot.Data->Material ? Slot.Data->Material : DefaultMaterial;
-			const bool bCanLight = (Slot.Data->NormalFormat == EChunkNormalFormat::PackedTangentBasis && TargetMaterial != DefaultMaterial);
-#if !UE_BUILD_SHIPPING
-			if (!bCanLight && DefaultUnlitOrDebugMaterial)
-			{
-				TargetMaterial = DefaultUnlitOrDebugMaterial;
-			}
-#endif
 			Slot.Material = TargetMaterial;
 			
 			// Only set sources if we actually have buffers (non-empty / ready payload)
@@ -360,6 +354,10 @@ FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 				Slot.UV0VB.Get(),
 				Slot.MaterialIdVB.Get(),
 				Binding);
+			if (Slot.VF)
+			{
+				Slot.VF->SetMaterialTableGPU_RenderThread(MaterialTableGPU);
+			}
 
 			// --- Primitive uniform buffer ---
 			const FVector OriginWS = Slot.Data->ChunkOriginWS;
@@ -470,9 +468,7 @@ FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 			Mesh.DepthPriorityGroup = SDPG_World;
 			
 			FMaterialRenderProxy* ParentProxy = (Slot.Material->IsValidLowLevel() ? Slot.Material : DefaultMaterial)->GetRenderProxy();
-			FColoredMaterialRenderProxy* ColoredProxy = new FColoredMaterialRenderProxy(ParentProxy, FLinearColor::White); // Shouldn't be needed... Why is it broken without it?
-
-			Mesh.MaterialRenderProxy = ColoredProxy;
+			Mesh.MaterialRenderProxy = ParentProxy;
 
 			// Debug/winding toggles
 			Mesh.bCanApplyViewModeOverrides = true;
@@ -502,8 +498,8 @@ FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 			Element.MaxVertexIndex = VertexCount - 1;
 
 			Element.PrimitiveUniformBuffer = Slot.PrimitiveUB->GetUniformBufferRHI();
-			Element.PrimitiveUniformBufferResource = Slot.PrimitiveUB.Get();
-			Element.PrimitiveIdMode = PrimID_DynamicPrimitiveShaderData;
+			Element.PrimitiveUniformBufferResource = nullptr;
+			Element.PrimitiveIdMode = PrimID_ForceZero;
 
 			Collector.AddMesh(ViewIndex, Mesh);
 		}
