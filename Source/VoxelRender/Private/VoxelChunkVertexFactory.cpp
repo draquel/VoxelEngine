@@ -1,5 +1,83 @@
 ﻿#include "VoxelChunkVertexFactory.h"
 #include "RenderResource.h"
+#include "MeshBatch.h"
+#include "MeshDrawShaderBindings.h"
+#include "MeshMaterialShader.h"
+#include "ShaderParameterStruct.h"
+#include "ShaderParameterUtils.h"
+#include "VoxelMaterialTableGPU.h"
+
+namespace
+{
+	class FChunkVertexFactoryShaderParameters : public FVertexFactoryShaderParameters
+	{
+	public:
+		DECLARE_TYPE_LAYOUT(FChunkVertexFactoryShaderParameters, Virtual);
+
+		virtual void Bind(const FShaderParameterMap& ParameterMap)
+		{
+			LocalVFUniformBuffer.Bind(ParameterMap, TEXT("LocalVF"));
+			MaterialTableSRV.Bind(ParameterMap, TEXT("VoxelMaterialTable"));
+			MaterialTableSize.Bind(ParameterMap, TEXT("VoxelMaterialTableSize"));
+			UseTableDebugColor.Bind(ParameterMap, TEXT("VoxelUseTableDebugColor"));
+		}
+
+		virtual void GetElementShaderBindings(
+			const FSceneInterface* Scene,
+			const FSceneView* View,
+			const FMeshMaterialShader* Shader,
+			const EVertexInputStreamType InputStreamType,
+			ERHIFeatureLevel::Type FeatureLevel,
+			const FVertexFactory* VertexFactory,
+			const FMeshBatchElement& BatchElement,
+			FMeshDrawSingleShaderBindings& ShaderBindings,
+			FVertexInputStreamArray& VertexStreams) const
+		{
+			if (LocalVFUniformBuffer.IsBound())
+			{
+				const FLocalVertexFactory* LocalVF = static_cast<const FLocalVertexFactory*>(VertexFactory);
+				const FUniformBufferRHIRef LocalUniformBuffer = LocalVF ? LocalVF->GetUniformBuffer() : nullptr;
+				if (LocalUniformBuffer.IsValid())
+				{
+					ShaderBindings.Add(LocalVFUniformBuffer, LocalUniformBuffer);
+				}
+			}
+
+			const VoxelRender::FChunkVertexFactory* ChunkVF = static_cast<const VoxelRender::FChunkVertexFactory*>(VertexFactory);
+			const TSharedPtr<VoxelRender::FVoxelMaterialTableGPU, ESPMode::ThreadSafe> TableGPU = ChunkVF ? ChunkVF->GetMaterialTableGPU() : nullptr;
+
+			const FShaderResourceViewRHIRef TableSRV = TableGPU.IsValid() ? TableGPU->GetSRV() : nullptr;
+			if (MaterialTableSRV.IsBound() && TableSRV.IsValid())
+			{
+				ShaderBindings.Add(MaterialTableSRV, TableSRV);
+			}
+
+			if (MaterialTableSize.IsBound())
+			{
+				const uint32 Size = TableGPU.IsValid() ? TableGPU->GetTableSize() : 0u;
+				ShaderBindings.Add(MaterialTableSize, Size);
+			}
+
+			if (UseTableDebugColor.IsBound())
+			{
+				const uint32 DebugFlag = TableGPU.IsValid() && TableGPU->GetUseTableDebugColor() ? 1u : 0u;
+				ShaderBindings.Add(UseTableDebugColor, DebugFlag);
+			}
+		}
+
+	private:
+		LAYOUT_FIELD(FShaderUniformBufferParameter, LocalVFUniformBuffer);
+		LAYOUT_FIELD(FShaderResourceParameter, MaterialTableSRV);
+		LAYOUT_FIELD(FShaderParameter, MaterialTableSize);
+		LAYOUT_FIELD(FShaderParameter, UseTableDebugColor);
+	};
+}
+
+IMPLEMENT_TYPE_LAYOUT(FChunkVertexFactoryShaderParameters);
+
+IMPLEMENT_VERTEX_FACTORY_TYPE(VoxelRender::FChunkVertexFactory, "/Engine/Private/LocalVertexFactory.ush", EVertexFactoryFlags::UsedWithMaterials);
+IMPLEMENT_VERTEX_FACTORY_PARAMETER_TYPE(VoxelRender::FChunkVertexFactory, SF_Vertex, FChunkVertexFactoryShaderParameters);
+IMPLEMENT_VERTEX_FACTORY_PARAMETER_TYPE(VoxelRender::FChunkVertexFactory, SF_Pixel, FChunkVertexFactoryShaderParameters);
 
 
 namespace VoxelRender

@@ -6,8 +6,6 @@
 #include "Containers/ResourceArray.h"
 #include "RenderingThread.h"
 
-IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT(FVoxelMaterialTableUniforms, "VoxelMaterialTable");
-
 namespace
 {
 	FUintVector4 PackEntry(const FVoxelMaterialDef& Def)
@@ -149,19 +147,11 @@ namespace VoxelRender
 			SRV = RHICmdList.CreateShaderResourceView(Buffer);
 		}
 
-		FVoxelMaterialTableUniforms Uniforms;
-		Uniforms.VoxelMaterialTable = SRV;
-		Uniforms.VoxelMaterialTableSize = NumEntries;
-		Uniforms.VoxelUseTableDebugColor = bCachedUseDebugColor ? 1u : 0u;
-		UniformBuffer = TUniformBufferRef<FVoxelMaterialTableUniforms>::CreateUniformBufferImmediate(
-			Uniforms,
-			UniformBuffer_MultiFrame);
 	}
 
 	void FVoxelMaterialTableGPU::ReleaseRHI()
 	{
 		Buffer.SafeRelease();
 		SRV.SafeRelease();
-		UniformBuffer.SafeRelease();
 	}
 }
