@@ -39,7 +39,7 @@ uint PackColor(uint r, uint g, uint b, uint a)
 
 uint MaterialIdToColor(uint material)
 {
-	const uint alpha = min(material, 255u);
+	const uint alpha = 255u;
 	switch (material)
 	{
 	case MAT_Grass: return PackColor(32, 200, 64, alpha);
@@ -251,7 +251,11 @@ void Main(uint3 DTid : SV_DispatchThreadID)
 
 	if (d >= IsoLevel) return; // Empty
 
-	const uint materialId = SelectDominantMaterial(c);
+	uint materialId = SelectDominantMaterial(c);
+	if (materialId == MAT_Air)
+	{
+		materialId = GetMaterialId(c);
+	}
 
 	[unroll]
 	for (uint i = 0; i < 6; ++i)
