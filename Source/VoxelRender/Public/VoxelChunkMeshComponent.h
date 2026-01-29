@@ -20,6 +20,8 @@ class VOXELRENDER_API UVoxelChunkMeshComponent : public UPrimitiveComponent
 
 public:
 	UVoxelChunkMeshComponent();
+	virtual void OnRegister() override;
+	virtual void OnUnregister() override;
 
 	UPROPERTY(EditAnywhere, Category="Voxel|Render")
 	UMaterialInterface* ChunkMaterial = nullptr;

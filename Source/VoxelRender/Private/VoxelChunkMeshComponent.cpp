@@ -4,12 +4,34 @@
 #include "VoxelChunkMeshSceneProxy.h"
 #include "VoxelMaterialTable.h"
 #include "VoxelMaterialTableGPU.h"
+#include "RenderResource.h"
 
 UVoxelChunkMeshComponent::UVoxelChunkMeshComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	MaterialTableGPU = MakeShared<VoxelRender::FVoxelMaterialTableGPU>();
+}
+
+void UVoxelChunkMeshComponent::OnRegister()
+{
+	Super::OnRegister();
+
+	if (MaterialTableGPU.IsValid())
+	{
+		BeginInitResource(MaterialTableGPU.Get());
+		MaterialTableGPU->EnqueueUpdate(MaterialTable, bUseMaterialTableDebugColor);
+	}
+}
+
+void UVoxelChunkMeshComponent::OnUnregister()
+{
+	if (MaterialTableGPU.IsValid())
+	{
+		BeginReleaseResource(MaterialTableGPU.Get());
+	}
+
+	Super::OnUnregister();
 }
 
 void UVoxelChunkMeshComponent::SetChunkRenderData_GameThread(int32 Slot, TSharedPtr<VoxelRender::FChunkMeshRenderData> InData)
