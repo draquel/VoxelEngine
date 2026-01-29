@@ -53,6 +53,7 @@ public:
 	virtual int32 GetNumMaterials() const override;
 	virtual UMaterialInterface* GetMaterial(int32 ElementIndex) const override;
 	virtual void SetMaterial(int32 ElementIndex, UMaterialInterface* InMaterial) override;
+	virtual void GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials = false) const override;
 
 	UPROPERTY(Transient)
 	TArray<FBoxSphereBounds> SlotBoundsGT; // same indexing as SlotDataGT

@@ -145,6 +145,36 @@ void UVoxelChunkMeshComponent::SetMaterial(int32 ElementIndex, UMaterialInterfac
 	MarkRenderStateDirty();
 }
 
+void UVoxelChunkMeshComponent::GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials, bool bGetDebugMaterials) const
+{
+	auto AddMaterial = [&OutMaterials](UMaterialInterface* Material)
+	{
+		if (Material)
+		{
+			OutMaterials.AddUnique(Material);
+		}
+	};
+
+	AddMaterial(ChunkMaterial);
+	if (bGetDebugMaterials)
+	{
+		AddMaterial(DebugUnlitMaterial);
+	}
+
+	for (const TSharedPtr<VoxelRender::FChunkMeshRenderData>& Slot : SlotDataGT)
+	{
+		if (Slot.IsValid())
+		{
+			AddMaterial(Slot->Material);
+		}
+	}
+
+	if (OutMaterials.Num() == 0)
+	{
+		AddMaterial(UMaterial::GetDefaultMaterial(MD_Surface));
+	}
+}
+
 #if WITH_EDITOR
 void UVoxelChunkMeshComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
