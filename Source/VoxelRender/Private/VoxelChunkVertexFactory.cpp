@@ -17,9 +17,7 @@ namespace
 		virtual void Bind(const FShaderParameterMap& ParameterMap)
 		{
 			LocalVFUniformBuffer.Bind(ParameterMap, TEXT("LocalVF"));
-			MaterialTableSRV.Bind(ParameterMap, TEXT("VoxelMaterialTable"));
-			MaterialTableSize.Bind(ParameterMap, TEXT("VoxelMaterialTableSize"));
-			UseTableDebugColor.Bind(ParameterMap, TEXT("VoxelUseTableDebugColor"));
+			MaterialTableUniformBuffer.Bind(ParameterMap, TEXT("VoxelMaterialTable"));
 		}
 
 		virtual void GetElementShaderBindings(
@@ -46,30 +44,19 @@ namespace
 			const VoxelRender::FChunkVertexFactory* ChunkVF = static_cast<const VoxelRender::FChunkVertexFactory*>(VertexFactory);
 			const TSharedPtr<VoxelRender::FVoxelMaterialTableGPU, ESPMode::ThreadSafe> TableGPU = ChunkVF ? ChunkVF->GetMaterialTableGPU() : nullptr;
 
-			const FShaderResourceViewRHIRef TableSRV = TableGPU.IsValid() ? TableGPU->GetSRV() : nullptr;
-			if (MaterialTableSRV.IsBound() && TableSRV.IsValid())
+			if (MaterialTableUniformBuffer.IsBound())
 			{
-				ShaderBindings.Add(MaterialTableSRV, TableSRV);
-			}
-
-			if (MaterialTableSize.IsBound())
-			{
-				const uint32 Size = TableGPU.IsValid() ? TableGPU->GetTableSize() : 0u;
-				ShaderBindings.Add(MaterialTableSize, Size);
-			}
-
-			if (UseTableDebugColor.IsBound())
-			{
-				const uint32 DebugFlag = TableGPU.IsValid() && TableGPU->GetUseTableDebugColor() ? 1u : 0u;
-				ShaderBindings.Add(UseTableDebugColor, DebugFlag);
+				const FUniformBufferRHIRef UniformBuffer = TableGPU.IsValid() ? TableGPU->GetUniformBuffer() : nullptr;
+				if (UniformBuffer.IsValid())
+				{
+					ShaderBindings.Add(MaterialTableUniformBuffer, UniformBuffer);
+				}
 			}
 		}
 
 	private:
 		LAYOUT_FIELD(FShaderUniformBufferParameter, LocalVFUniformBuffer);
-		LAYOUT_FIELD(FShaderResourceParameter, MaterialTableSRV);
-		LAYOUT_FIELD(FShaderParameter, MaterialTableSize);
-		LAYOUT_FIELD(FShaderParameter, UseTableDebugColor);
+		LAYOUT_FIELD(FShaderUniformBufferParameter, MaterialTableUniformBuffer);
 	};
 }
 

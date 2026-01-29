@@ -501,6 +501,37 @@ FChunkMeshSceneProxy::FChunkMeshSceneProxy(
 			Element.PrimitiveUniformBufferResource = nullptr;
 			Element.PrimitiveIdMode = PrimID_ForceZero;
 
+#if !UE_BUILD_SHIPPING
+			static bool bLoggedMaterialState = false;
+			if (!bLoggedMaterialState)
+			{
+				bLoggedMaterialState = true;
+				const ERHIFeatureLevel::Type FeatureLevel = GetScene().GetFeatureLevel();
+				const FMaterialRelevance Relevance = Slot.Material
+					? Slot.Material->GetRelevance_Concurrent(FeatureLevel)
+					: FMaterialRelevance();
+				const EBlendMode BlendMode = Slot.Material ? Slot.Material->GetBlendMode() : BLEND_Opaque;
+				const uint8 bAnyTranslucency = Relevance.bNormalTranslucency
+					|| Relevance.bSeparateTranslucency
+					|| Relevance.bPostMotionBlurTranslucency
+					|| Relevance.bTranslucencyModulate;
+				UE_LOG(LogTemp, Log,
+					TEXT("[Voxel] ChunkMesh material=%s BlendMode=%d Relevance(opaque=%d masked=%d translucent=%d normal=%d separate=%d postMotionBlur=%d modulate=%d) MeshFlags(depth=%d material=%d shadow=%d)"),
+					Slot.Material ? *Slot.Material->GetName() : TEXT("null"),
+					static_cast<int32>(BlendMode),
+					Relevance.bOpaque,
+					Relevance.bMasked,
+					bAnyTranslucency,
+					Relevance.bNormalTranslucency,
+					Relevance.bSeparateTranslucency,
+					Relevance.bPostMotionBlurTranslucency,
+					Relevance.bTranslucencyModulate,
+					Mesh.bUseForDepthPass,
+					Mesh.bUseForMaterial,
+					Mesh.CastShadow);
+			}
+#endif
+
 			Collector.AddMesh(ViewIndex, Mesh);
 		}
 	}
